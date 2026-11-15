@@ -84,7 +84,8 @@ Windows » : c'est l'exe de développement qui serait lancé au démarrage.
   (chacun peut être coupé). Les recommandations restent affichées.
 - Saut éclair sur D ou F, ou « sa touche actuelle » (sinon F).
 - Sets d'objets : un seul, remplacé à chaque partie, ou un par champion.
-- En partie : le panneau des objets à acheter sur le bord gauche du jeu.
+- En partie : le panneau des objets à acheter sur le bord gauche du jeu, et les écarts d'or
+  à côté du tableau des scores quand tu tiens Tab (chacun peut être coupé).
 - Lancer avec Windows (l'app démarre cachée près de l'horloge), afficher la fenêtre
   quand le client LoL s'ouvre, notification quand une partie est trouvée, et ce que fait la croix.
 
@@ -144,22 +145,39 @@ partie : flexible pour une flexible, solo/duo sinon). Les joueurs en mode stream
 anonymes : le client ne donne pas leur compte, l'app n'a donc pas leur rang.
 
 Une fois la partie lancée :
-- le score des deux équipes (éliminations) et le temps de jeu ;
-- l'écart d'objets : valeur des objets de ton équipe moins celle de l'équipe d'en face, au prix
-  de la boutique (l'or en poche ne compte pas) ;
+- deux bandes : les éliminations de chaque équipe et le temps de jeu, puis l'or en objets de chaque
+  équipe (valeur de ses objets au prix de la boutique, l'or en poche ne compte pas) avec l'écart en
+  grand au milieu, sur une case bleue si ton équipe est devant, orange si c'est l'équipe d'en face
+  (grise à moins de 100 pièces d'écart) ;
 - ta carte : ton skin, KDA, CS, or en poche, objets ;
-- le face-à-face, couloir par couloir : niveau, KDA et rang de chacun, et l'écart d'objets du
-  couloir. Sans postes (ARAM...), les deux équipes côte à côte. « Rang masqué » : joueur en mode streamer.
+- le face-à-face, couloir par couloir : niveau, KDA et rang de chacun, et au milieu l'écart d'or
+  du couloir, sur une case aux mêmes couleurs. Sans postes (ARAM...), les deux équipes côte à côte.
+  « Rang masqué » : joueur en mode streamer.
 
 **Panneau des objets à acheter**, posé sur le jeu, collé au bord gauche de l'écran, à mi-hauteur :
 juste les icônes, de haut en bas : départ, 1er objet (avec un autre choix, plus petit), bottes,
 2e objet (avec un autre choix). Ce sont les objets du duel contre ton vrai adversaire de couloir,
 choisis comme en sélection ; trop peu de parties sur ce duel : ceux de ton champion à ton poste.
-- Il se range une fois tes deux premiers objets faits, et se cache quand le jeu n'est pas au
-  premier plan (Alt+Tab, clic sur un autre écran).
-- Les clics le traversent et il ne prend jamais le clavier.
+- Un objet acheté et toujours là 30 secondes plus tard quitte le panneau pour de bon, même revendu
+  ensuite (un achat annulé ou revendu dans les 30 secondes ne compte pas). Le 1er et le 2e objet
+  partent aussi si tu as pris leur autre choix ; la rangée du départ part dès ton premier achat,
+  même si c'est un autre départ. Le panneau disparaît quand tout est acheté.
+- Il se cache quand le jeu n'est pas au premier plan (Alt+Tab, clic sur un autre écran).
+
+**Écarts d'or sur le tableau des scores** : tant que tu tiens Tab, une colonne d'écarts s'affiche
+juste à gauche du tableau des scores : celui de ton équipe à hauteur de l'en-tête, puis celui de
+chaque couloir à hauteur de sa ligne (bleu : ton joueur est devant, rouge : celui d'en face ;
+« −1,2k » = 1 200 pièces de retard). Sans postes (ARAM...), seulement celui de l'équipe.
+- Les positions sont celles du tableau des scores en 1920 × 1080 (relevées sur une capture), mises à
+  l'échelle de la hauteur de l'écran. Si tu changes l'échelle de l'interface du jeu ou si tu déplaces le
+  tableau, elles peuvent ne plus tomber en face des lignes.
+- L'app lit seulement si Tab est enfoncée (sans Alt, pour ne pas réagir à Alt+Tab) : la touche arrive
+  au jeu comme d'habitude. Si tu as changé la touche du tableau des scores, ça ne suit pas.
+
+Pour les deux :
+- Les clics les traversent et ils ne prennent jamais le clavier.
 - Il faut LoL en mode d'affichage « Sans bordure » : en plein écran, le jeu passe par-dessus tout.
-- Il peut être coupé dans les réglages.
+- Ils peuvent être coupés dans les réglages (roue ⚙, « En partie »).
 
 CS : pendant la partie, l'API de Riot ne les donne que par paliers de 10 (0, 10, 20…).
 L'app affiche une fourchette (« 80–89 ») et un rythme par minute estimé ; le compte exact
@@ -215,8 +233,9 @@ Quand une partie est trouvée, une notification Windows le signale. L'app n'acce
 - `src-tauri/src/settings.rs` : réglages.
 - `src-tauri/src/lib.rs` : fenêtre, icône près de l'horloge, mises à jour, boucle qui prévient
   l'interface quand l'état change.
-- `src-tauri/src/overlay.rs` : fenêtre du panneau posé sur le jeu.
-- `src/` : l'interface (`index.html`, `main.js`, `styles.css`) et le panneau en jeu (`overlay.html`).
+- `src-tauri/src/overlay.rs` : fenêtres posées sur le jeu (panneau des objets, écarts d'or) et touche Tab.
+- `src/` : l'interface (`index.html`, `main.js`, `styles.css`) et les fenêtres en jeu (`overlay.html`
+  pour le panneau, `gold.html` pour les écarts d'or).
 - `src/fonts/` : les polices Barlow et Barlow Condensed de l'interface (licence SIL OFL 1.1, `OFL.txt`).
 - `.github/workflows/release.yml` : construction de l'installateur sur GitHub.
 

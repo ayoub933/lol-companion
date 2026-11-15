@@ -138,6 +138,9 @@ const plural = (count, word) => `${count} ${word}${count > 1 ? "s" : ""}`;
 // « +950 », « −500 », « 0 ».
 const signed = (n) => (n > 0 ? `+${whole(n)}` : n < 0 ? `−${whole(-n)}` : "0");
 const signClass = (n) => (n > 0 ? "pos" : n < 0 ? "neg" : "even");
+// Écart d'or : en dessous de 100 pièces, à égalité ; pas encore connu : « even » aussi.
+const EVEN_GOLD = 100;
+const gapClass = (gap) => (gap == null || Math.abs(gap) < EVEN_GOLD ? "even" : signClass(gap));
 // « vs Sett » quand runes et build viennent du duel.
 const versus = (runes) => (runes.matchup?.applied ? ` vs ${runes.matchup.opponent}` : "");
 
@@ -816,8 +819,11 @@ function renderScore(game) {
   const ours = teamValue(game.allies);
   const theirs = teamValue(game.enemies);
   const gap = ours == null || theirs == null ? null : ours - theirs;
+  $("worth-us").textContent = ours == null ? "—" : whole(ours);
+  $("worth-them").textContent = theirs == null ? "—" : whole(theirs);
   $("gap-value").textContent = gap == null ? "—" : signed(gap);
-  $("gap-value").className = `v ${gap == null ? "even" : signClass(gap)}`;
+  // La case de l'écart prend la couleur de l'équipe qui a le plus d'or en objets.
+  $("gold-gap").className = `gold-gap ${gapClass(gap)}`;
 }
 
 function renderMe(game) {
@@ -854,13 +860,11 @@ function renderFaceoff(game) {
       const enemy = enemies.find((p) => p.position === lane);
       if (!ally && !enemy) continue;
       const gap = ready && ally?.itemsValue != null && enemy?.itemsValue != null ? ally.itemsValue - enemy.itemsValue : null;
+      // La case du milieu prend la couleur du joueur qui a le plus d'or en objets dans ce couloir.
       rows.push(
         el("div", "forow", [
           faceCell(ally, ready, false, false),
-          el("div", "lane", [
-            el("span", "k", label),
-            el("span", `v ${gap == null ? "even" : signClass(gap)}`, gap == null ? "" : signed(gap)),
-          ]),
+          el("div", `lane ${gapClass(gap)}`, [el("span", "k", label), el("span", "v", gap == null ? "" : signed(gap))]),
           faceCell(enemy, ready, true, lane === myLane),
         ]),
       );
@@ -874,7 +878,7 @@ function renderFaceoff(game) {
   }
   $("faceoff-rows").replaceChildren(...rows);
   $("faceoff-title").textContent = lanes ? "FACE-À-FACE" : "LES ÉQUIPES";
-  $("faceoff-aside").textContent = lanes && ready ? "écart d'objets par couloir" : "";
+  $("faceoff-aside").textContent = lanes && ready ? "écart d'or par couloir" : "";
   $("faceoff-note").hidden = !(ready && teamValue(allies) != null && teamValue(enemies) != null);
 }
 

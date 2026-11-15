@@ -30,8 +30,13 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "nat
 tokio = { version = "1", features = ["time"] }
 
 [target.'cfg(windows)'.dependencies]
-# Panneau en jeu : trouver la fenêtre de LoL et s'afficher sans lui prendre le clavier (déjà utilisé par Tauri).
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+# Fenêtres en jeu : trouver la fenêtre de LoL, s'afficher sans lui prendre le clavier, voir si Tab est tenue
+# (déjà utilisé par Tauri).
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

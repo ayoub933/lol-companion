@@ -4,8 +4,15 @@ mod opgg;
 mod overlay;
 mod settings;
 
+use overlay::Overlay;
 use settings::Settings;
-use std::{path::PathBuf, sync::Mutex};
+use std::{
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -229,6 +236,10 @@ pub fn run() {
                 });
             }
 
+            // Écarts d'or sur le tableau des scores : la touche Tab est suivie à part, bien plus souvent.
+            let gold_ready = Arc::new(AtomicBool::new(false));
+            overlay::watch_scoreboard(app.handle().clone(), gold_ready.clone());
+
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let mut tracker = lol::Tracker::new(assets, data_dir);
@@ -262,10 +273,16 @@ pub fn run() {
                         *handle.state::<Latest>().0.lock().unwrap() = snap.clone();
                         let _ = handle.emit("lol-state", &snap);
                     }
-                    // Panneau des objets sur le bord gauche du jeu, jusqu'à ce que tes deux premiers objets soient faits.
-                    let build_wanted = settings.show_build_overlay
-                        && snap.game.as_ref().is_some_and(|g| g.ready && g.build.is_some() && !g.build_done);
-                    overlay::update(&handle, build_wanted);
+                    // Panneau des objets sur le bord gauche du jeu, tant qu'il reste des objets à acheter.
+                    let build_wanted =
+                        settings.show_build_overlay && snap.game.as_ref().is_some_and(|g| g.ready && !g.panel.is_empty());
+                    overlay::update(&handle, Overlay::Build, build_wanted);
+                    // Écarts d'or : prêts dès que la partie a commencé ; Tab les fait apparaître.
+                    let gold = settings.show_gold_overlay && snap.game.as_ref().is_some_and(|g| g.ready);
+                    if gold {
+                        overlay::prepare(&handle, Overlay::Gold);
+                    }
+                    gold_ready.store(gold, Ordering::Relaxed);
                     let delay = lol::Tracker::next_delay(&snap);
                     previous = snap;
                     tokio::time::sleep(delay).await;

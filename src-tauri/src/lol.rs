@@ -36,8 +36,9 @@ const COUNTERS_SHOWN: usize = 10;
 /// Après une partie, ses stats arrivent dans l'historique du client avec un peu de retard.
 const RECORD_RETRY: Duration = Duration::from_secs(5);
 const RECORD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
-/// Prix total à partir duquel un objet qui ne s'améliore plus compte comme objet terminé (hors bottes).
-const FINISHED_PRICE: u64 = 2000;
+/// Objet gardé ce temps-là après son achat : acheté pour de bon, il quitte le panneau (un achat annulé ou
+/// revendu tout de suite n'y compte pas).
+const BOUGHT_AFTER: Duration = Duration::from_secs(30);
 /// Illustrations de skins gardées en mémoire (les plus récentes).
 const SPLASH_CACHE: usize = 6;
 
@@ -237,9 +238,7 @@ type Splash = (i64, Vec<u8>);
 struct ItemData {
     /// Chemin de l'icône dans le client.
     icon: String,
-    /// Objet terminé (cher, ne s'améliore plus, pas des bottes).
-    finished: bool,
-    /// Prix total dans la boutique.
+    /// Prix total dans la boutique (0 pour les balises, données gratuitement).
     price: u64,
 }
 
@@ -380,11 +379,8 @@ impl Assets {
         let items: HashMap<i64, ItemData> = list
             .iter()
             .filter_map(|it| {
-                let boots = it["categories"].as_array().is_some_and(|c| c.iter().any(|x| x == "Boots"));
-                let last = it["to"].as_array().is_none_or(Vec::is_empty);
                 let price = it["priceTotal"].as_u64().unwrap_or(0);
-                let finished = !boots && last && price >= FINISHED_PRICE;
-                Some((it["id"].as_i64()?, ItemData { icon: it["iconPath"].as_str()?.to_string(), finished, price }))
+                Some((it["id"].as_i64()?, ItemData { icon: it["iconPath"].as_str()?.to_string(), price }))
             })
             .collect();
         let loaded = !items.is_empty();
@@ -392,10 +388,9 @@ impl Assets {
         loaded
     }
 
-    /// Nombre d'objets terminés parmi ceux-ci (0 tant que la liste des objets n'est pas lue).
-    fn finished_count(&self, owned: &[i64]) -> usize {
-        let items = self.items.lock().unwrap();
-        owned.iter().filter(|id| items.get(id).is_some_and(|i| i.finished)).count()
+    /// Prix d'un objet dans la boutique (0 tant que la liste des objets n'est pas lue).
+    fn price(&self, id: i64) -> u64 {
+        self.items.lock().unwrap().get(&id).map_or(0, |i| i.price)
     }
 
     /// Valeur d'un inventaire au prix de la boutique : (objet, nombre) ; None tant que les prix ne sont pas lus.
@@ -490,10 +485,20 @@ pub struct Game {
     /// Les 10 champions : ton équipe et l'équipe adverse, chacune triée par poste.
     pub allies: Vec<Player>,
     pub enemies: Vec<Player>,
-    /// Objets à acheter, pour le panneau posé sur le jeu : ceux du duel contre ton adversaire de couloir.
-    pub build: Option<opgg::Build>,
-    /// true une fois tes deux premiers objets faits : le panneau se range.
-    pub build_done: bool,
+    /// Panneau posé sur le jeu : les objets à acheter (ceux du duel contre ton adversaire de couloir),
+    /// une rangée par étape (départ, 1er objet, bottes, 2e objet), sans ceux déjà achetés. Vide : rien à montrer.
+    pub panel: Vec<Vec<PanelItem>>,
+}
+
+/// Un objet du panneau posé sur le jeu.
+#[derive(Serialize, Clone, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PanelItem {
+    pub id: i64,
+    /// Ex. 2 pour deux potions de départ.
+    pub count: u32,
+    /// Taille de l'icône : "starter", "main", "boots", ou "alt" (autre choix possible, plus petit).
+    pub size: &'static str,
 }
 
 /// Un champion de la partie, tel que le tableau des scores (Tab) le montre.
@@ -541,6 +546,10 @@ struct CurrentGame {
     /// Objets du panneau, et pour quels (champion, poste, adversaire) ils ont été cherchés.
     build: Option<opgg::Build>,
     build_for: Option<(i64, String, Option<i64>)>,
+    /// Depuis quand chaque objet de ton inventaire y est.
+    held_since: HashMap<i64, Instant>,
+    /// Objets gardés au moins 30 s : achetés pour de bon, ils ne reviennent plus dans le panneau.
+    bought: HashSet<i64>,
 }
 
 /// Partie finie, en attente de ses stats dans l'historique du client.
@@ -1438,10 +1447,18 @@ impl Tracker {
                 game.opponent_id = opponent;
             }
         }
-        // Objets du panneau, et s'ils sont déjà faits d'après ton inventaire.
+        // Objets du panneau : ceux du build, sans ceux que tu as achetés pour de bon.
         let owned: Vec<i64> = p["items"].as_array().into_iter().flatten().filter_map(|it| it["itemID"].as_i64()).collect();
+        self.track_purchases(&owned);
         let build = self.game_build(base, password).await;
-        let build_done = build.as_ref().is_some_and(|b| self.first_items_done(b, &owned));
+        let panel = match (&build, &self.game) {
+            (Some(build), Some(game)) => {
+                // Départ : sa rangée part dès ton premier achat gardé 30 s, même si c'est un autre départ.
+                let started = game.bought.iter().any(|id| self.assets.price(*id) > 0);
+                panel(build, &game.bought, started)
+            }
+            _ => Vec::new(),
+        };
 
         let score = |key: &str| p["scores"][key].as_u64().unwrap_or(0);
         Game {
@@ -1459,8 +1476,24 @@ impl Tracker {
             skin_id,
             allies,
             enemies,
-            build,
-            build_done,
+            panel,
+        }
+    }
+
+    /// Note depuis quand chaque objet est dans ton inventaire : gardé 30 s, il est acheté pour de bon.
+    fn track_purchases(&mut self, owned: &[i64]) {
+        let Some(game) = &mut self.game else {
+            return;
+        };
+        let now = Instant::now();
+        game.held_since.retain(|id, _| owned.contains(id));
+        for id in owned {
+            game.held_since.entry(*id).or_insert(now);
+        }
+        for (id, since) in &game.held_since {
+            if now.duration_since(*since) >= BOUGHT_AFTER && game.bought.insert(*id) {
+                eprintln!("[panneau] objet {id} gardé 30 s : acheté");
+            }
         }
     }
 
@@ -1513,16 +1546,6 @@ impl Tracker {
             game.build = build.clone();
         }
         build
-    }
-
-    /// true quand tes deux premiers objets sont faits : ceux du panneau (ou leur autre choix),
-    /// ou deux autres objets terminés si tu as pris un autre chemin.
-    fn first_items_done(&self, build: &opgg::Build, owned: &[i64]) -> bool {
-        let has = |main: Option<&opgg::Item>, alt: Option<&opgg::Item>| {
-            [main, alt].into_iter().flatten().any(|i| owned.contains(&i.id))
-        };
-        let planned = has(build.core.first(), build.first_alt.as_ref()) && has(build.core.get(1), build.second_alt.as_ref());
-        planned || self.assets.finished_count(owned) >= 2
     }
 
     /// La partie d'après le client : les joueurs (sauf ceux en mode streamer, que le client ne donne pas)
@@ -1874,6 +1897,30 @@ fn with_atlas(mut build: opgg::Build, position: &str) -> opgg::Build {
         build.starter.insert(0, opgg::Item { id: ATLAS, name: "Atlas".to_string(), count: 1 });
     }
     build
+}
+
+/// Panneau en jeu, de haut en bas : départ, 1er objet (et son autre choix), bottes, 2e objet (et son autre choix).
+/// Un objet acheté pour de bon (`bought`) n'y est plus ; le 1er et le 2e objet partent aussi si tu as pris
+/// leur autre choix. `started` : ton premier achat est fait, la rangée du départ n'a plus lieu d'être.
+fn panel(build: &opgg::Build, bought: &HashSet<i64>, started: bool) -> Vec<Vec<PanelItem>> {
+    let item = |i: &opgg::Item, size| PanelItem { id: i.id, count: i.count, size };
+    // Une étape du build : vide dès qu'un de ses objets est acheté.
+    let step = |main: Option<&opgg::Item>, alt: Option<&opgg::Item>, size| -> Vec<PanelItem> {
+        if [main, alt].into_iter().flatten().any(|i| bought.contains(&i.id)) {
+            return Vec::new();
+        }
+        main.map(|m| item(m, size)).into_iter().chain(alt.map(|a| item(a, "alt"))).collect()
+    };
+    let starter = if started { Vec::new() } else { build.starter.iter().map(|i| item(i, "starter")).collect() };
+    [
+        starter,
+        step(build.core.first(), build.first_alt.as_ref(), "main"),
+        step(build.boots.first(), None, "boots"),
+        step(build.core.get(1), build.second_alt.as_ref(), "main"),
+    ]
+    .into_iter()
+    .filter(|row| !row.is_empty())
+    .collect()
 }
 
 /// Set d'objets au format du client : il apparaît dans la boutique, pour ce champion.

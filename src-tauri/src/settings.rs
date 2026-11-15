@@ -21,6 +21,8 @@ pub struct Settings {
     pub close_to_tray: bool,
     /// En partie : objets à acheter sur le bord gauche de l'écran du jeu.
     pub show_build_overlay: bool,
+    /// En partie : écarts d'or à côté du tableau des scores, tant que Tab est tenu.
+    pub show_gold_overlay: bool,
 }
 
 impl Default for Settings {
@@ -36,6 +38,7 @@ impl Default for Settings {
             notify_match_found: true,
             close_to_tray: true,
             show_build_overlay: true,
+            show_gold_overlay: true,
         }
     }
 }

@@ -1,23 +1,114 @@
-//! Panneau des objets à acheter, posé sur le bord gauche de l'écran du jeu, à mi-hauteur.
-//! Fenêtre transparente, toujours au-dessus, que les clics traversent et qui ne prend jamais le clavier.
-//! Elle ne se voit que si LoL est en mode « sans bordure » : en plein écran, le jeu passe par-dessus tout.
+//! Fenêtres posées sur le jeu : transparentes, toujours au-dessus, que les clics traversent et qui ne prennent
+//! jamais le clavier. Elles ne se voient que si LoL est en mode « sans bordure » : en plein écran, le jeu passe
+//! par-dessus tout.
+//! - Le panneau des objets à acheter, sur le bord gauche de l'écran du jeu, à mi-hauteur.
+//! - Les écarts d'or, à gauche du tableau des scores, tant que Tab est tenu.
 
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
-
-const LABEL: &str = "overlay";
-/// Taille de la fenêtre du panneau, en part de la hauteur de l'écran du jeu :
-/// le panneau garde les mêmes proportions en 1080p, en 1440p...
-const WIDTH: f64 = 0.16;
-const HEIGHT: f64 = 0.34;
 
 /// Rectangle en pixels de l'écran : (x, y, largeur, hauteur).
 type Rect = (i32, i32, i32, i32);
 
-/// Montre le panneau sur le jeu (`wanted`), ou le cache.
-/// Il reste caché tant que le jeu n'est pas la fenêtre active (Alt+Tab, clic sur l'autre écran).
-pub fn update(app: &AppHandle, wanted: bool) {
-    let window = app.get_webview_window(LABEL);
-    let Some(screen) = (if wanted { game_screen(app) } else { None }) else {
+/// Touche Tab regardée à ce rythme pendant une partie (le tableau des scores s'ouvre tant qu'elle est tenue).
+const TAB_POLL: Duration = Duration::from_millis(30);
+/// Hors partie : juste de quoi voir la partie commencer.
+const IDLE_POLL: Duration = Duration::from_millis(250);
+
+#[derive(Clone, Copy)]
+pub enum Overlay {
+    /// Objets à acheter.
+    Build,
+    /// Écarts d'or à côté du tableau des scores.
+    Gold,
+}
+
+impl Overlay {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Build => "overlay",
+            Self::Gold => "gold",
+        }
+    }
+
+    fn page(self) -> &'static str {
+        match self {
+            Self::Build => "overlay.html",
+            Self::Gold => "gold.html",
+        }
+    }
+
+    fn title(self) -> &'static str {
+        match self {
+            Self::Build => "LoL Companion · objets",
+            Self::Gold => "LoL Companion · écarts d'or",
+        }
+    }
+
+    /// Place de la fenêtre sur l'écran du jeu. Les tailles sont en part de la hauteur de l'écran (l'interface
+    /// du jeu suit cette hauteur) : la même place en 1080p, en 1440p...
+    fn rect(self, (x, y, width, height): Rect) -> Rect {
+        let part = |share: f64| (f64::from(height) * share).round() as i32;
+        match self {
+            // Collé au bord gauche, centré en hauteur ; 172 × 367 en 1080p.
+            Self::Build => {
+                let (w, h) = (part(0.16), part(0.34));
+                (x, y + (height - h) / 2, w, h)
+            }
+            // Le tableau des scores est centré et va de 380 à 1537 en 1920 × 1080 (relevé sur une capture) :
+            // la fenêtre se met juste à sa gauche, de 224 à 374, et de 238 à 702 en hauteur.
+            Self::Gold => {
+                let right = x + width / 2 - part(586.0 / 1080.0);
+                let (w, h) = (part(150.0 / 1080.0), part(464.0 / 1080.0));
+                (right - w, y + part(238.0 / 1080.0), w, h)
+            }
+        }
+    }
+}
+
+/// Montre une fenêtre sur le jeu (`wanted`), ou la cache.
+/// Elle reste cachée tant que le jeu n'est pas la fenêtre active (Alt+Tab, clic sur l'autre écran).
+pub fn update(app: &AppHandle, overlay: Overlay, wanted: bool) {
+    place(app, overlay, if wanted { game_screen(app) } else { None });
+}
+
+/// Crée la fenêtre à l'avance (cachée), pour qu'elle s'affiche tout de suite le moment venu.
+pub fn prepare(app: &AppHandle, overlay: Overlay) {
+    if app.get_webview_window(overlay.label()).is_some() {
+        return;
+    }
+    if let Err(e) = create(app, overlay) {
+        eprintln!("[panneau] fenêtre impossible : {e}");
+    }
+}
+
+/// Écarts d'or : affichés tant que Tab est tenu (sans Alt), jeu au premier plan.
+/// `ready` : une partie est en cours et le réglage est actif.
+pub fn watch_scoreboard(app: AppHandle, ready: Arc<AtomicBool>) {
+    std::thread::spawn(move || {
+        let mut shown: Option<Rect> = None;
+        loop {
+            let ready = ready.load(Ordering::Relaxed);
+            let screen = if ready && scoreboard_key_held() { game_screen(&app) } else { None };
+            if screen != shown {
+                place(&app, Overlay::Gold, screen);
+                shown = screen;
+            }
+            std::thread::sleep(if ready { TAB_POLL } else { IDLE_POLL });
+        }
+    });
+}
+
+/// Pose la fenêtre sur cet écran du jeu, ou la cache (None).
+fn place(app: &AppHandle, overlay: Overlay, screen: Option<Rect>) {
+    let window = app.get_webview_window(overlay.label());
+    let Some(screen) = screen else {
         if let Some(window) = window {
             hide(&window);
         }
@@ -25,7 +116,7 @@ pub fn update(app: &AppHandle, wanted: bool) {
     };
     let window = match window {
         Some(window) => window,
-        None => match create(app) {
+        None => match create(app, overlay) {
             Ok(window) => window,
             Err(e) => {
                 eprintln!("[panneau] fenêtre impossible : {e}");
@@ -33,18 +124,12 @@ pub fn update(app: &AppHandle, wanted: bool) {
             }
         },
     };
-    show(&window, panel(screen));
+    show(&window, overlay.rect(screen));
 }
 
-/// Le panneau : collé au bord gauche de l'écran du jeu, centré en hauteur.
-fn panel((x, y, _, height): Rect) -> Rect {
-    let (w, h) = ((f64::from(height) * WIDTH) as i32, (f64::from(height) * HEIGHT) as i32);
-    (x, y + (height - h) / 2, w, h)
-}
-
-fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
-    let window = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("overlay.html".into()))
-        .title("LoL Companion · objets")
+fn create(app: &AppHandle, overlay: Overlay) -> tauri::Result<WebviewWindow> {
+    let window = WebviewWindowBuilder::new(app, overlay.label(), WebviewUrl::App(overlay.page().into()))
+        .title(overlay.title())
         .transparent(true)
         .decorations(false)
         .shadow(false)
@@ -85,6 +170,16 @@ fn game_screen(_app: &AppHandle) -> Option<Rect> {
     }
 }
 
+/// Tab enfoncée, sans Alt (Alt+Tab sert à changer de fenêtre). L'état de la touche est seulement lu :
+/// elle arrive au jeu comme d'habitude.
+#[cfg(windows)]
+fn scoreboard_key_held() -> bool {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_MENU, VK_TAB};
+    // Bit de poids fort à 1 (valeur négative) : touche enfoncée en ce moment.
+    let down = |key: u16| unsafe { GetAsyncKeyState(i32::from(key)) } < 0;
+    down(VK_TAB) && !down(VK_MENU)
+}
+
 /// Mis au-dessus de tout, puis affiché sans prendre le clavier au jeu.
 #[cfg(windows)]
 fn show(window: &WebviewWindow, (x, y, w, h): Rect) {
@@ -115,6 +210,12 @@ fn game_screen(app: &AppHandle) -> Option<Rect> {
     let monitor = app.primary_monitor().ok()??;
     let (p, s) = (monitor.position(), monitor.size());
     Some((p.x, p.y, s.width as i32, s.height as i32))
+}
+
+/// Hors Windows (tests) : Tab compte comme tenue tant que le fichier nommé par LOL_FAKE_TAB existe.
+#[cfg(not(windows))]
+fn scoreboard_key_held() -> bool {
+    std::env::var_os("LOL_FAKE_TAB").is_some_and(|file| std::path::Path::new(&file).exists())
 }
 
 #[cfg(not(windows))]

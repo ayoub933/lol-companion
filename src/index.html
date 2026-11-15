@@ -59,7 +59,9 @@
       </div>
       <div class="setting-group">
         <div class="kicker">EN PARTIE</div>
-        <label><input type="checkbox" data-setting="showBuildOverlay" /> Objets à acheter sur le bord gauche du jeu (LoL en mode « sans bordure »)</label>
+        <label><input type="checkbox" data-setting="showBuildOverlay" /> Panneau des objets à acheter, sur le bord gauche du jeu</label>
+        <label><input type="checkbox" data-setting="showGoldOverlay" /> Écarts d'or à côté du tableau des scores, en tenant Tab</label>
+        <div class="muted small">Les deux s'affichent par-dessus le jeu en mode « sans bordure ».</div>
       </div>
       <div class="setting-group">
         <div class="kicker">FENÊTRE</div>
@@ -224,12 +226,15 @@
         <!-- En partie -->
         <section class="card score-card" id="score" hidden>
           <div class="score-teams"><span class="ally">TON ÉQUIPE</span><span class="enemy">EN FACE</span></div>
-          <div class="score-row">
-            <div class="kills us" id="kills-us"></div>
+          <!-- Deux bandes : les kills, puis l'or en objets de chaque équipe, l'écart en grand au milieu. -->
+          <div class="score-grid">
+            <div class="kills us"><span class="tag">KILLS</span><span id="kills-us"></span></div>
             <div class="clock" id="clock"></div>
-            <div class="kills them" id="kills-them"></div>
+            <div class="kills them"><span id="kills-them"></span><span class="tag">KILLS</span></div>
+            <div class="worth us"><span class="tag">OR · OBJETS</span><span id="worth-us"></span></div>
+            <div class="gold-gap" id="gold-gap"><span class="tag">ÉCART D'OR</span><span class="v" id="gap-value"></span></div>
+            <div class="worth them"><span id="worth-them"></span><span class="tag">OR · OBJETS</span></div>
           </div>
-          <div class="gap-chip"><span class="kicker">ÉCART D'OBJETS</span><span class="v" id="gap-value"></span></div>
         </section>
 
         <section class="card" id="faceoff" hidden>

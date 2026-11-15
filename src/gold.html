@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>LoL Companion · écarts d'or</title>
+    <!-- Écarts d'or posés juste à gauche du tableau des scores (Tab) : celui de ton équipe à hauteur de l'en-tête,
+         puis celui de chaque couloir à hauteur de sa ligne. Écart = valeur des objets au prix de la boutique. -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: transparent;
+      }
+      /* La fenêtre fait 464 px de haut sur un écran 1080p : 1 unité = 1 pixel sur un écran 1080p. */
+      :root {
+        --u: calc(100vh / 464);
+      }
+      /* Aux couleurs du tableau des scores : fond sombre, fin cadre doré. */
+      .pill {
+        position: absolute;
+        right: 0;
+        height: calc(26 * var(--u));
+        transform: translateY(-50%);
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        gap: calc(7 * var(--u));
+        padding: 0 calc(9 * var(--u));
+        background: rgba(6, 14, 16, 0.92);
+        border: calc(1 * var(--u)) solid rgba(178, 154, 97, 0.55);
+        border-radius: calc(2 * var(--u));
+        font: 700 calc(16 * var(--u)) / 1 "Segoe UI", system-ui, sans-serif;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      .pill .k {
+        font-size: calc(11 * var(--u));
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        color: #a39d8d;
+      }
+      /* Ton équipe devant : le bleu du tableau ; l'équipe d'en face devant : son rouge. */
+      .up {
+        color: #51a2e6;
+      }
+      .down {
+        color: #ee4b40;
+      }
+      .even {
+        color: #c8cdd0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="board"></div>
+    <script>
+      const { invoke } = window.__TAURI__.core;
+      const { listen } = window.__TAURI__.event;
+      const board = document.getElementById("board");
+      // Lignes du tableau des scores, de haut en bas.
+      const LANES = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"];
+      // Milieu de l'en-tête et des lignes, depuis le haut de la fenêtre (pixels d'un écran 1080p).
+      const HEADER = 35;
+      const FIRST_ROW = 111;
+      const ROW = 76;
+      // En dessous de 100 pièces d'écart : à égalité.
+      const EVEN = 100;
+      // Écarts affichés, pour ne pas tout refaire à chaque mise à jour de la partie.
+      let shown = "";
+
+      // « +450 », « −1,2k », « +12,4k ».
+      function short(gap) {
+        const size = Math.abs(gap);
+        const text =
+          size < 1000
+            ? String(Math.round(size))
+            : `${(size / 1000).toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}k`;
+        return `${gap >= EVEN ? "+" : gap <= -EVEN ? "−" : ""}${text}`;
+      }
+
+      // Valeur des objets d'une équipe ; null tant qu'un prix manque.
+      const worth = (team) =>
+        team.length && team.every((p) => p.itemsValue != null) ? team.reduce((sum, p) => sum + p.itemsValue, 0) : null;
+
+      function pill([label, y, gap]) {
+        const box = document.createElement("div");
+        box.className = "pill";
+        box.style.top = `calc(${y} * var(--u))`;
+        if (label) {
+          const k = document.createElement("span");
+          k.className = "k";
+          k.textContent = label;
+          box.append(k);
+        }
+        const value = document.createElement("span");
+        value.className = Math.abs(gap) < EVEN ? "even" : gap > 0 ? "up" : "down";
+        value.textContent = short(gap);
+        box.append(value);
+        return box;
+      }
+
+      function render(state) {
+        const game = state?.game;
+        const pills = [];
+        if (game?.ready) {
+          const ours = worth(game.allies);
+          const theirs = worth(game.enemies);
+          if (ours != null && theirs != null) pills.push(["ÉQUIPE", HEADER, ours - theirs]);
+          // Sans postes (ARAM...), les lignes ne se font pas face : l'écart d'équipe seulement.
+          LANES.forEach((lane, row) => {
+            const ally = game.allies.find((p) => p.position === lane);
+            const enemy = game.enemies.find((p) => p.position === lane);
+            if (ally?.itemsValue != null && enemy?.itemsValue != null) {
+              pills.push(["", FIRST_ROW + row * ROW, ally.itemsValue - enemy.itemsValue]);
+            }
+          });
+        }
+        const key = JSON.stringify(pills);
+        if (key === shown) return;
+        shown = key;
+        board.replaceChildren(...pills.map(pill));
+      }
+
+      window.addEventListener("DOMContentLoaded", async () => {
+        await listen("lol-state", (event) => render(event.payload));
+        render(await invoke("get_state"));
+      });
+    </script>
+  </body>
+</html>

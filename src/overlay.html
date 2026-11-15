@@ -81,9 +81,9 @@
       let shown = "";
 
       // Icône d'un objet, servie par l'app depuis le client (lcu://localhost/item-<numéro>).
-      function icon(item, size) {
+      function icon(item) {
         const box = document.createElement("div");
-        box.className = `icon ${size}`;
+        box.className = `icon ${item.size}`;
         const img = document.createElement("img");
         img.alt = "";
         img.src = convertFileSrc(`item-${item.id}`, "lcu");
@@ -103,31 +103,21 @@
         return box;
       }
 
-      function row(...icons) {
+      function row(items) {
         const div = document.createElement("div");
         div.className = "row";
-        div.append(...icons.filter(Boolean));
+        div.append(...items.map(icon));
         return div;
       }
 
-      // De haut en bas : départ, 1er objet (et son autre choix), bottes, 2e objet (et son autre choix).
+      // Les rangées viennent de l'app, de haut en bas : départ, 1er objet (et son autre choix), bottes,
+      // 2e objet (et son autre choix) ; un objet acheté pour de bon n'y est plus.
       function render(state) {
-        const build = state?.game?.build ?? null;
-        const key = JSON.stringify(build);
+        const rows = state?.game?.panel ?? [];
+        const key = JSON.stringify(rows);
         if (key === shown) return;
         shown = key;
-        if (!build) {
-          panel.replaceChildren();
-          return;
-        }
-        const pick = (item, size) => item && icon(item, size);
-        const rows = [
-          row(...build.starter.map((item) => icon(item, "starter"))),
-          row(pick(build.core[0], "main"), pick(build.firstAlt, "alt")),
-          row(pick(build.boots[0], "boots")),
-          row(pick(build.core[1], "main"), pick(build.secondAlt, "alt")),
-        ];
-        panel.replaceChildren(...rows.filter((r) => r.childElementCount > 0));
+        panel.replaceChildren(...rows.map(row));
       }
 
       window.addEventListener("DOMContentLoaded", async () => {
