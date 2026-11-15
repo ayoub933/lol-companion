@@ -29,6 +29,8 @@ const ATLAS: i64 = 3865;
 const FLASH: i64 = 4;
 /// Partie plus courte (en secondes) : partie annulée (« remake »), pas comptée.
 const REMAKE_SECONDS: u64 = 300;
+/// Parties montrées dans l'historique du salon.
+const MATCHES_SHOWN: usize = 10;
 /// Après une partie, ses stats arrivent dans l'historique du client avec un peu de retard.
 const RECORD_RETRY: Duration = Duration::from_secs(5);
 const RECORD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
@@ -78,7 +80,7 @@ pub struct Rank {
 pub struct Profile {
     pub solo: Option<Rank>,
     pub flex: Option<Rank>,
-    /// Tes 20 dernières parties (sans les parties annulées).
+    /// Tes 20 dernières parties, sans les parties annulées (« remakes ») : idem pour tout ce qui suit.
     pub recent_games: u64,
     pub recent_wins: u64,
     /// Victoire (true) ou défaite pour chacune de ces parties, de la plus récente à la plus ancienne.
@@ -87,6 +89,8 @@ pub struct Profile {
     pub last_champion_id: i64,
     /// Tes champions les plus joués sur ces parties.
     pub recent_champions: Vec<RecentChampion>,
+    /// Tes 10 dernières parties, de la plus récente à la plus ancienne (adversaire et poste si l'app les a suivies).
+    pub matches: Vec<history::GameRecord>,
 }
 
 #[derive(Serialize, Clone, Default, PartialEq, Debug)]
@@ -112,6 +116,10 @@ pub struct RuneImport {
     pub keystone: String,
     pub primary: String,
     pub secondary: String,
+    /// Numéros de la rune clé et des deux voies (pour leurs icônes) ; 0 si inconnus.
+    pub keystone_id: i64,
+    pub primary_id: i64,
+    pub secondary_id: i64,
     pub games: u64,
     pub wins: u64,
     pub build: Option<opgg::Build>,
@@ -208,7 +216,17 @@ pub struct Assets {
     item_icons: Arc<Mutex<HashMap<i64, Vec<u8>>>>,
     /// Dernières illustrations de skins lues, la plus récente à la fin.
     splashes: Arc<Mutex<Vec<Splash>>>,
+    /// Chemin de l'icône de chaque rune et de chaque voie de runes, lus une fois dans le client.
+    perk_paths: Arc<Mutex<HashMap<i64, String>>>,
+    /// Icônes des runes et emblèmes des rangs déjà lus, par chemin.
+    images: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    /// Pour Internet (CommunityDragon), avec la vérification normale des certificats.
+    web: reqwest::Client,
 }
+
+/// Rangs dont le client a un emblème (images/ranked-emblem/emblem-<rang>.png).
+const TIERS: [&str; 10] =
+    ["iron", "bronze", "silver", "gold", "platinum", "emerald", "diamond", "master", "grandmaster", "challenger"];
 
 /// Illustration d'un skin : (numéro du skin, image).
 type Splash = (i64, Vec<u8>);
@@ -234,6 +252,11 @@ impl Assets {
             .timeout(Duration::from_secs(2))
             .build()
             .expect("impossible de créer le client HTTP");
+        let web = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(3))
+            .timeout(Duration::from_secs(6))
+            .build()
+            .expect("impossible de créer le client HTTP");
         Self {
             http,
             auth: Arc::default(),
@@ -241,7 +264,60 @@ impl Assets {
             items: Arc::default(),
             item_icons: Arc::default(),
             splashes: Arc::default(),
+            perk_paths: Arc::default(),
+            images: Arc::default(),
+            web,
         }
+    }
+
+    /// Icône d'une rune ou d'une voie de runes (PNG), lue dans le client puis gardée en mémoire.
+    pub async fn perk_icon(&self, id: i64) -> Option<Vec<u8>> {
+        if self.perk_paths.lock().unwrap().is_empty() {
+            let mut paths = HashMap::new();
+            // perks.json : une liste ; perkstyles.json : { "styles": [...] }.
+            for file in ["/lol-game-data/assets/v1/perks.json", "/lol-game-data/assets/v1/perkstyles.json"] {
+                let doc = self.client_file(file).await.and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
+                let doc = doc.unwrap_or(Value::Null);
+                for entry in doc.as_array().or(doc["styles"].as_array()).into_iter().flatten() {
+                    if let (Some(id), Some(path)) = (entry["id"].as_i64(), entry["iconPath"].as_str()) {
+                        paths.insert(id, path.to_string());
+                    }
+                }
+            }
+            if paths.is_empty() {
+                return None;
+            }
+            *self.perk_paths.lock().unwrap() = paths;
+        }
+        let path = self.perk_paths.lock().unwrap().get(&id)?.clone();
+        self.cached_client_file(&path).await
+    }
+
+    /// Emblème d'un rang (PNG 16:9, l'emblème au milieu), lu dans le client ; sinon sur CommunityDragon,
+    /// qui reprend les fichiers du client. Gardé en mémoire.
+    pub async fn rank_emblem(&self, tier: &str) -> Option<Vec<u8>> {
+        let tier = TIERS.iter().find(|t| **t == tier)?;
+        let path = format!("/fe/lol-static-assets/images/ranked-emblem/emblem-{tier}.png");
+        if let Some(png) = self.cached_client_file(&path).await {
+            return Some(png);
+        }
+        let url = format!(
+            "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/images/ranked-emblem/emblem-{tier}.png"
+        );
+        let resp = self.web.get(url).send().await.ok().filter(|r| r.status().is_success())?;
+        let png = resp.bytes().await.ok()?.to_vec();
+        self.images.lock().unwrap().insert(path, png.clone());
+        Some(png)
+    }
+
+    /// Un fichier du client gardé en mémoire après la première lecture.
+    async fn cached_client_file(&self, path: &str) -> Option<Vec<u8>> {
+        if let Some(bytes) = self.images.lock().unwrap().get(path) {
+            return Some(bytes.clone());
+        }
+        let bytes = self.client_file(path).await?;
+        self.images.lock().unwrap().insert(path.to_string(), bytes.clone());
+        Some(bytes)
     }
 
     /// Icône carrée d'un champion (PNG), lue dans le client puis gardée en mémoire.
@@ -947,6 +1023,9 @@ impl Tracker {
         result.keystone = runes.keystone.clone();
         result.primary = runes.primary_name.clone();
         result.secondary = runes.secondary_name.clone();
+        result.keystone_id = runes.perks.first().copied().unwrap_or(0);
+        result.primary_id = runes.primary_style;
+        result.secondary_id = runes.sub_style;
         result.games = runes.games;
         result.wins = runes.wins;
         if self.settings.import_runes {
@@ -1478,8 +1557,7 @@ impl Tracker {
         };
         let games = matches.as_ref().and_then(|m| m["games"]["games"].as_array()).cloned().unwrap_or_default();
         let mut counts: Vec<(i64, u64, u64)> = Vec::new();
-        // (date, victoire, champion) de chaque partie, pour les ranger de la plus récente à la plus ancienne.
-        let mut results: Vec<(i64, bool, i64)> = Vec::new();
+        let mut records = Vec::new();
         for game in &games {
             let Some(record) = history::record_from(game, self.puuid.as_deref(), self.summoner_id, 0) else {
                 continue;
@@ -1489,7 +1567,6 @@ impl Tracker {
             }
             profile.recent_games += 1;
             profile.recent_wins += u64::from(record.win);
-            results.push((record.date, record.win, record.champion_id));
             match counts.iter_mut().find(|(id, _, _)| *id == record.champion_id) {
                 Some((_, played, won)) => {
                     *played += 1;
@@ -1497,15 +1574,29 @@ impl Tracker {
                 }
                 None => counts.push((record.champion_id, 1, u64::from(record.win))),
             }
+            records.push(record);
         }
-        results.sort_by_key(|(date, _, _)| std::cmp::Reverse(*date));
-        profile.recent_results = results.iter().map(|(_, win, _)| *win).collect();
-        profile.last_champion_id = results.first().map_or(0, |(_, _, champion)| *champion);
+        // De la plus récente à la plus ancienne.
+        records.sort_by_key(|r| std::cmp::Reverse(r.date));
+        profile.recent_results = records.iter().map(|r| r.win).collect();
+        profile.last_champion_id = records.first().map_or(0, |r| r.champion_id);
         // Les plus joués d'abord (à égalité, dans l'ordre de la liste du client).
         counts.sort_by_key(|(_, games, _)| std::cmp::Reverse(*games));
         for (champion_id, games, wins) in counts.into_iter().take(3) {
             let name = self.champ(base, password, champion_id).await.name;
             profile.recent_champions.push(RecentChampion { champion_id, name, games, wins });
+        }
+        records.truncate(MATCHES_SHOWN);
+        for mut record in records {
+            record.champion = self.champ(base, password, record.champion_id).await.name;
+            // Partie suivie par l'app : on connaît aussi ton adversaire direct, ton poste et ton skin.
+            if let Some(known) = self.history.get(record.game_id) {
+                record.position.clone_from(&known.position);
+                record.opponent_id = known.opponent_id;
+                record.opponent.clone_from(&known.opponent);
+                record.skin_id = known.skin_id;
+            }
+            profile.matches.push(record);
         }
         Some(profile)
     }

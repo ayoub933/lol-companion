@@ -25,12 +25,13 @@
       </div>
     </header>
 
-    <section class="panel notice" id="update" hidden>
+    <section class="card notice" id="update" hidden>
       <span id="update-text"></span>
       <button id="update-button" class="action">Installer et redémarrer</button>
     </section>
 
-    <section class="panel" id="settings" hidden>
+    <!-- Réglages : un panneau par-dessus l'écran, sous le bouton. -->
+    <section class="card settings" id="settings" hidden>
       <div class="panel-head">
         <span class="kicker">RÉGLAGES · v0.8</span>
         <button class="link" id="settings-close">FERMER</button>
@@ -70,11 +71,12 @@
       <div class="muted" id="settings-status"></div>
     </section>
 
-    <!-- Fenêtre large : deux colonnes (équipes à droite). Fenêtre étroite : une seule, dans l'ordre de styles.css. -->
+    <!-- Tableau de bord : des blocs encadrés, en colonnes alignées en haut et en bas (main.js, layout()).
+         Fenêtre étroite : une seule colonne, les blocs dans l'ordre de styles.css. -->
     <main id="main">
-      <div class="col">
+      <div class="col" id="col-a">
         <!-- Salon -->
-        <section class="hero player" id="player" hidden aria-label="Fiche joueur">
+        <section class="card hero player" id="player" hidden aria-label="Fiche joueur">
           <div class="art" aria-hidden="true">
             <span class="stripe blue-1"></span>
             <span class="stripe blue-2"></span>
@@ -94,43 +96,25 @@
           </div>
         </section>
 
-        <section class="figures" id="figures" hidden aria-label="Chiffres clés">
-          <div class="figure"><div class="num" id="solo-rate"></div><div class="sub" id="solo-rate-sub"></div></div>
-          <div class="figure"><div class="num" id="recent-record"></div><div class="sub" id="recent-sub"></div></div>
-          <div class="figure"><div class="num" id="flex-tier"></div><div class="sub" id="flex-sub"></div></div>
-        </section>
-
-        <section class="block" id="form" hidden>
+        <section class="card" id="form" hidden>
           <h2><span class="mark" aria-hidden="true"></span>FORME DU MOMENT<span class="aside" id="form-aside"></span></h2>
+          <div class="figures" id="figures" aria-label="Chiffres clés">
+            <div class="figure"><div class="num" id="solo-rate"></div><div class="sub" id="solo-rate-sub"></div></div>
+            <div class="figure"><div class="num" id="recent-record"></div><div class="sub" id="recent-sub"></div></div>
+            <div class="figure"><div class="num" id="flex-tier"></div><div class="sub" id="flex-sub"></div></div>
+          </div>
           <div class="form-strip" id="form-strip" role="img"></div>
-          <div class="form-legend"><span>la plus récente</span><span>la plus ancienne</span></div>
+          <div class="form-legend" id="form-legend"><span>la plus récente</span><span>la plus ancienne</span></div>
         </section>
 
-        <section class="block" id="moment" hidden>
+        <section class="card" id="moment" hidden>
           <h2><span class="mark" aria-hidden="true"></span>CHAMPIONS DU MOMENT</h2>
           <div class="moment" id="moment-cards"></div>
-        </section>
-
-        <section class="panel" id="last-game" hidden aria-label="Dernier match">
-          <div class="last-head">
-            <span class="result" id="last-result"></span>
-            <span class="last-meta" id="last-meta"></span>
-          </div>
-          <div class="last-body">
-            <div class="versus-line" id="last-versus"></div>
-            <div class="cells" id="last-grid"></div>
-            <div class="muted small" id="last-when"></div>
-          </div>
-        </section>
-
-        <section class="block" id="stats" hidden>
-          <h2><span class="mark" aria-hidden="true"></span>TES STATS<span class="aside">parties suivies par l'app</span></h2>
-          <div class="rows" id="stats-champions"></div>
-          <div class="rows" id="stats-duels"></div>
+          <p class="empty-msg" id="moment-empty" hidden>Aucune partie récente.</p>
         </section>
 
         <!-- Sélection des champions -->
-        <section class="hero duel" id="duel-hero" hidden aria-label="Ton duel">
+        <section class="card hero duel" id="duel-hero" hidden aria-label="Ton duel">
           <div class="half me" aria-hidden="true">
             <span class="stripe blue-2 wide"></span>
             <span class="stripe blue-3 thin"></span>
@@ -153,40 +137,93 @@
           </div>
         </section>
 
-        <section class="panel duel-panel" id="duel" hidden aria-label="Statistiques du duel">
+        <section class="card duel-panel" id="duel" hidden aria-label="Statistiques du duel">
+          <h2><span class="mark" aria-hidden="true"></span>LE DUEL<span class="aside" id="matchup-games"></span></h2>
           <div class="duel-rates" id="duel-rates">
             <span class="rate me" id="rate-me"></span>
             <span class="rate-label">VICTOIRES<br />DANS CE DUEL</span>
             <span class="rate them" id="rate-them"></span>
           </div>
           <div class="duel-bar" id="duel-bar" aria-hidden="true"><span class="me" id="bar-me"></span><span class="them"></span></div>
-          <div class="duel-meta"><span id="matchup-games"></span><span class="edge" id="matchup-edge"></span></div>
-          <div class="muted small" id="matchup-note"></div>
+          <div class="duel-meta" id="duel-meta"><span class="muted" id="matchup-note"></span><span class="edge" id="matchup-edge"></span></div>
           <div class="duel-record" id="duel-record" hidden>
             <span class="chip-dark">TON BILAN</span>
             <span class="score" id="duel-score"></span>
             <span class="muted small" id="duel-who"></span>
           </div>
           <p class="tip" id="matchup-tip" hidden><span class="kicker">ASTUCE</span><span id="tip-text"></span></p>
-        </section>
-
-        <section class="panel runes" id="runes" hidden aria-label="Runes">
-          <span class="kicker span">RUNES</span>
-          <span class="keystone" id="keystone"></span>
-          <span class="rate me" id="runes-rate"></span>
-          <span class="muted small" id="runes-trees"></span>
-          <span class="muted small right" id="runes-games"></span>
-          <span class="applied span" id="runes-applied"></span>
-        </section>
-
-        <section class="block" id="build" hidden>
-          <h2><span class="mark" aria-hidden="true"></span>LE BUILD</h2>
-          <div class="panel list" id="build-list"></div>
+          <p class="empty-msg" id="duel-empty" hidden></p>
         </section>
 
         <!-- En partie -->
-        <section class="score-block" id="score" hidden>
-          <div class="score-teams"><span class="win">TON ÉQUIPE</span><span class="loss">EN FACE</span></div>
+        <section class="card loading" id="game-loading" hidden>
+          <span class="kicker">PARTIE EN COURS</span>
+          <span class="loading-title">CHARGEMENT…</span>
+          <span class="muted small">Les rangs sont déjà là, le reste arrive dès le début de la partie.</span>
+        </section>
+
+        <section class="card me" id="me-card" hidden aria-label="Toi">
+          <div class="me-hero">
+            <div class="art" aria-hidden="true">
+              <span class="stripe blue-1"></span>
+              <span class="stripe blue-2"></span>
+              <span class="stripe blue-3"></span>
+              <img id="me-skin" alt="" hidden />
+            </div>
+            <span class="fade" aria-hidden="true"></span>
+            <div class="who">
+              <span class="kicker light" id="me-line"></span>
+              <h1 id="me-champion"></h1>
+            </div>
+          </div>
+          <div class="cells" id="me-stats">
+            <div class="cell"><div class="k">KDA</div><div class="v" id="kda"></div></div>
+            <div class="cell"><div class="k" id="cs-label">CS</div><div class="v" id="cs"></div></div>
+            <div class="cell"><div class="k">Or en poche</div><div class="v ally" id="gold"></div></div>
+          </div>
+          <div class="chips" id="items" hidden></div>
+        </section>
+
+        <p class="card hint" id="hint">Lance le client League of Legends : l'app s'y connecte toute seule.</p>
+      </div>
+
+      <div class="col" id="col-b">
+        <!-- Salon : tes 10 dernières parties, la plus récente en grand -->
+        <section class="card" id="history" hidden>
+          <h2><span class="mark" aria-hidden="true"></span>HISTORIQUE<span class="aside" id="history-aside"></span></h2>
+          <div class="last" id="last-game" hidden aria-label="Dernier match">
+            <div class="last-head">
+              <span class="result" id="last-result"></span>
+              <span class="last-meta" id="last-meta"></span>
+            </div>
+            <div class="last-body">
+              <div class="versus-line" id="last-versus"></div>
+              <div class="cells six" id="last-grid"></div>
+              <div class="muted small" id="last-when"></div>
+            </div>
+          </div>
+          <div class="rows" id="history-rows"></div>
+          <p class="empty-msg" id="history-empty" hidden></p>
+        </section>
+
+        <!-- Sélection des champions -->
+        <section class="card" id="picks" hidden>
+          <h2><span class="mark" aria-hidden="true"></span>LA SÉLECTION<span class="aside" id="picks-aside"></span></h2>
+          <div class="picks">
+            <div class="pcol" id="pick-allies"></div>
+            <div class="pcol" id="pick-enemies"></div>
+          </div>
+        </section>
+
+        <section class="card" id="help" hidden>
+          <h2><span class="mark" aria-hidden="true"></span>AIDE AU CHOIX<span class="aside">OP.GG</span></h2>
+          <div class="pcol" id="help-list"></div>
+          <div class="muted small" id="help-pending"></div>
+        </section>
+
+        <!-- En partie -->
+        <section class="card score-card" id="score" hidden>
+          <div class="score-teams"><span class="ally">TON ÉQUIPE</span><span class="enemy">EN FACE</span></div>
           <div class="score-row">
             <div class="kills us" id="kills-us"></div>
             <div class="clock" id="clock"></div>
@@ -195,54 +232,44 @@
           <div class="gap-chip"><span class="kicker">ÉCART D'OBJETS</span><span class="v" id="gap-value"></span></div>
         </section>
 
-        <section class="panel loading" id="game-loading" hidden>
-          <span class="kicker">PARTIE EN COURS</span>
-          <span class="loading-title">CHARGEMENT…</span>
-          <span class="muted small">Les rangs sont déjà là, le reste arrive dès le début de la partie.</span>
-        </section>
-
-        <section class="me-card" id="me-card" hidden aria-label="Toi">
-          <div class="portrait" aria-hidden="true">
-            <span class="stripe blue-2 wide"></span>
-            <span class="stripe blue-3 thin"></span>
-            <img id="me-skin" alt="" hidden />
-          </div>
-          <div class="who">
-            <span class="kicker light" id="me-line"></span>
-            <h1 id="me-champion"></h1>
-          </div>
-        </section>
-
-        <div class="cells" id="me-stats" hidden>
-          <div class="cell"><div class="k">KDA</div><div class="v" id="kda"></div></div>
-          <div class="cell"><div class="k" id="cs-label">CS</div><div class="v" id="cs"></div></div>
-          <div class="cell"><div class="k">Or en poche</div><div class="v win" id="gold"></div></div>
-        </div>
-
-        <div class="chips" id="items" hidden></div>
-
-        <p class="hint" id="hint">Lance le client League of Legends : l'app s'y connecte toute seule.</p>
-      </div>
-
-      <div class="col">
-        <section class="block" id="picks" hidden>
-          <h2><span class="mark" aria-hidden="true"></span>LA SÉLECTION<span class="aside" id="picks-aside"></span></h2>
-          <div class="picks">
-            <div class="pcol" id="pick-allies"></div>
-            <div class="pcol" id="pick-enemies"></div>
-          </div>
-        </section>
-
-        <section class="block" id="help" hidden>
-          <h2><span class="mark" aria-hidden="true"></span>AIDE AU CHOIX<span class="aside">OP.GG</span></h2>
-          <div class="pcol" id="help-list"></div>
-          <div class="muted small" id="help-pending"></div>
-        </section>
-
-        <section class="block" id="faceoff" hidden>
+        <section class="card" id="faceoff" hidden>
           <h2><span class="mark" aria-hidden="true"></span><span id="faceoff-title">FACE-À-FACE</span><span class="aside" id="faceoff-aside"></span></h2>
           <div class="fo" id="faceoff-rows"></div>
           <p class="footnote" id="faceoff-note" hidden>Écart = valeur des objets achetés, au prix de la boutique. L'or en poche ne compte pas.</p>
+        </section>
+      </div>
+
+      <div class="col" id="col-c">
+        <!-- Salon -->
+        <section class="card" id="stats" hidden>
+          <h2><span class="mark" aria-hidden="true"></span>TES STATS<span class="aside">parties suivies par l'app</span></h2>
+          <div class="rows" id="stats-champions"></div>
+          <p class="empty-msg" id="stats-empty" hidden>Tes stats par champion arrivent avec ta première partie jouée avec l'app ouverte.</p>
+        </section>
+
+        <section class="card" id="duels" hidden>
+          <h2><span class="mark" aria-hidden="true"></span>TES DUELS</h2>
+          <div class="rows" id="stats-duels"></div>
+          <p class="empty-msg" id="duels-empty" hidden>Ton bilan contre chaque adversaire direct, au fil de tes parties suivies par l'app.</p>
+        </section>
+
+        <!-- Sélection des champions -->
+        <section class="card runes" id="runes" hidden aria-label="Runes">
+          <h2 class="span"><span class="mark" aria-hidden="true"></span>RUNES</h2>
+          <div class="rune-main">
+            <img class="keystone-icon" id="keystone-icon" alt="" hidden />
+            <span class="keystone" id="keystone"></span>
+          </div>
+          <span class="rate me" id="runes-rate"></span>
+          <span class="trees" id="runes-trees"></span>
+          <span class="muted small right" id="runes-games"></span>
+          <span class="applied span" id="runes-applied"></span>
+        </section>
+
+        <section class="card" id="build" hidden>
+          <h2><span class="mark" aria-hidden="true"></span>LE BUILD</h2>
+          <div class="list" id="build-list"></div>
+          <p class="empty-msg" id="build-empty" hidden>Le build arrive quand tu verrouilles ton champion.</p>
         </section>
       </div>
     </main>

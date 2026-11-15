@@ -1,4 +1,4 @@
-/* Style « plateau télé » : fond sombre, bandes obliques, chiffres en Barlow Condensed. */
+/* Style « plateau télé » : fond sombre, blocs encadrés, bandes obliques, chiffres en Barlow Condensed. */
 
 /* Polices embarquées (licence SIL OFL 1.1, voir fonts/OFL.txt). */
 @font-face { font-family: "Barlow Condensed"; font-style: normal; font-weight: 600; font-display: swap; src: url("fonts/barlow-condensed-latin-600-normal.woff2") format("woff2"); }
@@ -12,10 +12,13 @@
 
 :root {
   color-scheme: dark;
-  --bg: #111014;
-  --panel: #1a1920;
-  --panel-2: #16151b;
-  --chip: #23222a;
+  --bg: #0f0e12;
+  /* Blocs : fond et cadre ; à l'intérieur, les lignes et cases un ton plus clair. */
+  --card: #17161d;
+  --card-line: #2b2a34;
+  --panel: #1f1e27;
+  --panel-2: #131217;
+  --chip: #282731;
   --line: #2e2d36;
   --text: #f2f2f5;
   --text-2: #d5d5de;
@@ -28,6 +31,11 @@
   --enemy: #ff7a2f;
   --enemy-text: #ff8f52;
   --enemy-bg: #3e261f;
+  /* Résultats : victoire en vert-bleu, défaite en rouge-rose (historique, forme, bilans). */
+  --victory: #2fd0b5;
+  --victory-tint: rgba(47, 208, 181, 0.17);
+  --defeat: #ff5a7a;
+  --defeat-tint: rgba(255, 90, 122, 0.17);
   --display: "Barlow Condensed", "Arial Narrow", sans-serif;
   --body: "Barlow", "Segoe UI", sans-serif;
   font-family: var(--body);
@@ -41,33 +49,47 @@
   display: none !important;
 }
 
-body {
-  max-width: 460px;
-  margin: 0 auto;
-  padding: 8px 12px 24px;
-}
-
 button {
   font: inherit;
 }
 
-/* ---------- Mise en page ---------- */
+/* ---------- Mise en page ----------
+   main.js règle l'échelle (zoom) selon la taille de la fenêtre : les tailles ci-dessous sont celles de la
+   fenêtre standard, 1280 × 720. Les blocs y forment un tableau de bord qui remplit la fenêtre : des colonnes
+   alignées en haut et en bas, le dernier bloc de chaque colonne allant jusqu'en bas (classe « grow »). */
 
-/* Une seule colonne : les blocs dans cet ordre (les deux .col s'effacent). */
+body {
+  box-sizing: border-box;
+  max-width: 644px;
+  margin: 0 auto;
+  padding: 8px 12px 12px;
+}
+body.board {
+  max-width: none;
+  height: var(--vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+html.board {
+  overflow: hidden;
+}
+
+/* Fenêtre étroite : une seule colonne qui défile, les blocs dans cet ordre (les trois .col s'effacent). */
 main {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
 }
-.col {
+body:not(.board) .col {
   display: contents;
 }
 #player { order: 1; }
-#figures { order: 2; }
-#form { order: 3; }
+#form { order: 2; }
+#history { order: 3; }
 #moment { order: 4; }
-#last-game { order: 5; }
-#stats { order: 6; }
+#stats { order: 5; }
+#duels { order: 6; }
 #duel-hero { order: 10; }
 #duel { order: 11; }
 #picks { order: 12; }
@@ -77,44 +99,108 @@ main {
 #score { order: 20; }
 #game-loading { order: 21; }
 #me-card { order: 22; }
-#me-stats { order: 23; }
-#items { order: 24; }
-#faceoff { order: 25; }
+#faceoff { order: 23; }
 #hint { order: 30; }
 
-/* Fenêtre large, avec des équipes à montrer : elles passent dans une colonne à droite. */
-@media (min-width: 900px) {
-  body.split {
-    max-width: 960px;
-  }
-  main.split {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    column-gap: 16px;
-    align-items: start;
-  }
-  main.split .col {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-  }
+/* Tableau de bord : une grille par écran (en douzièmes de la largeur). */
+body.board main {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  gap: 10px;
+}
+body[data-view="lobby"] main {
+  grid-template-columns: 4fr 5fr 3fr;
+}
+body[data-view="selection"] main {
+  grid-template-columns: 5fr 4fr 3fr;
+}
+body[data-view="game"] main {
+  grid-template-columns: 4fr 8fr;
+}
+body.board .col {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  container-type: inline-size;
+}
+/* Fenêtre étroite : la colonne unique sert de mesure aux illustrations. */
+main {
+  container-type: inline-size;
+}
+body.board .col.unused {
+  display: none;
+}
+body.board .card {
+  flex: none;
+}
+body.board .card.grow {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
 }
 
-/* ---------- Éléments communs ---------- */
+/* ---------- Blocs ---------- */
 
-.panel {
-  background: var(--panel);
+.card {
+  position: relative;
+  box-sizing: border-box;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px 14px;
+  background: var(--card);
+  border: 1px solid var(--card-line);
 }
+/* Le trait bleu en haut à gauche de chaque cadre. */
+.card::after {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: -1px;
+  width: 42px;
+  height: 3px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.card::-webkit-scrollbar {
+  width: 8px;
+}
+.card::-webkit-scrollbar-thumb {
+  background: var(--chip);
+}
+
+/* Bloc sans contenu pour l'instant : un message, au milieu du cadre. */
+.empty-msg {
+  margin: auto 0;
+  padding: 6px 0;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
 .muted {
   color: var(--muted);
 }
 .small {
   font-size: 13px;
 }
+/* Résultats. */
 .win {
-  color: var(--accent-light);
+  color: var(--victory);
 }
 .loss {
+  color: var(--defeat);
+}
+/* Équipes : la tienne en bleu, celle d'en face en orange. */
+.ally {
+  color: var(--accent-light);
+}
+.enemy {
   color: var(--enemy-text);
 }
 .faint {
@@ -147,21 +233,23 @@ main {
   color: var(--enemy-text);
 }
 
+/* Titre d'un bloc, dans son cadre. */
 h2 {
   margin: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 19px;
+  font-size: 17px;
+  line-height: 1.2;
   letter-spacing: 0.03em;
 }
 .mark {
   flex: none;
-  width: 18px;
-  height: 14px;
+  width: 15px;
+  height: 11px;
   background: var(--accent);
   transform: skewX(-12deg);
 }
@@ -170,16 +258,11 @@ h2 {
   font-family: var(--body);
   font-style: normal;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 12px;
   letter-spacing: 0;
   color: var(--muted);
   text-align: right;
-}
-
-.block {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  white-space: nowrap;
 }
 
 /* Icône de champion (biseautée). */
@@ -206,6 +289,44 @@ span.icon.slot {
   border: 2px dashed var(--faint);
 }
 
+/* Emblème de rang : l'image du client est une toile 16:9 avec l'emblème au milieu (de 37 à 63 % de la largeur,
+   de 30 à 65 % de la hauteur) ; on n'en montre que le milieu, agrandi. */
+.emblem {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  overflow: hidden;
+  vertical-align: middle;
+}
+.emblem img {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 360%;
+  transform: translate(-50%, -47.5%);
+}
+.emblem.big {
+  width: 78px;
+  height: 78px;
+}
+.emblem.mid {
+  width: 40px;
+  height: 40px;
+}
+.emblem.small {
+  width: 20px;
+  height: 20px;
+}
+/* Le nom du rang, quand il n'y a pas d'emblème (non classé, ou image absente). */
+.tier-name {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 800;
+}
+.tier-name + .division {
+  margin-left: 5px;
+}
+
 /* Petites cases de chiffres (KDA, CS, or...). */
 .cells {
   display: grid;
@@ -213,23 +334,34 @@ span.icon.slot {
   gap: 1px;
   background: var(--line);
 }
+.cells.six {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
 .cell {
   min-width: 0;
-  padding: 8px 10px;
+  padding: 7px 10px;
   background: var(--panel);
 }
 .cell .k {
   font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .cell .v {
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 26px;
+  font-size: 24px;
   line-height: 1.05;
   white-space: nowrap;
+}
+.cells.six .cell {
+  padding: 6px 8px;
+}
+.cells.six .cell .v {
+  font-size: 20px;
 }
 
 /* Bandes obliques derrière les illustrations (et à leur place tant qu'elles manquent). */
@@ -251,11 +383,12 @@ span.icon.slot {
 /* ---------- En-tête ---------- */
 
 .top {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 14px;
+  margin-bottom: 8px;
 }
 .brand {
   display: flex;
@@ -270,7 +403,7 @@ span.icon.slot {
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 20px;
+  font-size: 19px;
   line-height: 1;
   clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
 }
@@ -311,14 +444,14 @@ span.icon.slot {
 }
 .icon-button {
   flex: none;
-  width: 44px;
-  height: 44px;
+  width: 38px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
   border: none;
-  background: var(--panel);
+  background: var(--card);
   color: var(--text);
   cursor: pointer;
   clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
@@ -330,13 +463,12 @@ span.icon.slot {
 /* ---------- Mise à jour et réglages ---------- */
 
 .notice {
-  display: flex;
+  flex: none;
+  flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 14px;
-  padding: 10px 12px;
-  border-left: 4px solid var(--accent);
+  margin-bottom: 10px;
+  padding: 9px 12px;
   font-size: 13px;
 }
 .action {
@@ -358,12 +490,18 @@ span.icon.slot {
   cursor: default;
 }
 
-#settings {
-  display: flex;
-  flex-direction: column;
+/* Par-dessus l'écran, sous le bouton des réglages. */
+.settings {
+  position: fixed;
+  top: 54px;
+  right: 12px;
+  z-index: 20;
+  width: 540px;
+  max-width: calc(100% - 24px);
+  max-height: calc(var(--vh, 720px) - 70px);
+  overflow: auto;
   gap: 14px;
-  margin-bottom: 14px;
-  padding: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.65);
 }
 .panel-head {
   display: flex;
@@ -413,26 +551,19 @@ input[type="checkbox"] {
 }
 
 .hint {
-  margin: 0;
-  padding: 12px;
-  background: var(--panel);
   color: var(--muted);
   font-size: 13px;
 }
 
-/* ---------- Salon ---------- */
+/* ---------- Illustrations (salon, sélection, partie) ---------- */
 
-.hero {
-  position: relative;
+.card.hero {
+  padding: 0;
   overflow: hidden;
   background: var(--panel-2);
 }
-.hero.player {
-  height: 250px;
-}
 .art,
-.half,
-.portrait {
+.half {
   position: absolute;
   overflow: hidden;
 }
@@ -440,8 +571,7 @@ input[type="checkbox"] {
   inset: 0;
 }
 .art img,
-.half img,
-.portrait img {
+.half img {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -458,10 +588,17 @@ input[type="checkbox"] {
   background: linear-gradient(0deg, #111014 8%, rgba(17, 16, 20, 0));
   pointer-events: none;
 }
+
+/* ---------- Salon ---------- */
+
+/* Hauteur selon la largeur de la colonne (cqw : centième de sa largeur). */
+.hero.player {
+  height: clamp(190px, 50cqw, 250px);
+}
 .hero-name {
   position: absolute;
   left: 0;
-  bottom: 16px;
+  bottom: 14px;
   max-width: 70%;
   display: flex;
   flex-direction: column;
@@ -472,13 +609,13 @@ input[type="checkbox"] {
   box-sizing: border-box;
   max-width: 100%;
   margin: 0;
-  padding: 4px 28px 0 14px;
+  padding: 4px 26px 0 14px;
   background: var(--accent);
   color: #fff;
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 50px;
+  font-size: 46px;
   line-height: 1;
   white-space: nowrap;
   overflow: hidden;
@@ -486,10 +623,10 @@ input[type="checkbox"] {
   clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
 }
 .name-box.mid {
-  font-size: 40px;
+  font-size: 38px;
 }
 .name-box.long {
-  font-size: 30px;
+  font-size: 29px;
 }
 .tag-box {
   padding: 3px 20px 3px 14px;
@@ -497,14 +634,14 @@ input[type="checkbox"] {
   color: var(--bg);
   font-family: var(--display);
   font-weight: 700;
-  font-size: 15px;
+  font-size: 14px;
   letter-spacing: 0.06em;
   clip-path: polygon(0 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
 }
 .hero-rank {
   position: absolute;
   right: 12px;
-  bottom: 16px;
+  bottom: 14px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -513,35 +650,44 @@ input[type="checkbox"] {
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
 }
 .hero-rank .tier {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: -6px -4px -8px 0;
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 26px;
+  font-size: 25px;
   line-height: 1;
+}
+.hero-rank .division {
+  font-size: 32px;
 }
 .hero-rank .lp {
   font-family: var(--display);
   font-weight: 800;
-  font-size: 18px;
+  font-size: 17px;
   color: var(--accent-light);
 }
 
 .figures {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  background: var(--panel);
 }
 .figure {
   position: relative;
   min-width: 0;
-  padding: 12px 12px 10px;
+  padding: 0 10px;
+}
+.figure:first-child {
+  padding-left: 0;
 }
 .figure + .figure::before {
   content: "";
   position: absolute;
   left: 0;
-  top: 12px;
-  bottom: 12px;
+  top: 2px;
+  bottom: 2px;
   width: 2px;
   background: var(--line);
   transform: skewX(-12deg);
@@ -550,21 +696,28 @@ input[type="checkbox"] {
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 40px;
+  font-size: 36px;
   line-height: 1;
   white-space: nowrap;
 }
 .figure .num small {
-  font-size: 22px;
+  font-size: 20px;
 }
-/* Un rang écrit (« ÉMERAUDE IV ») au lieu d'un chiffre : plus petit, à la même hauteur. */
-.figure .num .tier-text {
-  display: inline-block;
-  font-size: 24px;
-  line-height: 40px;
+/* Rang flexible : son emblème et sa division, à la hauteur des chiffres. */
+#flex-tier {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+#flex-tier .division {
+  font-size: 28px;
+}
+#flex-tier .tier-name {
+  font-size: 21px;
 }
 .figure .sub {
-  margin-top: 2px;
+  margin-top: 3px;
   font-size: 12px;
   line-height: 1.3;
   color: var(--muted);
@@ -574,24 +727,25 @@ input[type="checkbox"] {
   display: flex;
   align-items: flex-end;
   gap: 5px;
-  height: 36px;
+  height: 30px;
   padding: 0 4px;
 }
 .form-strip span {
   flex: 1;
-  height: 36px;
-  background: var(--accent-light);
+  height: 30px;
+  background: var(--victory);
   transform: skewX(-12deg);
 }
 .form-strip span.l {
   box-sizing: border-box;
-  height: 16px;
+  height: 14px;
   background: none;
-  border: 2px solid var(--enemy);
+  border: 2px solid var(--defeat);
 }
 .form-legend {
   display: flex;
   justify-content: space-between;
+  margin-top: -4px;
   font-size: 12px;
   color: var(--muted);
 }
@@ -605,14 +759,14 @@ input[type="checkbox"] {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   padding: 10px;
   background: var(--panel);
   clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
 }
 .mcard .icon {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
 }
 .mcard .mname {
@@ -620,7 +774,7 @@ input[type="checkbox"] {
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 22px;
+  font-size: 21px;
   line-height: 1;
   white-space: nowrap;
   overflow: hidden;
@@ -631,12 +785,48 @@ input[type="checkbox"] {
   color: var(--muted);
 }
 .mcard .rec {
+  margin-top: auto;
+  padding-top: 6px;
   font-family: var(--display);
   font-weight: 800;
-  font-size: 20px;
+  font-size: 19px;
   line-height: 1;
 }
+/* Tableau de bord : les trois cartes remplissent leur bloc (jusqu'à une certaine hauteur), le bilan en bas. */
+body.board .moment {
+  flex: 1;
+  align-items: start;
+}
+body.board .mcard {
+  height: 100%;
+  max-height: 190px;
+  box-sizing: border-box;
+}
 
+/* Historique : le dernier match en grand, avec un liseré de la couleur du résultat sur la gauche. */
+.last {
+  position: relative;
+  flex: none;
+  padding-left: 5px;
+  background: var(--panel);
+}
+.last::before,
+.hrow::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--victory);
+}
+.last.lost::before,
+.hrow.lost::before {
+  background: var(--defeat);
+}
+.last.neutral::before {
+  background: var(--faint);
+}
 .last-head {
   display: flex;
   align-items: center;
@@ -645,19 +835,18 @@ input[type="checkbox"] {
 }
 .result {
   flex: none;
-  padding: 6px 28px 4px 12px;
-  background: var(--accent);
-  color: #fff;
+  padding: 5px 26px 3px 12px;
+  background: var(--victory);
+  color: var(--bg);
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 26px;
+  font-size: 23px;
   line-height: 1;
-  clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 13px) 100%, 0 100%);
 }
 .result.lost {
-  background: var(--enemy);
-  color: var(--bg);
+  background: var(--defeat);
 }
 .result.neutral {
   background: var(--chip);
@@ -667,7 +856,7 @@ input[type="checkbox"] {
   padding-right: 12px;
   font-family: var(--display);
   font-weight: 700;
-  font-size: 14px;
+  font-size: 13px;
   letter-spacing: 0.06em;
   color: var(--muted);
   text-align: right;
@@ -675,8 +864,8 @@ input[type="checkbox"] {
 .last-body {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 12px;
+  gap: 8px;
+  padding: 8px 12px 10px;
 }
 .versus-line {
   display: flex;
@@ -688,11 +877,11 @@ input[type="checkbox"] {
   font-weight: 800;
 }
 .versus-line .champ {
-  font-size: 30px;
+  font-size: 25px;
   line-height: 1;
 }
 .versus-line .vs {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--muted);
 }
 .versus-line .lane-name {
@@ -709,18 +898,107 @@ input[type="checkbox"] {
   font-weight: 500;
   font-size: 13px;
 }
+.last .cell {
+  background: var(--card);
+}
 
 .rows {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
+#history-rows {
+  gap: 3px;
+}
+/* Fenêtre plus haute que la standard : les lignes de l'historique s'espacent un peu pour remplir le bloc. */
+body.board #history-rows {
+  flex: 1;
+}
+body.board .hrow {
+  flex: 1 1 auto;
+  max-height: 56px;
+}
+/* Une ligne par partie, teintée de la couleur du résultat. */
+.hrow {
+  position: relative;
+  flex: none;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 56px 46px 62px;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 10px 4px 13px;
+  background: linear-gradient(90deg, var(--victory-tint), transparent 55%) var(--panel);
+}
+.hrow.lost {
+  background: linear-gradient(90deg, var(--defeat-tint), transparent 55%) var(--panel);
+}
+.hmain {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.hname {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 17px;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hname small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.hmeta {
+  font-size: 11px;
+  line-height: 1.25;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hmeta b {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--victory);
+}
+.hrow.lost .hmeta b {
+  color: var(--defeat);
+}
+.hnum {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.hnum .v {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 16px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.hnum .k {
+  font-size: 10.5px;
+  line-height: 1.25;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Tes stats par champion et par duel. */
 .srow {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) 40px 52px;
-  gap: 10px;
+  grid-template-columns: 30px minmax(0, 1fr) 38px 48px;
+  gap: 9px;
   align-items: center;
-  padding: 8px 12px;
+  padding: 8px 10px;
   background: var(--panel);
 }
 .smid {
@@ -733,20 +1011,20 @@ input[type="checkbox"] {
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 20px;
+  font-size: 19px;
   line-height: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .bar {
-  height: 8px;
+  height: 7px;
   background: var(--line);
 }
 .bar span {
   display: block;
-  height: 8px;
-  background: var(--accent-light);
+  height: 7px;
+  background: var(--victory);
   clip-path: polygon(0 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
 }
 .smid .meta {
@@ -772,24 +1050,21 @@ input[type="checkbox"] {
   font-size: 18px;
   line-height: 1;
 }
-#stats-duels {
-  margin-top: 6px;
-}
 .drow {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 9px 12px;
   background: var(--panel);
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 19px;
+  font-size: 18px;
   line-height: 1.1;
 }
 .drow small {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--muted);
 }
 .drow .dscore {
@@ -799,7 +1074,7 @@ input[type="checkbox"] {
 /* ---------- Sélection des champions ---------- */
 
 .hero.duel {
-  height: 270px;
+  height: clamp(230px, 56cqw, 320px);
 }
 .half {
   top: 0;
@@ -831,8 +1106,8 @@ input[type="checkbox"] {
   left: 50%;
   top: 44%;
   transform: translate(-50%, -50%);
-  width: 66px;
-  height: 54px;
+  width: 62px;
+  height: 50px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -841,35 +1116,35 @@ input[type="checkbox"] {
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 30px;
+  font-size: 28px;
   clip-path: polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%);
 }
 .duel-me,
 .duel-them {
   position: absolute;
-  bottom: 14px;
+  bottom: 12px;
   max-width: 48%;
   display: flex;
   flex-direction: column;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
 }
 .duel-me {
-  left: 12px;
+  left: 14px;
 }
 .duel-them {
-  right: 12px;
+  right: 14px;
   align-items: flex-end;
   text-align: right;
 }
 .hero.duel.solo .duel-me {
-  max-width: calc(100% - 24px);
+  max-width: calc(100% - 28px);
 }
 .duel-name {
   margin: 0;
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 56px;
+  font-size: 52px;
   line-height: 0.95;
   white-space: nowrap;
   overflow: hidden;
@@ -877,21 +1152,15 @@ input[type="checkbox"] {
   max-width: 100%;
 }
 .duel-name.mid {
-  font-size: 44px;
+  font-size: 42px;
 }
 .duel-name.long {
-  font-size: 34px;
+  font-size: 32px;
 }
 .duel-name.waiting {
   color: var(--muted);
 }
 
-.duel-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-}
 .duel-rates {
   display: flex;
   justify-content: space-between;
@@ -902,11 +1171,11 @@ input[type="checkbox"] {
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 42px;
+  font-size: 40px;
   line-height: 1;
 }
 .rate small {
-  font-size: 22px;
+  font-size: 21px;
 }
 .rate.me {
   color: var(--accent-light);
@@ -915,7 +1184,7 @@ input[type="checkbox"] {
   color: var(--enemy-text);
 }
 .rate-label {
-  padding-bottom: 6px;
+  padding-bottom: 5px;
   font-family: var(--display);
   font-weight: 700;
   font-size: 13px;
@@ -927,7 +1196,7 @@ input[type="checkbox"] {
 .duel-bar {
   display: flex;
   gap: 4px;
-  height: 12px;
+  height: 11px;
 }
 .duel-bar .me {
   background: var(--accent-light);
@@ -943,11 +1212,11 @@ input[type="checkbox"] {
   justify-content: space-between;
   gap: 8px;
   font-size: 13px;
-  color: var(--muted);
 }
 .edge {
   font-weight: 600;
   text-align: right;
+  color: var(--muted);
 }
 .edge.me {
   color: var(--accent-light);
@@ -977,7 +1246,7 @@ input[type="checkbox"] {
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 24px;
+  font-size: 23px;
   line-height: 1;
 }
 .tip {
@@ -998,26 +1267,30 @@ input[type="checkbox"] {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 .pick {
   box-sizing: border-box;
   min-width: 0;
-  height: 44px;
+  height: 38px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 16px 0 8px;
+  padding: 0 15px 0 7px;
   background: var(--ally-bg);
   color: var(--text);
   clip-path: polygon(0 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+}
+.pick .icon {
+  width: 26px;
+  height: 26px;
 }
 .pname {
   min-width: 0;
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 18px;
+  font-size: 17px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1056,7 +1329,7 @@ input[type="checkbox"] {
 .pick.enemy {
   width: 100%;
   flex-direction: row-reverse;
-  padding: 0 8px 0 16px;
+  padding: 0 7px 0 15px;
   border: none;
   background: var(--enemy-bg);
   text-align: right;
@@ -1074,6 +1347,30 @@ input[type="checkbox"] {
   color: var(--bg);
   font-weight: 800;
 }
+/* Tableau de bord, une fois l'aide au choix partie : les dix joueurs se partagent la hauteur du bloc. */
+body.board #picks.grow .picks {
+  flex: 1;
+}
+body.board #picks.grow .pick {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 38px;
+  max-height: 92px;
+  padding-left: 10px;
+}
+body.board #picks.grow .pick.enemy {
+  padding: 0 10px 0 16px;
+}
+body.board #picks.grow .pick .icon {
+  width: 40px;
+  height: 40px;
+}
+body.board #picks.grow .pick .icon:not(.slot) {
+  clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
+}
+body.board #picks.grow .pname {
+  font-size: 21px;
+}
 button.pick {
   cursor: pointer;
 }
@@ -1090,33 +1387,60 @@ button.pick:hover {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 .sub-head .aside {
   font-size: 12px;
 }
 
-.runes {
+.card.runes {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 4px 12px;
   align-items: end;
-  padding: 12px;
 }
 .runes .span {
   grid-column: 1 / -1;
+}
+.runes h2 {
+  margin-bottom: 6px;
+}
+.rune-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/* La rune clé : son icône à la place de son nom. */
+.keystone-icon {
+  flex: none;
+  width: 58px;
+  height: 58px;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.6));
+}
+.runes .trees {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 5px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.tree-icon {
+  width: 18px;
+  height: 18px;
 }
 .keystone {
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 30px;
+  font-size: 27px;
   line-height: 1;
   text-transform: uppercase;
   overflow-wrap: anywhere;
 }
 .runes .rate {
-  font-size: 36px;
+  font-size: 32px;
   text-align: right;
 }
 .runes .right {
@@ -1146,10 +1470,11 @@ button.pick:hover {
 }
 .lrow {
   display: grid;
-  grid-template-columns: 74px minmax(0, 1fr);
+  grid-template-columns: 66px minmax(0, 1fr);
   gap: 10px;
   align-items: center;
-  padding: 10px 12px;
+  padding: 8px 0;
+  font-size: 13px;
 }
 .lrow + .lrow {
   border-top: 1px solid var(--line);
@@ -1179,8 +1504,8 @@ button.pick:hover {
   color: var(--muted);
 }
 .key {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1189,7 +1514,7 @@ button.pick:hover {
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 16px;
+  font-size: 15px;
   clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
 }
 .mono {
@@ -1200,9 +1525,7 @@ button.pick:hover {
 
 /* ---------- En partie ---------- */
 
-.score-block {
-  display: flex;
-  flex-direction: column;
+.score-card {
   align-items: center;
   gap: 8px;
 }
@@ -1221,13 +1544,13 @@ button.pick:hover {
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
 }
 .kills {
-  height: 62px;
+  height: 58px;
   display: flex;
   align-items: center;
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 50px;
+  font-size: 48px;
   line-height: 1;
 }
 .kills.us {
@@ -1244,7 +1567,7 @@ button.pick:hover {
   clip-path: polygon(0 0, 100% 0, calc(100% - 16px) 100%, 0 100%);
 }
 .clock {
-  height: 62px;
+  height: 58px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1253,13 +1576,13 @@ button.pick:hover {
   color: var(--bg);
   font-family: var(--display);
   font-weight: 800;
-  font-size: 28px;
+  font-size: 27px;
 }
 .gap-chip {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 20px;
+  padding: 5px 20px;
   background: var(--panel);
   clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
 }
@@ -1267,15 +1590,15 @@ button.pick:hover {
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 24px;
+  font-size: 23px;
   line-height: 1;
 }
 
 .loading {
-  display: flex;
-  flex-direction: column;
   gap: 4px;
-  padding: 12px;
+}
+body.board .loading {
+  justify-content: center;
 }
 .loading-title {
   font-family: var(--display);
@@ -1285,39 +1608,49 @@ button.pick:hover {
   line-height: 1;
 }
 
-.me-card {
-  position: relative;
-  display: grid;
-  grid-template-columns: 104px minmax(0, 1fr);
-  background: var(--panel);
+/* Toi : l'illustration de ton skin, puis tes chiffres et tes objets. */
+.card.me {
+  padding: 0 0 12px;
+  overflow: hidden;
 }
-.me-card .portrait {
+.me-hero {
   position: relative;
-  min-height: 84px;
-  background: #172c6e;
-  clip-path: polygon(0 0, 100% 0, calc(100% - 18px) 100%, 0 100%);
+  flex: none;
+  height: clamp(170px, 50cqw, 300px);
+  background: var(--panel-2);
 }
-.me-card .portrait img {
+body.board .me-hero {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 170px;
+}
+.me-hero .art img {
   object-position: 50% 30%;
 }
-.me-card .who {
-  min-width: 0;
+.me-hero .who {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 12px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
   gap: 2px;
-  padding: 12px 12px 12px 8px;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
 }
-.me-card h1 {
+.me-hero h1 {
   margin: 0;
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 44px;
+  font-size: 48px;
   line-height: 0.95;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.card.me .cells,
+.card.me .chips {
+  margin: 0 12px;
 }
 
 .chips {
@@ -1332,14 +1665,22 @@ button.pick:hover {
   clip-path: polygon(0 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
 }
 
+/* Face-à-face : en tableau de bord, les cinq couloirs se partagent la hauteur du bloc. */
 .fo {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
+body.board .fo {
+  flex: 1;
+  min-height: 0;
+}
+body.board .forow {
+  flex: 1;
+}
 .forow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 70px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 72px minmax(0, 1fr);
   gap: 4px;
 }
 .forow.nolane {
@@ -1349,14 +1690,14 @@ button.pick:hover {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 16px 7px 8px;
+  gap: 9px;
+  padding: 7px 16px 7px 9px;
   background: var(--ally-bg);
   clip-path: polygon(0 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
 }
 .fcell.enemy {
   flex-direction: row-reverse;
-  padding: 7px 8px 7px 16px;
+  padding: 7px 9px 7px 16px;
   background: var(--enemy-bg);
   text-align: right;
   clip-path: polygon(10px 0, 100% 0, 100% 100%, 0 100%);
@@ -1372,6 +1713,10 @@ button.pick:hover {
 .fcell.empty {
   opacity: 0.55;
 }
+.fcell .icon {
+  width: 34px;
+  height: 34px;
+}
 .fcell .txt {
   min-width: 0;
   display: flex;
@@ -1386,7 +1731,7 @@ button.pick:hover {
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 19px;
+  font-size: 20px;
   line-height: 1.05;
   white-space: nowrap;
   overflow: hidden;
@@ -1398,9 +1743,19 @@ button.pick:hover {
   white-space: nowrap;
 }
 .fcell .rank {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
+}
+.fcell.enemy .rank {
+  flex-direction: row-reverse;
+}
+.fcell .rank .tier-name {
+  font-style: normal;
+  font-weight: 600;
 }
 .fcell.me .line,
 .fcell.me .rank {

@@ -82,6 +82,24 @@ fn show_window(app: &AppHandle, focus: bool) {
     }
 }
 
+/// Taille de départ : celle de tauri.conf.json (deux colonnes), réduite si l'écran est plus petit
+/// (au plus 90 % de la place libre, barre des tâches exclue), puis centrée.
+fn fit_to_screen(window: &tauri::WebviewWindow) {
+    let (Ok(Some(monitor)), Ok(size)) = (window.current_monitor(), window.inner_size()) else {
+        return;
+    };
+    let scale = monitor.scale_factor();
+    let area = monitor.work_area().size.to_logical::<f64>(scale);
+    let size = size.to_logical::<f64>(scale);
+    let (width, height) = (area.width * 0.9, area.height * 0.9);
+    // Assez de place : la fenêtre garde la taille de tauri.conf.json, déjà centrée.
+    if size.width <= width && size.height <= height {
+        return;
+    }
+    let _ = window.set_size(tauri::LogicalSize::new(size.width.min(width), size.height.min(height)));
+    let _ = window.center();
+}
+
 /// Icône près de l'horloge : clic gauche pour afficher, clic droit pour le menu.
 fn create_tray(app: &tauri::App) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Afficher", true, None::<&str>)?;
@@ -127,7 +145,8 @@ pub fn run() {
         .manage(PendingUpdate(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![get_state, set_opponent, get_settings, set_settings, install_update])
         // Images lues dans le client : lcu://localhost/<numéro du champion>, lcu://localhost/item-<numéro de l'objet>,
-        // lcu://localhost/splash-<numéro du skin> (illustration).
+        // lcu://localhost/splash-<numéro du skin> (illustration), lcu://localhost/perk-<numéro de la rune ou de la voie>,
+        // lcu://localhost/rank-<rang en minuscules> (emblème).
         .register_asynchronous_uri_scheme_protocol("lcu", move |_ctx, request, responder| {
             let icons = icons.clone();
             let path = request.uri().path().trim_start_matches('/').to_string();
@@ -138,6 +157,13 @@ pub fn run() {
                         Some(id) => icons.item_icon(id).await.map(|png| (png, "image/png")),
                         None => None,
                     }
+                } else if let Some(perk) = path.strip_prefix("perk-") {
+                    match number(perk) {
+                        Some(id) => icons.perk_icon(id).await.map(|png| (png, "image/png")),
+                        None => None,
+                    }
+                } else if let Some(tier) = path.strip_prefix("rank-") {
+                    icons.rank_emblem(tier).await.map(|png| (png, "image/png"))
                 } else if let Some(skin) = path.strip_prefix("splash-") {
                     match number(skin).filter(|id| *id > 0) {
                         Some(id) => icons.splash(id).await.map(|jpg| (jpg, "image/jpeg")),
@@ -175,6 +201,9 @@ pub fn run() {
 
             if let Err(e) = create_tray(app) {
                 eprintln!("[app] icône près de l'horloge impossible : {e}");
+            }
+            if let Some(window) = app.get_webview_window("main") {
+                fit_to_screen(&window);
             }
             // Fenêtre cachée au lancement avec Windows (--minimized), affichée sinon.
             if !std::env::args().any(|arg| arg == "--minimized") {

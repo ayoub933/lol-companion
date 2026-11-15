@@ -88,7 +88,11 @@ impl History {
     }
 
     pub fn contains(&self, game_id: i64) -> bool {
-        self.games.iter().any(|g| g.game_id == game_id)
+        self.get(game_id).is_some()
+    }
+
+    pub fn get(&self, game_id: i64) -> Option<&GameRecord> {
+        self.games.iter().find(|g| g.game_id == game_id)
     }
 
     /// Ajoute la partie au fichier, et garde à côté le document complet du client.

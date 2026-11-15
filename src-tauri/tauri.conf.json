@@ -11,8 +11,11 @@
     "windows": [
       {
         "title": "LoL Companion 0.8.0",
-        "width": 420,
-        "height": 840,
+        "width": 1280,
+        "height": 720,
+        "minWidth": 400,
+        "minHeight": 520,
+        "center": true,
         "visible": false
       }
     ],

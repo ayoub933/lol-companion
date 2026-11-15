@@ -162,8 +162,16 @@ CS : pendant la partie, l'API de Riot ne les donne que par paliers de 10 (0, 10,
 L'app affiche une fourchette (« 80–89 ») et un rythme par minute estimé ; le compte exact
 arrive après la partie.
 
-Fenêtre large (plus de 900 px) : en sélection et en partie, les équipes passent dans une
-colonne à droite.
+Taille de la fenêtre : elle s'ouvre toujours à sa taille standard, 1280 × 720 comme le client LoL,
+centrée (réduite sur un petit écran). Chaque écran (salon, sélection, partie) y est un tableau de bord :
+des blocs encadrés, en colonnes alignées en haut et en bas, sans rien à faire défiler ; un bloc sans
+données affiche un message au lieu de disparaître. Agrandie ou en plein écran, c'est le même tableau de
+bord à l'échelle ; beaucoup plus petite, les blocs passent en une seule colonne, qui défile.
+
+Icônes : la rune clé et les deux voies de runes s'affichent avec leur icône, les rangs avec leur emblème
+(et la division, ou les LP à partir de Maître). Les images viennent du client LoL ; un emblème qu'il ne
+donne pas est pris sur CommunityDragon (raw.communitydragon.org), qui reprend ses fichiers. Sans image,
+le nom s'affiche à la place.
 
 ## Après la partie : historique
 
@@ -173,9 +181,12 @@ Les parties annulées (moins de 5 minutes) ne sont pas comptées.
 
 Au salon : l'illustration du skin de ta dernière partie (celle de base si l'app ne le connaît pas),
 ton rang (solo/duo et flexible), tes 20 dernières parties d'après le client avec ta forme du moment
-(victoire ou défaite, de la plus récente à la plus ancienne), tes champions du moment, la carte
-« Dernier match », et tes stats par champion (KDA, CS par minute, % de victoires) et par duel.
-L'ARAM est compté à part. L'historique de l'app commence à la première partie jouée avec elle.
+(victoire ou défaite, de la plus récente à la plus ancienne), tes champions du moment, l'historique
+de tes 10 dernières parties (la plus récente en grand avec toutes ses stats, puis une ligne par
+partie : résultat, file, KDA, CS, durée, quand ; victoire en vert-bleu, défaite en rouge-rose ;
+adversaire et poste pour les parties suivies par l'app), et tes stats par champion (KDA, CS par
+minute, % de victoires) et par duel. L'ARAM est compté à part. Les stats de l'app commencent à la
+première partie jouée avec elle ; l'historique des 10 parties vient du client et les montre toutes.
 
 Fichiers, dans `%APPDATA%\com.perso.lol-companion\` :
 - `historique.jsonl` : une ligne par partie ;

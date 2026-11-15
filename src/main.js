@@ -23,6 +23,8 @@ const PHASES = {
 const POSITIONS = { top: "TOP", jungle: "JUNGLE", mid: "MILIEU", adc: "BAS", support: "SUPPORT" };
 // Postes tels que le client les nomme en sélection, en abrégé pour la liste des champions.
 const CLIENT_POSITIONS = { top: "TOP", jungle: "JGL", middle: "MID", bottom: "BOT", utility: "SUP" };
+// Postes au sens d'OP.GG, en abrégé pour les lignes de l'historique.
+const SHORT_POSITIONS = { top: "TOP", jungle: "JGL", mid: "MID", adc: "BOT", support: "SUP" };
 // Postes de la partie en cours, dans l'ordre du face-à-face.
 const LANES = [
   ["TOP", "TOP"],
@@ -145,22 +147,38 @@ function clock(seconds) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-// Victoires en bleu, défaites en orange : « 12–7 ».
+// Victoires en vert-bleu, défaites en rouge-rose : « 12–7 ».
 const record = (wins, losses, separator = "–") => [el("span", "win", wins), separator, el("span", "loss", losses)];
 
-// « Émeraude II », « Maître · 245 LP », « Non classé ».
-function rankLabel(rank) {
-  if (!rank) return "";
-  if (!rank.tier) return "Non classé";
-  const name = TIERS[rank.tier] ?? rank.tier;
-  return APEX.includes(rank.tier) ? `${name} · ${rank.lp} LP` : `${name} ${rank.division}`.trim();
+// Emblème d'un rang (image du client, le nom au survol). Si l'image manque, même après un nouvel essai
+// 2 secondes plus tard, le nom du rang en texte à sa place.
+function emblem(tier, size) {
+  const name = TIERS[tier] ?? tier;
+  const box = el("span", `emblem ${size}`);
+  box.title = name;
+  const img = document.createElement("img");
+  img.alt = name;
+  const url = iconUrl(`rank-${tier.toLowerCase()}`);
+  img.onerror = () => {
+    if (img.dataset.retried) return box.replaceWith(el("span", "tier-name", upper(name)));
+    img.dataset.retried = "1";
+    setTimeout(() => (img.src = `${url}?retry`), 2000);
+  };
+  img.src = url;
+  box.append(img);
+  return box;
 }
 
-// « ÉMERAUDE II », « MAÎTRE », « NON CLASSÉ ».
-function tierName(rank) {
-  if (!rank?.tier) return "NON CLASSÉ";
-  const name = TIERS[rank.tier] ?? rank.tier;
-  return upper(APEX.includes(rank.tier) ? name : `${name} ${rank.division}`.trim());
+// Rang : son emblème et sa division (« II ») ; à partir de Maître, ses LP. « NON CLASSÉ » sans rang.
+// Rien n'est refait si le rang affiché n'a pas changé (l'image ne clignote pas).
+function setRank(node, rank, size, withLp = false) {
+  const key = rank ? `${rank.tier}|${rank.division}|${withLp ? rank.lp : ""}|${size}` : "";
+  if (node.dataset.rank === key && node.childElementCount) return;
+  node.dataset.rank = key;
+  if (!rank?.tier) return node.replaceChildren(el("span", "tier-name", "NON CLASSÉ"));
+  const apex = APEX.includes(rank.tier);
+  const detail = apex ? (withLp ? `${rank.lp} LP` : "") : rank.division;
+  node.replaceChildren(emblem(rank.tier, size), ...(detail ? [el("span", "division", detail)] : []));
 }
 
 // Taille du nom selon sa longueur, pour qu'il tienne sur une ligne.
@@ -193,8 +211,7 @@ function heroSkin(state) {
 }
 
 function renderPlayer(state, show) {
-  $("player").hidden = !show;
-  for (const id of ["figures", "form", "moment"]) $(id).hidden = true;
+  for (const id of ["player", "form", "moment"]) $(id).hidden = !show;
   if (!show) return;
   const riotId = state.riotId ?? "";
   const cut = riotId.lastIndexOf("#");
@@ -210,16 +227,24 @@ function renderPlayer(state, show) {
 
   const profile = state.profile;
   $("solo-rank").hidden = !profile;
-  if (!profile) return;
-  $("solo-tier").textContent = tierName(profile.solo);
-  $("solo-lp").textContent = profile.solo?.tier ? `${profile.solo.lp} LP` : "";
+  if (profile) {
+    setRank($("solo-tier"), profile.solo, "big");
+    $("solo-lp").textContent = profile.solo?.tier ? `${profile.solo.lp} LP` : "";
+  }
   renderFigures(profile);
   renderForm(profile);
   renderMoment(profile);
 }
 
+// Profil pas encore lu : des tirets.
 function renderFigures(profile) {
-  $("figures").hidden = false;
+  if (!profile) {
+    for (const id of ["solo-rate", "recent-record", "flex-tier"]) $(id).replaceChildren(el("span", "faint", "—"));
+    delete $("flex-tier").dataset.rank;
+    $("solo-rate-sub").textContent = "lecture du profil…";
+    for (const id of ["recent-sub", "flex-sub"]) $(id).textContent = "";
+    return;
+  }
   const solo = profile.solo;
   const soloGames = solo ? solo.wins + solo.losses : 0;
   if (soloGames) {
@@ -241,18 +266,20 @@ function renderFigures(profile) {
 
   const flex = profile.flex;
   if (flex?.tier) {
-    $("flex-tier").replaceChildren(el("span", "tier-text", tierName(flex)));
+    setRank($("flex-tier"), flex, "mid");
     $("flex-sub").textContent = `flexible · ${flex.lp} LP`;
   } else {
     $("flex-tier").replaceChildren(el("span", "faint", "—"));
+    delete $("flex-tier").dataset.rank;
     $("flex-sub").textContent = "flexible : non classé";
   }
 }
 
 // Une barre par partie, de la plus récente à la plus ancienne : pleine = victoire, creuse = défaite.
 function renderForm(profile) {
-  const results = profile.recentResults ?? [];
-  $("form").hidden = !results.length;
+  const results = profile?.recentResults ?? [];
+  for (const id of ["form-strip", "form-legend"]) $(id).hidden = !results.length;
+  $("form-aside").textContent = "";
   if (!results.length) return;
   const wins = results.filter(Boolean).length;
   const count = results.length;
@@ -265,8 +292,9 @@ function renderForm(profile) {
 }
 
 function renderMoment(profile) {
-  const list = profile.recentChampions;
-  $("moment").hidden = !list.length;
+  const list = profile?.recentChampions ?? [];
+  $("moment-empty").hidden = list.length > 0;
+  $("moment-empty").textContent = profile ? "Aucune partie récente." : "Lecture de tes dernières parties…";
   $("moment-cards").replaceChildren(
     ...list.map((c) =>
       el("div", "mcard", [
@@ -279,12 +307,49 @@ function renderMoment(profile) {
   );
 }
 
+// « il y a 25 min », « il y a 3 h », « hier », « il y a 4 j », puis la date.
+const relative = new Intl.RelativeTimeFormat("fr", { numeric: "auto", style: "short" });
+function ago(ms) {
+  const minutes = Math.round((Date.now() - ms) / 60000);
+  if (minutes < 1) return "à l'instant";
+  if (minutes < 60) return relative.format(-minutes, "minute");
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return relative.format(-hours, "hour");
+  const days = Math.round(hours / 24);
+  if (days < 7) return relative.format(-days, "day");
+  return new Date(ms).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+}
+// Fin de la partie (le client donne son début et sa durée).
+const ended = (game) => game.date + game.duration * 1000;
+const queueName = (game) => QUEUES[game.queueId] ?? (game.mapId === 12 ? "ARAM" : "AUTRE MODE");
+
+// Tes 10 dernières parties (liste du client) : la plus récente en grand, avec toutes ses stats,
+// les autres en lignes. Victoire en vert-bleu, défaite en rouge-rose.
+function renderHistory(state, show) {
+  $("history").hidden = !show;
+  if (!show) return;
+  const games = state.profile?.matches ?? [];
+  const local = state.history?.last;
+  // Une partie que l'app vient d'enregistrer peut manquer encore dans la liste du client.
+  const featured = local && !(games[0]?.date >= local.date) ? local : games[0];
+  const rows = games.filter((g) => g.gameId !== featured?.gameId).slice(0, featured ? 9 : 10);
+  $("history-empty").hidden = Boolean(featured || rows.length || state.recording);
+  $("history-empty").textContent = state.profile ? "Aucune partie récente." : "Lecture de ton historique…";
+  renderFeatured(featured, state.recording);
+  $("history-rows").replaceChildren(...rows.map(historyRow));
+  const shown = [featured, ...rows].filter(Boolean);
+  const wins = shown.filter((g) => g.win).length;
+  $("history-aside").replaceChildren(
+    ...(shown.length ? [`${shown.length > 1 ? `${shown.length} dernières` : "dernière"} · `, ...record(wins, shown.length - wins)] : []),
+  );
+}
+
 // Après la partie : tes stats exactes (CS compris), d'après l'historique du client.
-function renderLastGame(state, lobby) {
-  const last = state.history?.last;
-  $("last-game").hidden = !lobby || !(last || state.recording);
-  if ($("last-game").hidden) return;
-  if (state.recording && !last) {
+function renderFeatured(last, recording) {
+  $("last-game").hidden = !last && !recording;
+  if (!last) {
+    if (!recording) return;
+    $("last-game").className = "panel last neutral";
     $("last-result").textContent = "TERMINÉE";
     $("last-result").className = "result neutral";
     $("last-meta").textContent = "DERNIER MATCH";
@@ -293,14 +358,15 @@ function renderLastGame(state, lobby) {
     $("last-when").textContent = "";
     return;
   }
+  $("last-game").className = `panel last${last.win ? "" : " lost"}`;
   $("last-result").textContent = last.win ? "VICTOIRE" : "DÉFAITE";
-  $("last-result").className = `result ${last.win ? "" : "lost"}`;
-  $("last-meta").textContent = ["DERNIER MATCH", QUEUES[last.queueId], clock(last.duration)].filter(Boolean).join(" · ");
+  $("last-result").className = `result${last.win ? "" : " lost"}`;
+  $("last-meta").textContent = ["DERNIER MATCH", queueName(last), clock(last.duration)].join(" · ");
   $("last-versus").replaceChildren(
     ...[
-      el("span", "champ win", upper(last.champion)),
+      el("span", "champ ally", upper(last.champion)),
       last.opponent && el("span", "vs", "VS"),
-      last.opponent && el("span", "champ loss", upper(last.opponent)),
+      last.opponent && el("span", "champ enemy", upper(last.opponent)),
       POSITIONS[last.position] && el("span", "lane-name", POSITIONS[last.position]),
     ].filter(Boolean),
   );
@@ -308,7 +374,7 @@ function renderLastGame(state, lobby) {
   $("last-grid").replaceChildren(
     ...[
       ["KDA", `${last.kills}/${last.deaths}/${last.assists}`],
-      ["Ratio KDA", kda(last.kills, last.deaths, last.assists), "win"],
+      ["Ratio KDA", kda(last.kills, last.deaths, last.assists), last.win ? "win" : "loss"],
       [`CS · ${decimal(last.cs / Math.max(minutes, 1))}/min`, String(last.cs)],
       ["Or", whole(last.gold)],
       ["Dégâts", whole(last.damage)],
@@ -316,18 +382,36 @@ function renderLastGame(state, lobby) {
     ].map(cell),
   );
   // Pendant la récupération de la partie qui vient de finir, la précédente reste affichée.
-  $("last-when").textContent = state.recording
-    ? "Mise à jour…"
-    : new Date(last.date).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
+  const date = new Date(last.date).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
+  $("last-when").textContent = recording ? "Mise à jour…" : `${ago(ended(last))} · ${date}`;
 }
 
-// Moyennes par champion (et par duel) sur les parties enregistrées par l'app.
-function renderStats(state, lobby) {
-  const history = state.history;
-  $("stats").hidden = !lobby || !history?.champions.length;
-  if ($("stats").hidden) return;
+// Une partie de l'historique : champion, résultat et file, KDA, CS, durée et quand.
+function historyRow(game) {
+  const minutes = game.duration / 60;
+  const lane = SHORT_POSITIONS[game.position];
+  const value = (v, k) => el("div", "hnum", [el("span", "v", v), el("span", "k", k)]);
+  return el("div", `hrow${game.win ? "" : " lost"}`, [
+    champIcon(game.championId, game.champion),
+    el("div", "hmain", [
+      el("span", "hname", [upper(game.champion), game.opponent && el("small", "", ` VS ${upper(game.opponent)}`)]),
+      el("span", "hmeta", [el("b", "", game.win ? "VICTOIRE" : "DÉFAITE"), ` · ${queueName(game)}${lane ? ` · ${lane}` : ""}`]),
+    ]),
+    value(`${game.kills}/${game.deaths}/${game.assists}`, `${kda(game.kills, game.deaths, game.assists)} KDA`),
+    value(String(game.cs), `${decimal(game.cs / Math.max(minutes, 1))}/min`),
+    value(clock(game.duration), ago(ended(game))),
+  ]);
+}
+
+// Moyennes par champion, et bilan par duel, sur les parties enregistrées par l'app.
+function renderStats(state, show) {
+  for (const id of ["stats", "duels"]) $(id).hidden = !show;
+  if (!show) return;
+  const champions = state.history?.champions ?? [];
+  const duels = state.history?.duels ?? [];
+  $("stats-empty").hidden = champions.length > 0;
   $("stats-champions").replaceChildren(
-    ...history.champions.map((t) => {
+    ...champions.map((t) => {
       const rate = (t.wins / t.games) * 100;
       const csPerMinute = !t.aram && t.duration ? decimal(t.cs / (t.duration / 60)) : "—";
       return el("div", "srow", [
@@ -342,10 +426,9 @@ function renderStats(state, lobby) {
       ]);
     }),
   );
-  $("stats-duels").hidden = !history.duels.length;
+  $("duels-empty").hidden = duels.length > 0;
   $("stats-duels").replaceChildren(
-    el("span", "kicker", "TES DUELS"),
-    ...history.duels.map((t) =>
+    ...duels.map((t) =>
       el("div", "drow", [
         el("span", "", [upper(t.champion), el("small", "", " VS "), upper(t.opponent)]),
         el("span", "dscore", [...record(t.wins, t.games - t.wins), el("small", "", ` · ${plural(t.games, "partie")}`)]),
@@ -394,10 +477,18 @@ function renderDuelHero(runes) {
 
 // Le duel selon OP.GG, et ton bilan dans ce duel d'après l'historique de l'app.
 function renderDuel(runes) {
+  $("duel").hidden = false;
   const matchup = runes.matchup;
-  const show = runes.laning && runes.championId > 0 && runes.enemies.length > 0 && Boolean(matchup || runes.duelGames);
-  $("duel").hidden = !show;
-  if (!show) return;
+  const ready = runes.laning && runes.championId > 0 && runes.enemies.length > 0 && Boolean(matchup || runes.duelGames);
+  $("duel-empty").hidden = ready;
+  $("duel-empty").textContent = !runes.laning
+    ? "Pas de duel dans ce mode : il n'y a pas de postes."
+    : runes.championId > 0
+      ? "Le duel s'affiche dès que ton adversaire direct est connu."
+      : "Le duel s'affiche dès que tu choisis ton champion.";
+  for (const id of ["duel-rates", "duel-bar", "duel-meta", "duel-record", "matchup-tip"]) $(id).hidden = !ready;
+  $("matchup-games").textContent = "";
+  if (!ready) return;
   const stats = matchup && !matchup.error && matchup.games > 0;
   $("duel-rates").hidden = !stats;
   $("duel-bar").hidden = !stats;
@@ -553,9 +644,21 @@ function renderRunes(runes) {
       appliedClass += " off";
     }
   }
-  $("keystone").textContent = title;
+  const normal = runes.champion && !runes.pending && !runes.error;
+  setKeystone(normal ? runes.keystoneId : 0, title);
   $("runes-rate").replaceChildren(...(rate ? [rate, el("small", "", " %")] : []));
-  $("runes-trees").textContent = trees;
+  // Les deux voies : leur icône devant leur nom (l'icône disparaît si le client ne la donne pas).
+  const tree = (id, name) => {
+    if (!id) return [name];
+    const img = el("img", "tree-icon");
+    img.alt = "";
+    img.onerror = () => img.remove();
+    img.src = iconUrl(`perk-${id}`);
+    return [img, name];
+  };
+  $("runes-trees").replaceChildren(
+    ...(normal ? [...tree(runes.primaryId, runes.primary), " · ", ...tree(runes.secondaryId, runes.secondary)] : [trees]),
+  );
   $("runes-games").textContent = games;
   const line = $("runes-applied");
   line.className = appliedClass;
@@ -564,14 +667,47 @@ function renderRunes(runes) {
   line.append(applied);
 }
 
+// Rune clé : son icône, avec son nom au survol ; le nom en texte tant que l'icône n'est pas là
+// (et pendant l'attente ou la recherche).
+function setKeystone(id, title) {
+  const icon = $("keystone-icon");
+  const text = $("keystone");
+  text.textContent = title;
+  icon.alt = icon.title = title;
+  const url = id ? iconUrl(`perk-${id}`) : "";
+  if (!url) {
+    icon.hidden = true;
+    text.hidden = false;
+    delete icon.dataset.url;
+    icon.removeAttribute("src");
+  } else if (icon.dataset.url !== url && icon.dataset.url !== `${url}?retry`) {
+    icon.hidden = true;
+    text.hidden = false;
+    icon.onload = () => {
+      icon.hidden = false;
+      text.hidden = true;
+    };
+    setImage(icon, url);
+  }
+}
+
 // « Anneau de Doran, Potion de soin ×2 »
 const itemNames = (items, separator = ", ") =>
   items.map((it) => (it.count > 1 ? `${it.name} ×${it.count}` : it.name)).join(separator);
 
 function renderBuild(runes) {
   const build = runes.build;
-  $("build").hidden = !build;
-  if (!build) return;
+  $("build").hidden = false;
+  $("build-empty").hidden = Boolean(build);
+  $("build-empty").textContent = !runes.champion
+    ? "Le build arrive quand tu verrouilles ton champion."
+    : runes.pending
+      ? "Recherche sur OP.GG…"
+      : "Pas de build trouvé pour ce champion.";
+  if (!build) {
+    $("build-list").replaceChildren();
+    return;
+  }
   const [d, f] = runes.spellsApplied;
   const keys = (list) =>
     el(
@@ -616,7 +752,7 @@ function teamValue(team) {
 }
 
 function renderGame(game) {
-  for (const id of ["score", "game-loading", "me-card", "me-stats", "items", "faceoff"]) $(id).hidden = true;
+  for (const id of ["score", "game-loading", "me-card", "faceoff"]) $(id).hidden = true;
   if (!game) return;
   $("game-loading").hidden = game.ready;
   if (game.ready) {
@@ -645,7 +781,6 @@ function renderMe(game) {
   $("me-line").textContent = ["TOI", LANE_NAMES[game.position], `NIVEAU ${game.level}`].filter(Boolean).join(" · ");
   $("me-champion").textContent = upper(game.champion);
 
-  $("me-stats").hidden = false;
   $("kda").textContent = `${game.kills}/${game.deaths}/${game.assists}`;
   // L'API de la partie ne donne les CS que par paliers de 10 (0, 10, 20…) : on affiche la fourchette,
   // et le rythme par minute estimé au milieu de la fourchette. Le compte exact arrive après la partie.
@@ -698,6 +833,16 @@ function renderFaceoff(game) {
   $("faceoff-note").hidden = !(ready && teamValue(allies) != null && teamValue(enemies) != null);
 }
 
+// Rang d'un joueur de la partie : emblème et division, « Non classé », « Rang masqué » (mode streamer) ou « — ».
+function rankLine(player) {
+  const line = el("span", "rank");
+  if (player.rankHidden) line.textContent = "Rang masqué";
+  else if (!player.rank) line.textContent = "—";
+  else if (!player.rank.tier) line.textContent = "Non classé";
+  else setRank(line, player.rank, "small", true);
+  return line;
+}
+
 function faceCell(player, ready, enemy, opponent) {
   const side = enemy ? " enemy" : "";
   if (!player) return el("div", `fcell${side} empty`, [champIcon(0, ""), el("div", "txt", [el("span", "fname", "?")])]);
@@ -707,7 +852,7 @@ function faceCell(player, ready, enemy, opponent) {
     el("div", "txt", [
       el("span", "fname", `${upper(player.champion)}${player.me ? " · TOI" : ""}`),
       ready && el("span", "line", `niv. ${player.level} · ${player.kills}/${player.deaths}/${player.assists}`),
-      el("span", "rank", player.rankHidden ? "Rang masqué" : rankLabel(player.rank) || "—"),
+      rankLine(player),
     ]),
   ]);
 }
@@ -726,17 +871,51 @@ function render(state) {
   }
 
   // Salon : seulement hors sélection et hors partie (la place y sert à autre chose).
-  const lobby = !state.runes && !state.game;
-  renderPlayer(state, found && lobby);
-  renderLastGame(state, lobby);
+  const lobby = found && !state.runes && !state.game;
+  renderPlayer(state, lobby);
+  renderHistory(state, lobby);
   renderStats(state, lobby);
   renderSelection(state.runes);
   renderGame(state.game);
+  layout();
+}
 
-  // Fenêtre large : les équipes passent dans une colonne à droite (voir styles.css).
-  const split = !$("picks").hidden || !$("faceoff").hidden;
-  $("main").classList.toggle("split", split);
-  document.body.classList.toggle("split", split);
+// ---------- Taille de la fenêtre ----------
+
+// Taille standard de la fenêtre, comme le client LoL (celle de tauri.conf.json) : le tableau de bord est fait
+// pour elle. Les tailles de styles.css sont en pixels de cette fenêtre (avant mise à l'échelle).
+const STANDARD = { width: 1280, height: 720 };
+// En dessous, le texte deviendrait trop petit : les blocs passent en une seule colonne, qui défile.
+const MIN_ZOOM = 0.8;
+const ONE_COLUMN = 460;
+const EDGE = 12;
+
+// Autre taille que la standard : le même tableau de bord, à l'échelle ; la place en plus (fenêtre plus large
+// ou plus haute que 16:9) élargit ou allonge les blocs.
+function layout() {
+  const width = document.documentElement.clientWidth;
+  const height = window.innerHeight;
+  const view = !$("player").hidden
+    ? "lobby"
+    : !$("duel-hero").hidden
+      ? "selection"
+      : !$("faceoff").hidden || !$("game-loading").hidden
+        ? "game"
+        : "";
+  let zoom = Math.min(width / STANDARD.width, height / STANDARD.height, 2);
+  const board = Boolean(view) && zoom >= MIN_ZOOM;
+  if (!board) zoom = Math.min(1, Math.max(0.8, width / (ONE_COLUMN + 2 * EDGE)));
+  document.body.style.zoom = zoom.toFixed(3);
+  document.body.style.setProperty("--vh", `${(height / zoom).toFixed(1)}px`);
+  document.body.classList.toggle("board", board);
+  document.documentElement.classList.toggle("board", board);
+  document.body.dataset.view = view;
+  // Dans chaque colonne, le dernier bloc affiché va jusqu'en bas ; une colonne vide ne prend pas de place.
+  for (const col of ["col-a", "col-b", "col-c"].map($)) {
+    const shown = [...col.children].filter((child) => !child.hidden);
+    col.classList.toggle("unused", !shown.length);
+    for (const child of col.children) child.classList.toggle("grow", child === shown.at(-1));
+  }
 }
 
 // ---------- Réglages ----------
@@ -779,6 +958,8 @@ async function toggleSettings() {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
+  layout();
+  window.addEventListener("resize", layout);
   $("settings-button").addEventListener("click", toggleSettings);
   $("settings-close").addEventListener("click", toggleSettings);
   for (const input of settingInputs()) input.addEventListener("change", saveSettings);
