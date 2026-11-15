@@ -92,8 +92,11 @@ Un réglage changé en pleine sélection s'applique au prochain import (nouveau 
 
 ## Sélection des champions
 
+En haut, ton champion avec le skin choisi (pour un chroma, l'illustration de son skin) face à
+ton adversaire direct, puis le duel selon OP.GG : % de victoires de chaque côté, avantage, conseil.
+
 Les deux équipes s'affichent en colonnes : la tienne à gauche, dans l'ordre des postes
-(un champion seulement survolé est atténué, le tien a un cadre doré), les adversaires à droite.
+(un champion seulement survolé est atténué, le tien est en bleu), les adversaires à droite.
 
 **Avant de verrouiller : aide au choix.** Avec les données OP.GG :
 - « Contre X » : les 3 champions qui gagnent le plus contre ton adversaire direct, à ton poste ;
@@ -137,8 +140,13 @@ Dès l'écran de chargement : les 10 champions avec le rang de chaque joueur (da
 partie : flexible pour une flexible, solo/duo sinon). Les joueurs en mode streamer restent
 anonymes : le client ne donne pas leur compte, l'app n'a donc pas leur rang.
 
-Une fois la partie lancée : ta carte (KDA, CS, or, objets), et pour chacun des 10 champions
-son niveau et son KDA, comme le tableau des scores (Tab).
+Une fois la partie lancée :
+- le score des deux équipes (éliminations) et le temps de jeu ;
+- l'écart d'objets : valeur des objets de ton équipe moins celle de l'équipe d'en face, au prix
+  de la boutique (l'or en poche ne compte pas) ;
+- ta carte : ton skin, KDA, CS, or en poche, objets ;
+- le face-à-face, couloir par couloir : niveau, KDA et rang de chacun, et l'écart d'objets du
+  couloir. Sans postes (ARAM...), les deux équipes côte à côte. « Rang masqué » : joueur en mode streamer.
 
 **Panneau des objets à acheter**, posé sur le jeu, collé au bord gauche de l'écran, à mi-hauteur :
 juste les icônes, de haut en bas : départ, 1er objet (avec un autre choix, plus petit), bottes,
@@ -163,8 +171,10 @@ Peu après la fin (dès que le client l'a dans son historique), l'app lit la par
 résultat, KDA, CS exacts, or, dégâts aux champions, vision, durée, poste et adversaire direct.
 Les parties annulées (moins de 5 minutes) ne sont pas comptées.
 
-Au salon : ton rang (solo/duo et flexible), tes 20 dernières parties d'après le client, la carte
-« Dernière partie », et tes stats par champion (KDA, CS par minute, % de victoires) et par duel.
+Au salon : l'illustration du skin de ta dernière partie (celle de base si l'app ne le connaît pas),
+ton rang (solo/duo et flexible), tes 20 dernières parties d'après le client avec ta forme du moment
+(victoire ou défaite, de la plus récente à la plus ancienne), tes champions du moment, la carte
+« Dernier match », et tes stats par champion (KDA, CS par minute, % de victoires) et par duel.
 L'ARAM est compté à part. L'historique de l'app commence à la première partie jouée avec elle.
 
 Fichiers, dans `%APPDATA%\com.perso.lol-companion\` :
@@ -193,6 +203,7 @@ Quand une partie est trouvée, une notification Windows le signale. L'app n'acce
   l'interface quand l'état change.
 - `src-tauri/src/overlay.rs` : fenêtre du panneau posé sur le jeu.
 - `src/` : l'interface (`index.html`, `main.js`, `styles.css`) et le panneau en jeu (`overlay.html`).
+- `src/fonts/` : les polices Barlow et Barlow Condensed de l'interface (licence SIL OFL 1.1, `OFL.txt`).
 - `.github/workflows/release.yml` : construction de l'installateur sur GitHub.
 
 Si le client n'est pas détecté (installation inhabituelle), indique le chemin du lockfile :

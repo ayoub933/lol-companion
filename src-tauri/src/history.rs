@@ -37,6 +37,8 @@ pub struct GameRecord {
     /// Dégâts infligés aux champions.
     pub damage: u64,
     pub vision: u64,
+    /// Skin joué (numéro du client, ex. 267002) ; 0 si inconnu.
+    pub skin_id: i64,
 }
 
 /// Totaux d'un champion (ou d'un duel) : l'interface en tire les moyennes.

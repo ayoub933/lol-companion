@@ -126,23 +126,31 @@ pub fn run() {
         .manage(Opponent(Mutex::new(None)))
         .manage(PendingUpdate(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![get_state, set_opponent, get_settings, set_settings, install_update])
-        // Icônes lues dans le client : lcu://localhost/<numéro du champion>, lcu://localhost/item-<numéro de l'objet>.
+        // Images lues dans le client : lcu://localhost/<numéro du champion>, lcu://localhost/item-<numéro de l'objet>,
+        // lcu://localhost/splash-<numéro du skin> (illustration).
         .register_asynchronous_uri_scheme_protocol("lcu", move |_ctx, request, responder| {
             let icons = icons.clone();
             let path = request.uri().path().trim_start_matches('/').to_string();
             tauri::async_runtime::spawn(async move {
-                let png = match path.strip_prefix("item-") {
-                    Some(item) => match item.parse::<i64>() {
-                        Ok(id) => icons.item_icon(id).await,
+                let number = |text: &str| text.parse::<i64>().ok();
+                let image = if let Some(item) = path.strip_prefix("item-") {
+                    match number(item) {
+                        Some(id) => icons.item_icon(id).await.map(|png| (png, "image/png")),
+                        None => None,
+                    }
+                } else if let Some(skin) = path.strip_prefix("splash-") {
+                    match number(skin).filter(|id| *id > 0) {
+                        Some(id) => icons.splash(id).await.map(|jpg| (jpg, "image/jpeg")),
+                        None => None,
+                    }
+                } else {
+                    match path.parse::<u32>() {
+                        Ok(id) => icons.champion_icon(id).await.map(|png| (png, "image/png")),
                         Err(_) => None,
-                    },
-                    None => match path.parse::<u32>() {
-                        Ok(id) => icons.champion_icon(id).await,
-                        Err(_) => None,
-                    },
+                    }
                 };
-                let response = match png {
-                    Some(png) => tauri::http::Response::builder().header("Content-Type", "image/png").body(png),
+                let response = match image {
+                    Some((bytes, kind)) => tauri::http::Response::builder().header("Content-Type", kind).body(bytes),
                     None => tauri::http::Response::builder().status(404).body(Vec::new()),
                 };
                 responder.respond(response.expect("réponse HTTP invalide"));

@@ -7,7 +7,7 @@ use reqwest::Method;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -34,6 +34,8 @@ const RECORD_RETRY: Duration = Duration::from_secs(5);
 const RECORD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 /// Prix total à partir duquel un objet qui ne s'améliore plus compte comme objet terminé (hors bottes).
 const FINISHED_PRICE: u64 = 2000;
+/// Illustrations de skins gardées en mémoire (les plus récentes).
+const SPLASH_CACHE: usize = 6;
 
 /// Ce que l'interface affiche. Envoyé au front à chaque changement.
 #[derive(Serialize, Clone, Default, PartialEq, Debug)]
@@ -79,6 +81,10 @@ pub struct Profile {
     /// Tes 20 dernières parties (sans les parties annulées).
     pub recent_games: u64,
     pub recent_wins: u64,
+    /// Victoire (true) ou défaite pour chacune de ces parties, de la plus récente à la plus ancienne.
+    pub recent_results: Vec<bool>,
+    /// Champion de ta partie la plus récente ; 0 si aucune.
+    pub last_champion_id: i64,
     /// Tes champions les plus joués sur ces parties.
     pub recent_champions: Vec<RecentChampion>,
 }
@@ -138,6 +144,8 @@ pub struct RuneImport {
     /// Ton bilan contre ton adversaire direct, d'après l'historique de l'app.
     pub duel_games: u64,
     pub duel_wins: u64,
+    /// Skin choisi pour ton champion (numéro du client, ex. 103015) ; 0 si inconnu.
+    pub skin_id: i64,
 }
 
 /// Avant de verrouiller : les champions qui battent ton adversaire direct,
@@ -198,7 +206,12 @@ pub struct Assets {
     /// Objets du jeu d'après le client, lus une fois.
     items: Arc<Mutex<HashMap<i64, ItemData>>>,
     item_icons: Arc<Mutex<HashMap<i64, Vec<u8>>>>,
+    /// Dernières illustrations de skins lues, la plus récente à la fin.
+    splashes: Arc<Mutex<Vec<Splash>>>,
 }
+
+/// Illustration d'un skin : (numéro du skin, image).
+type Splash = (i64, Vec<u8>);
 
 #[derive(Clone)]
 struct ItemData {
@@ -206,6 +219,8 @@ struct ItemData {
     icon: String,
     /// Objet terminé (cher, ne s'améliore plus, pas des bottes).
     finished: bool,
+    /// Prix total dans la boutique.
+    price: u64,
 }
 
 impl Assets {
@@ -219,7 +234,14 @@ impl Assets {
             .timeout(Duration::from_secs(2))
             .build()
             .expect("impossible de créer le client HTTP");
-        Self { http, auth: Arc::default(), icons: Arc::default(), items: Arc::default(), item_icons: Arc::default() }
+        Self {
+            http,
+            auth: Arc::default(),
+            icons: Arc::default(),
+            items: Arc::default(),
+            item_icons: Arc::default(),
+            splashes: Arc::default(),
+        }
     }
 
     /// Icône carrée d'un champion (PNG), lue dans le client puis gardée en mémoire.
@@ -282,8 +304,9 @@ impl Assets {
             .filter_map(|it| {
                 let boots = it["categories"].as_array().is_some_and(|c| c.iter().any(|x| x == "Boots"));
                 let last = it["to"].as_array().is_none_or(Vec::is_empty);
-                let finished = !boots && last && it["priceTotal"].as_u64().unwrap_or(0) >= FINISHED_PRICE;
-                Some((it["id"].as_i64()?, ItemData { icon: it["iconPath"].as_str()?.to_string(), finished }))
+                let price = it["priceTotal"].as_u64().unwrap_or(0);
+                let finished = !boots && last && price >= FINISHED_PRICE;
+                Some((it["id"].as_i64()?, ItemData { icon: it["iconPath"].as_str()?.to_string(), finished, price }))
             })
             .collect();
         let loaded = !items.is_empty();
@@ -296,6 +319,75 @@ impl Assets {
         let items = self.items.lock().unwrap();
         owned.iter().filter(|id| items.get(id).is_some_and(|i| i.finished)).count()
     }
+
+    /// Valeur d'un inventaire au prix de la boutique : (objet, nombre) ; None tant que les prix ne sont pas lus.
+    fn items_value(&self, owned: &[(i64, u64)]) -> Option<u64> {
+        let items = self.items.lock().unwrap();
+        if items.is_empty() {
+            return None;
+        }
+        Some(owned.iter().map(|(id, count)| items.get(id).map_or(0, |i| i.price) * count).sum())
+    }
+
+    /// Illustration d'un skin (ex. 103015), lue dans le client puis gardée en mémoire.
+    /// Le chemin de l'image est dans la fiche du champion ; pour un chroma, c'est celle de son skin.
+    pub async fn splash(&self, skin_id: i64) -> Option<Vec<u8>> {
+        if let Some((_, image)) = self.splashes.lock().unwrap().iter().find(|(id, _)| *id == skin_id) {
+            return Some(image.clone());
+        }
+        let champion = skin_id / 1000;
+        let doc = self.client_file(&format!("/lol-game-data/assets/v1/champions/{champion}.json")).await;
+        let doc = doc.and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
+        let mut paths = doc.map_or_else(Vec::new, |doc| splash_paths(&doc, skin_id));
+        // Ancien emplacement des illustrations, au cas où la fiche ne serait pas lisible.
+        paths.push(format!("/lol-game-data/assets/v1/champion-splashes/{champion}/{skin_id}.jpg"));
+        for path in paths {
+            if let Some(image) = self.client_file(&path).await {
+                let mut cache = self.splashes.lock().unwrap();
+                cache.push((skin_id, image.clone()));
+                if cache.len() > SPLASH_CACHE {
+                    cache.remove(0);
+                }
+                return Some(image);
+            }
+        }
+        None
+    }
+
+    /// Un fichier du client (`path` commence par « / ») ; None si le client est fermé ou ne l'a pas.
+    async fn client_file(&self, path: &str) -> Option<Vec<u8>> {
+        let (base, password) = self.auth.lock().unwrap().clone()?;
+        let resp = self.http.get(format!("{base}{path}")).basic_auth("riot", Some(password)).send().await.ok()?;
+        if !resp.status().is_success() {
+            return None;
+        }
+        Some(resp.bytes().await.ok()?.to_vec())
+    }
+}
+
+/// Chemins possibles de l'illustration d'un skin, d'après la fiche du champion (le premier qui existe gagne) :
+/// le skin lui-même, ou celui dont c'est un chroma, ou le palier d'un skin à paliers ; sinon le skin de base.
+fn splash_paths(champion: &Value, skin_id: i64) -> Vec<String> {
+    let skins: Vec<&Value> = champion["skins"].as_array().into_iter().flatten().collect();
+    let has = |list: &Value| list.as_array().is_some_and(|l| l.iter().any(|x| x["id"] == skin_id));
+    let tier = skins
+        .iter()
+        .flat_map(|s| s["questSkinInfo"]["tiers"].as_array().into_iter().flatten())
+        .find(|t| t["id"] == skin_id);
+    let skin = skins
+        .iter()
+        .find(|s| s["id"] == skin_id || has(&s["chromas"]) || has(&s["questSkinInfo"]["tiers"]));
+    let base = skins.iter().find(|s| s["isBase"] == true).or(skins.first());
+    let mut paths = Vec::new();
+    for entry in [tier, skin.copied(), base.copied()].into_iter().flatten() {
+        for key in ["splashPath", "uncenteredSplashPath"] {
+            let new = |path: &&str| path.starts_with('/') && !paths.iter().any(|known| known == path);
+            if let Some(path) = entry[key].as_str().filter(new) {
+                paths.push(path.to_string());
+            }
+        }
+    }
+    paths
 }
 
 #[derive(Serialize, Clone, Default, PartialEq, Debug)]
@@ -313,6 +405,10 @@ pub struct Game {
     pub cs: u64,
     pub gold: u64,
     pub items: Vec<String>,
+    /// Ton poste : "TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY" ; vide ou "NONE" dans les modes sans postes.
+    pub position: String,
+    /// Ton skin (numéro du client, ex. 267002) ; 0 si inconnu.
+    pub skin_id: i64,
     /// Les 10 champions : ton équipe et l'équipe adverse, chacune triée par poste.
     pub allies: Vec<Player>,
     pub enemies: Vec<Player>,
@@ -337,6 +433,12 @@ pub struct Player {
     pub me: bool,
     /// Rang dans la file de la partie (aucun pour un joueur en mode streamer).
     pub rank: Option<Rank>,
+    /// true si le client cache ce joueur (mode streamer) : pas de rang à montrer.
+    pub rank_hidden: bool,
+    /// Poste : "TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY" ; vide ou "NONE" dans les modes sans postes.
+    pub position: String,
+    /// Valeur de ses objets au prix de la boutique ; None tant que les prix ne sont pas lus.
+    pub items_value: Option<u64>,
 }
 
 /// La partie en cours : ses joueurs et leurs rangs (connus dès l'écran de chargement),
@@ -354,6 +456,10 @@ struct CurrentGame {
     enemies: Vec<Player>,
     /// Rang de chaque joueur, par champion.
     ranks: HashMap<i64, Rank>,
+    /// Champions des joueurs que le client donne (les autres sont en mode streamer).
+    listed: HashSet<i64>,
+    /// Ton skin, pour l'historique.
+    skin_id: i64,
     /// Objets du panneau, et pour quels (champion, poste, adversaire) ils ont été cherchés.
     build: Option<opgg::Build>,
     build_for: Option<(i64, String, Option<i64>)>,
@@ -607,6 +713,7 @@ impl Tracker {
             self.last_pick = Some((champion_id, position.to_string(), opponent_id));
         }
         result.laning = laning;
+        result.skin_id = my_cell(&session).and_then(|p| p["selectedSkinId"].as_i64()).unwrap_or(0);
         result.allies = allies;
         result.enemies = enemies.iter().map(|e| Enemy { id: e.id, name: e.name.clone() }).collect();
         result.opponent_id = opponent.map(|o| o.id);
@@ -1087,6 +1194,8 @@ impl Tracker {
         if self.game.is_none() {
             self.game = self.start_game(base, password).await;
         }
+        // Prix des objets, pour la valeur des inventaires (lus une fois).
+        self.assets.load_items().await;
         let loading = match &self.game {
             Some(g) => Game { allies: g.allies.clone(), enemies: g.enemies.clone(), ..Default::default() },
             None => Game::default(),
@@ -1139,10 +1248,18 @@ impl Tracker {
             self.champion_ids.get(&alias).copied().unwrap_or(0)
         };
         let ranks = self.game.as_ref().map(|g| &g.ranks);
+        // Joueur absent de ceux que le client donne : il est en mode streamer, son rang est caché.
+        let hidden = |id: i64| self.game.as_ref().is_some_and(|g| !g.listed.is_empty() && !g.listed.contains(&id));
+        // Inventaire : (objet, nombre).
+        let inventory = |player: &Value| -> Vec<(i64, u64)> {
+            let list = player["items"].as_array().into_iter().flatten();
+            list.filter_map(|it| Some((it["itemID"].as_i64()?, it["count"].as_u64().unwrap_or(1)))).collect()
+        };
         let (mut allies, mut enemies) = (Vec::new(), Vec::new());
         for player in sorted {
             let score = |key: &str| player["scores"][key].as_u64().unwrap_or(0);
             let id = champion_id(player);
+            let rank = ranks.and_then(|r| r.get(&id)).cloned();
             let entry = Player {
                 champion: player["championName"].as_str().unwrap_or("?").to_string(),
                 champion_id: id,
@@ -1151,7 +1268,10 @@ impl Tracker {
                 deaths: score("deaths"),
                 assists: score("assists"),
                 me: std::ptr::eq(player, p),
-                rank: ranks.and_then(|r| r.get(&id)).cloned(),
+                rank_hidden: rank.is_none() && hidden(id),
+                rank,
+                position: player["position"].as_str().unwrap_or_default().to_string(),
+                items_value: self.assets.items_value(&inventory(player)),
             };
             if player["team"] == p["team"] {
                 allies.push(entry);
@@ -1168,9 +1288,17 @@ impl Tracker {
             .map(champion_id)
             .filter(|id| *id > 0);
         let my_id = champion_id(p);
+        // Numéro du skin dans le client : champion × 1000 + numéro du skin chez ce champion.
+        let skin_id = match p["skinID"].as_i64() {
+            Some(n) if my_id > 0 && n >= 0 => my_id * 1000 + n,
+            _ => 0,
+        };
         if let Some(game) = &mut self.game {
             if my_id > 0 {
                 game.champion_id = my_id;
+            }
+            if skin_id > 0 {
+                game.skin_id = skin_id;
             }
             let position = lane(&my_lane.to_lowercase(), "");
             if !position.is_empty() {
@@ -1197,6 +1325,8 @@ impl Tracker {
             cs: score("creepScore"),
             gold: me["currentGold"].as_f64().unwrap_or(0.0) as u64,
             items: items.into_iter().map(|(_, name)| name).collect(),
+            position: my_lane.to_string(),
+            skin_id,
             allies,
             enemies,
             build,
@@ -1290,13 +1420,17 @@ impl Tracker {
             for p in &team {
                 let champion_id = p["championId"].as_i64().unwrap_or(0);
                 let champion = if champion_id > 0 { self.champ(base, password, champion_id).await.name } else { String::new() };
-                let rank = match p["puuid"].as_str().filter(|puuid| !puuid.is_empty()) {
+                let puuid = p["puuid"].as_str().filter(|puuid| !puuid.is_empty());
+                let rank = match puuid {
                     Some(puuid) => {
                         let url = format!("{base}/lol-ranked/v1/ranked-stats/{puuid}");
                         self.get(&url, Some(password)).await.map(|stats| rank_in(&stats, queue))
                     }
                     None => None,
                 };
+                if champion_id > 0 && puuid.is_some() {
+                    game.listed.insert(champion_id);
+                }
                 if let Some(rank) = rank.as_ref().filter(|_| champion_id > 0) {
                     game.ranks.insert(champion_id, rank.clone());
                 }
@@ -1306,7 +1440,16 @@ impl Tracker {
                 }
                 let lane = p["selectedPosition"].as_str().unwrap_or_default();
                 let order = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"].iter().position(|l| *l == lane).unwrap_or(5);
-                players.push((order, Player { champion, champion_id, me: is_me, rank, ..Default::default() }));
+                let player = Player {
+                    champion,
+                    champion_id,
+                    me: is_me,
+                    rank_hidden: puuid.is_none(),
+                    rank,
+                    position: lane.to_string(),
+                    ..Default::default()
+                };
+                players.push((order, player));
             }
             players.sort_by_key(|(order, _)| *order);
             let players = players.into_iter().map(|(_, p)| p).collect();
@@ -1335,6 +1478,8 @@ impl Tracker {
         };
         let games = matches.as_ref().and_then(|m| m["games"]["games"].as_array()).cloned().unwrap_or_default();
         let mut counts: Vec<(i64, u64, u64)> = Vec::new();
+        // (date, victoire, champion) de chaque partie, pour les ranger de la plus récente à la plus ancienne.
+        let mut results: Vec<(i64, bool, i64)> = Vec::new();
         for game in &games {
             let Some(record) = history::record_from(game, self.puuid.as_deref(), self.summoner_id, 0) else {
                 continue;
@@ -1344,6 +1489,7 @@ impl Tracker {
             }
             profile.recent_games += 1;
             profile.recent_wins += u64::from(record.win);
+            results.push((record.date, record.win, record.champion_id));
             match counts.iter_mut().find(|(id, _, _)| *id == record.champion_id) {
                 Some((_, played, won)) => {
                     *played += 1;
@@ -1352,6 +1498,9 @@ impl Tracker {
                 None => counts.push((record.champion_id, 1, u64::from(record.win))),
             }
         }
+        results.sort_by_key(|(date, _, _)| std::cmp::Reverse(*date));
+        profile.recent_results = results.iter().map(|(_, win, _)| *win).collect();
+        profile.last_champion_id = results.first().map_or(0, |(_, _, champion)| *champion);
         // Les plus joués d'abord (à égalité, dans l'ordre de la liste du client).
         counts.sort_by_key(|(_, games, _)| std::cmp::Reverse(*games));
         for (champion_id, games, wins) in counts.into_iter().take(3) {
@@ -1394,6 +1543,10 @@ impl Tracker {
         }
         record.champion = self.champ(base, password, record.champion_id).await.name;
         record.position = game.position;
+        // Le skin joué, s'il est bien celui de ce champion.
+        if game.skin_id / 1000 == record.champion_id {
+            record.skin_id = game.skin_id;
+        }
         if let Some(id) = game.opponent_id {
             record.opponent_id = id;
             record.opponent = self.champ(base, password, id).await.name;
