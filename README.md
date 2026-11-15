@@ -111,13 +111,18 @@ Les champions déjà pris ou bannis sont retirés de ces listes.
 
 **Dès que ton champion est verrouillé**, l'app demande à OP.GG les runes et le build les plus
 joués pour ce champion et ton poste, puis :
-1. écrit les runes dans une page « LoL Companion » qu'elle rend active ;
+1. écrit les runes dans ta page de runes sélectionnée, qui prend le nom « LoL Companion » ;
 2. met les sorts d'invocateur conseillés, le Saut éclair sur ta touche ;
 3. affiche le build : objets de départ, 3 objets principaux, bottes, choix suivants,
    ordre des compétences ;
 4. ajoute à la boutique un set d'objets « LoL Companion · <champion> ».
 
-- La première fois, il faut une page de runes libre, ou une page renommée « LoL Companion ».
+- Runes : pas besoin de page libre, ce que contenait ta page sélectionnée est remplacé. Le client ne
+  laisse pas modifier une page : l'app la supprime et la recrée à la même place ; si la recréation
+  échoue, ta page est remise telle qu'elle était. Si la page sélectionnée est une page par défaut de Riot
+  (qui ne se supprime pas), l'app remplace sa page « LoL Companion », ou en crée une s'il reste de la
+  place. Si tu changes de page ou de runes après l'import, l'app n'y touche plus jusqu'à la fin de la
+  sélection.
 - Sorts : si tu les changes toi-même pendant la sélection, l'app n'y touche plus. Avec « sa touche
   actuelle », le Saut éclair reste là où tu l'avais mis ; si le client donne des sorts illisibles au
   moment de l'import, l'app prend ceux qu'elle a lus juste avant, et n'y touche pas si elle n'en a aucun.

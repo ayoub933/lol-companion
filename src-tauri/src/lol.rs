@@ -146,6 +146,8 @@ pub struct RuneImport {
     pub matchup: Option<MatchupInfo>,
     /// true si la page de runes est dans le client (false : import coupé dans les réglages, ou refusé).
     pub page_applied: bool,
+    /// Pourquoi la page de runes n'a pas été changée (tu as changé de page ou de runes depuis l'import).
+    pub page_note: Option<String>,
     /// Sorts mis dans le client, sur D puis sur F (vide si l'app ne les a pas changés).
     pub spells_applied: Vec<String>,
     /// Pourquoi les sorts n'ont pas été changés.
@@ -594,6 +596,9 @@ pub struct Tracker {
     /// Tes sorts tels que tu les as mis, relus à chaque tour tant que l'app n'y a pas touché :
     /// de quoi savoir où est ton Saut éclair si le client les donne mal au moment de l'import.
     seen_spells: Option<[i64; 2]>,
+    /// Page de runes écrite par l'app pendant cette sélection : (numéro, runes). Si tu as changé de page
+    /// ou de runes depuis, c'est ton choix : on n'y touche plus.
+    page_set: Option<(i64, Vec<i64>)>,
     /// Ton champion, ton poste et ton adversaire à la fin de la sélection, pour l'historique.
     last_pick: Option<(i64, String, Option<i64>)>,
     game: Option<CurrentGame>,
@@ -642,6 +647,7 @@ impl Tracker {
             counters_cache: HashMap::new(),
             spells_set: None,
             seen_spells: None,
+            page_set: None,
             last_pick: None,
             game: None,
             finished: None,
@@ -725,6 +731,7 @@ impl Tracker {
             self.rune_import = None;
             self.spells_set = None;
             self.seen_spells = None;
+            self.page_set = None;
             None
         };
 
@@ -1113,9 +1120,13 @@ impl Tracker {
         result.wins = runes.wins;
         if self.settings.import_runes {
             match self.apply_page(base, password, runes).await {
-                Ok(()) => {
+                Ok(true) => {
                     eprintln!("[runes] page appliquée{versus} : {} ({} / {})", runes.keystone, runes.primary_name, runes.secondary_name);
                     result.page_applied = true;
+                }
+                Ok(false) => {
+                    eprintln!("[runes] page gardée : tu as changé de page ou de runes");
+                    result.page_note = Some("Ta page gardée : tu as changé de page ou de runes".to_string());
                 }
                 Err(e) => {
                     eprintln!("[runes] échec : {e}");
@@ -1326,11 +1337,32 @@ impl Tracker {
     }
 
     /// Remplace la page « LoL Companion » (ou en crée une) et la rend active.
-    async fn apply_page(&self, base: &str, password: &str, runes: &opgg::Runes) -> Result<(), String> {
-        let pages = self.get(&format!("{base}/lol-perks/v1/pages"), Some(password)).await.unwrap_or(Value::Null);
-        let old = pages.as_array().and_then(|list| list.iter().find(|p| p["name"] == PAGE_NAME));
-        if let Some(id) = old.and_then(|p| p["id"].as_i64()) {
-            let _ = self.send(Method::DELETE, &format!("{base}/lol-perks/v1/pages/{id}"), Some(password), None).await;
+    /// Met les runes dans ta page de runes sélectionnée, renommée « LoL Companion ». Le client ne laisse pas
+    /// modifier une page : elle est supprimée puis recréée à sa place (si la recréation échoue, l'ancienne est
+    /// remise). Page sélectionnée par défaut (qui ne se supprime pas) : une page « LoL Companion » à part.
+    /// Ok(false) : tu as changé de page ou de runes depuis l'import précédent, l'app n'y touche plus.
+    async fn apply_page(&mut self, base: &str, password: &str, runes: &opgg::Runes) -> Result<bool, String> {
+        let pages_url = format!("{base}/lol-perks/v1/pages");
+        let current = self.get(&format!("{base}/lol-perks/v1/currentpage"), Some(password)).await;
+        let current_id = current.as_ref().and_then(|p| p["id"].as_i64());
+        if let Some((id, perks)) = &self.page_set {
+            let unchanged = current_id == Some(*id) && current.as_ref().is_some_and(|p| sorted_perks(p) == sorted(perks));
+            if !unchanged {
+                return Ok(false);
+            }
+        }
+        // La page à remplacer : la tienne si elle peut l'être, sinon l'ancienne page « LoL Companion ».
+        let mine = current.filter(|p| p["isDeletable"] == true && current_id.is_some());
+        let target = match &mine {
+            Some(page) => Some(page.clone()),
+            None => {
+                let pages = self.get(&pages_url, Some(password)).await.unwrap_or(Value::Null);
+                let list = pages.as_array().cloned().unwrap_or_default();
+                list.into_iter().find(|p| p["name"] == PAGE_NAME && p["isDeletable"] == true)
+            }
+        };
+        if let Some(id) = target.as_ref().and_then(|p| p["id"].as_i64()) {
+            let _ = self.send(Method::DELETE, &format!("{pages_url}/{id}"), Some(password), None).await;
         }
         let page = json!({
             "name": PAGE_NAME,
@@ -1339,12 +1371,36 @@ impl Tracker {
             "selectedPerkIds": runes.perks,
             "current": true,
         });
-        self.send(Method::POST, &format!("{base}/lol-perks/v1/pages"), Some(password), Some(&page))
-            .await
-            .map(|_| ())
-            .map_err(|e| {
-                format!("Le client a refusé la page ({e}). Si toutes tes pages sont prises, renomme-en une « {PAGE_NAME} ».")
-            })
+        match self.send(Method::POST, &pages_url, Some(password), Some(&page)).await {
+            Ok(created) => {
+                let id = match created["id"].as_i64() {
+                    Some(id) => Some(id),
+                    None => self.get(&format!("{base}/lol-perks/v1/currentpage"), Some(password)).await.and_then(|p| p["id"].as_i64()),
+                };
+                self.page_set = id.map(|id| (id, runes.perks.clone()));
+                Ok(true)
+            }
+            Err(e) => {
+                // Ta page a été supprimée mais pas remplacée : on la remet telle qu'elle était.
+                if let Some(old) = &mine {
+                    let restored = json!({
+                        "name": old["name"],
+                        "primaryStyleId": old["primaryStyleId"],
+                        "subStyleId": old["subStyleId"],
+                        "selectedPerkIds": old["selectedPerkIds"],
+                        "current": true,
+                    });
+                    if let Err(e) = self.send(Method::POST, &pages_url, Some(password), Some(&restored)).await {
+                        eprintln!("[runes] ta page « {} » n'a pas pu être remise ({e})", old["name"].as_str().unwrap_or("?"));
+                    }
+                }
+                Err(if mine.is_some() {
+                    format!("Le client a refusé la page ({e}) : ta page sélectionnée est restée telle quelle.")
+                } else {
+                    format!("Le client a refusé la page ({e}). Si toutes tes pages sont prises, sélectionne une des tiennes : l'app écrira dedans.")
+                })
+            }
+        }
     }
 
     /// Tes stats dans la partie en cours, via la Live Client Data API.
@@ -1798,6 +1854,7 @@ impl Tracker {
         self.profile_due = true;
         self.spells_set = None;
         self.seen_spells = None;
+        self.page_set = None;
         self.last_phase = None;
         self.rune_import = None;
         self.spell_names.clear();
@@ -1813,6 +1870,18 @@ fn my_cell(session: &Value) -> Option<&Value> {
         .as_array()?
         .iter()
         .find(|p| p["cellId"] == session["localPlayerCellId"])
+}
+
+/// Runes d'une page de runes, triées : pour voir si elle a changé, quel que soit l'ordre donné par le client.
+fn sorted_perks(page: &Value) -> Vec<i64> {
+    let perks: Vec<i64> = page["selectedPerkIds"].as_array().into_iter().flatten().filter_map(Value::as_i64).collect();
+    sorted(&perks)
+}
+
+fn sorted(ids: &[i64]) -> Vec<i64> {
+    let mut ids = ids.to_vec();
+    ids.sort_unstable();
+    ids
 }
 
 /// Sorts d'un joueur de la sélection : [D, F] ; None si le client ne donne pas deux sorts valables.

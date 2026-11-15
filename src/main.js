@@ -686,9 +686,9 @@ function renderRunes(runes) {
       games = `${whole(runes.games)} parties`;
     }
     if (runes.pageApplied) {
-      applied = `Page « LoL Companion » appliquée${runes.matchup?.applied ? ` · duel contre ${runes.matchup.opponent}` : ""}`;
+      applied = `Mises dans ta page sélectionnée${runes.matchup?.applied ? ` · duel contre ${runes.matchup.opponent}` : ""}`;
     } else {
-      applied = "Import des runes coupé dans les réglages";
+      applied = runes.pageNote ?? "Import des runes coupé dans les réglages";
       appliedClass += " off";
     }
   }
