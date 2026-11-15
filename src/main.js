@@ -839,9 +839,6 @@ function renderMe(game) {
   $("cs").textContent = `${game.cs}–${game.cs + 9}`;
   $("cs-label").textContent = game.cs >= 10 && minutes >= 1 ? `CS · ≈ ${decimal((game.cs + 4.5) / minutes)}/min` : "CS";
   $("gold").textContent = whole(game.gold);
-
-  $("items").hidden = !game.items.length;
-  $("items").replaceChildren(...game.items.map((name) => el("span", "", name)));
 }
 
 // Les 10 champions couloir par couloir, avec l'écart de valeur des objets ;

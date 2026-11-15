@@ -1,8 +1,8 @@
-//! Fenêtres posées sur le jeu : transparentes, toujours au-dessus, que les clics traversent et qui ne prennent
-//! jamais le clavier. Elles ne se voient que si LoL est en mode « sans bordure » : en plein écran, le jeu passe
-//! par-dessus tout.
+//! Fenêtres posées sur le jeu, affichées tant que Tab est tenue (avec le tableau des scores) : transparentes,
+//! toujours au-dessus, que les clics traversent et qui ne prennent jamais le clavier. Elles ne se voient que si
+//! LoL est en mode « sans bordure » : en plein écran, le jeu passe par-dessus tout.
 //! - Le panneau des objets à acheter, sur le bord gauche de l'écran du jeu, à mi-hauteur.
-//! - Les écarts d'or, à gauche du tableau des scores, tant que Tab est tenu.
+//! - Les écarts d'or, juste à gauche du tableau des scores.
 
 use std::{
     sync::{
@@ -56,9 +56,9 @@ impl Overlay {
     fn rect(self, (x, y, width, height): Rect) -> Rect {
         let part = |share: f64| (f64::from(height) * share).round() as i32;
         match self {
-            // Collé au bord gauche, centré en hauteur ; 172 × 367 en 1080p.
+            // Collé au bord gauche, centré en hauteur ; 194 × 367 en 1080p (numéros, puis jusqu'à 4 icônes).
             Self::Build => {
-                let (w, h) = (part(0.16), part(0.34));
+                let (w, h) = (part(0.18), part(0.34));
                 (x, y + (height - h) / 2, w, h)
             }
             // Le tableau des scores est centré et va de 380 à 1537 en 1920 × 1080 (relevé sur une capture) :
@@ -72,10 +72,11 @@ impl Overlay {
     }
 }
 
-/// Montre une fenêtre sur le jeu (`wanted`), ou la cache.
-/// Elle reste cachée tant que le jeu n'est pas la fenêtre active (Alt+Tab, clic sur l'autre écran).
-pub fn update(app: &AppHandle, overlay: Overlay, wanted: bool) {
-    place(app, overlay, if wanted { game_screen(app) } else { None });
+/// Ce que chaque fenêtre a à montrer (réglage actif, partie en cours...) : la boucle principale le tient à jour.
+#[derive(Default)]
+pub struct Ready {
+    pub build: AtomicBool,
+    pub gold: AtomicBool,
 }
 
 /// Crée la fenêtre à l'avance (cachée), pour qu'elle s'affiche tout de suite le moment venu.
@@ -88,19 +89,23 @@ pub fn prepare(app: &AppHandle, overlay: Overlay) {
     }
 }
 
-/// Écarts d'or : affichés tant que Tab est tenu (sans Alt), jeu au premier plan.
-/// `ready` : une partie est en cours et le réglage est actif.
-pub fn watch_scoreboard(app: AppHandle, ready: Arc<AtomicBool>) {
+/// Les fenêtres prêtes s'affichent tant que Tab est tenue (sans Alt), jeu au premier plan ;
+/// elles restent cachées le reste du temps (Alt+Tab, clic sur l'autre écran...).
+pub fn watch_tab(app: AppHandle, ready: Arc<Ready>) {
     std::thread::spawn(move || {
-        let mut shown: Option<Rect> = None;
+        let mut shown: [Option<Rect>; 2] = [None, None];
         loop {
-            let ready = ready.load(Ordering::Relaxed);
-            let screen = if ready && scoreboard_key_held() { game_screen(&app) } else { None };
-            if screen != shown {
-                place(&app, Overlay::Gold, screen);
-                shown = screen;
+            let wanted = [ready.build.load(Ordering::Relaxed), ready.gold.load(Ordering::Relaxed)];
+            let active = wanted.contains(&true);
+            let screen = if active && scoreboard_key_held() { game_screen(&app) } else { None };
+            for (i, overlay) in [Overlay::Build, Overlay::Gold].into_iter().enumerate() {
+                let target = screen.filter(|_| wanted[i]);
+                if target != shown[i] {
+                    place(&app, overlay, target);
+                    shown[i] = target;
+                }
             }
-            std::thread::sleep(if ready { TAB_POLL } else { IDLE_POLL });
+            std::thread::sleep(if active { TAB_POLL } else { IDLE_POLL });
         }
     });
 }

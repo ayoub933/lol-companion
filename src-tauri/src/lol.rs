@@ -311,6 +311,20 @@ impl Assets {
         Some(png)
     }
 
+    /// Icône de l'or (celle du tableau des scores de l'historique du client), lue dans le client ;
+    /// sinon sur CommunityDragon, qui reprend ses fichiers. Gardée en mémoire.
+    pub async fn gold_icon(&self) -> Option<Vec<u8>> {
+        let path = "/fe/lol-match-history/icon_gold.png";
+        if let Some(png) = self.cached_client_file(path).await {
+            return Some(png);
+        }
+        let url = "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-match-history/global/default/icon_gold.png";
+        let resp = self.web.get(url).send().await.ok().filter(|r| r.status().is_success())?;
+        let png = resp.bytes().await.ok()?.to_vec();
+        self.images.lock().unwrap().insert(path.to_string(), png.clone());
+        Some(png)
+    }
+
     /// Un fichier du client gardé en mémoire après la première lecture.
     async fn cached_client_file(&self, path: &str) -> Option<Vec<u8>> {
         if let Some(bytes) = self.images.lock().unwrap().get(path) {
@@ -477,7 +491,6 @@ pub struct Game {
     pub assists: u64,
     pub cs: u64,
     pub gold: u64,
-    pub items: Vec<String>,
     /// Ton poste : "TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY" ; vide ou "NONE" dans les modes sans postes.
     pub position: String,
     /// Ton skin (numéro du client, ex. 267002) ; 0 si inconnu.
@@ -578,6 +591,9 @@ pub struct Tracker {
     counters_cache: HashMap<(i64, String), Vec<opgg::Pick>>,
     /// Sorts mis par l'app pendant cette sélection : s'ils ont changé depuis, c'est toi qui les as changés.
     spells_set: Option<[i64; 2]>,
+    /// Tes sorts tels que tu les as mis, relus à chaque tour tant que l'app n'y a pas touché :
+    /// de quoi savoir où est ton Saut éclair si le client les donne mal au moment de l'import.
+    seen_spells: Option<[i64; 2]>,
     /// Ton champion, ton poste et ton adversaire à la fin de la sélection, pour l'historique.
     last_pick: Option<(i64, String, Option<i64>)>,
     game: Option<CurrentGame>,
@@ -625,6 +641,7 @@ impl Tracker {
             help_cache: HashMap::new(),
             counters_cache: HashMap::new(),
             spells_set: None,
+            seen_spells: None,
             last_pick: None,
             game: None,
             finished: None,
@@ -707,6 +724,7 @@ impl Tracker {
         } else {
             self.rune_import = None;
             self.spells_set = None;
+            self.seen_spells = None;
             None
         };
 
@@ -742,6 +760,11 @@ impl Tracker {
         let ids: Vec<&Value> = their_team.iter().map(|p| &p["championId"]).collect();
         let positions: Vec<&Value> = their_team.iter().map(|p| &p["assignedPosition"]).collect();
         self.log("adversaires", format!("[adversaires] champions {}, postes {}", json!(ids), json!(positions)));
+
+        // Tes sorts, tant que l'app n'y a pas touché.
+        if self.spells_set.is_none() {
+            self.seen_spells = my_cell(&session).and_then(spells_of).or(self.seen_spells);
+        }
 
         // Ton poste (attribué par le client) et le mode de jeu.
         let assigned = my_cell(&session)
@@ -1109,7 +1132,6 @@ impl Tracker {
                 match self.apply_spells(base, password, &build.spells).await {
                     Ok(spells) => {
                         result.spells_applied = self.spell_names(base, password, &spells).await;
-                        eprintln!("[sorts] D = {}, F = {}", spells[0], spells[1]);
                     }
                     Err(note) => {
                         eprintln!("[sorts] {note}");
@@ -1143,11 +1165,19 @@ impl Tracker {
         };
         let session = self.get(&format!("{base}/lol-champ-select/v1/session"), Some(password)).await.unwrap_or(Value::Null);
         let cell = my_cell(&session).ok_or("Sélection illisible : tes sorts n'ont pas été changés.")?;
-        let current = [cell["spell1Id"].as_i64().unwrap_or(0), cell["spell2Id"].as_i64().unwrap_or(0)];
+        // Sorts du moment ; si le client les donne mal à cet instant, ceux lus juste avant (jamais au hasard).
+        let current = spells_of(cell)
+            .or(self.seen_spells)
+            .ok_or("Sorts illisibles dans la sélection : tes sorts n'ont pas été changés.")?;
         if self.spells_set.is_some_and(|set| set != current) {
             return Err("Sorts gardés : tu les as changés à la main.".to_string());
         }
-        let spells = spell_slots([a, b], current, &self.settings.flash_key);
+        let flash_key = self.settings.flash_key.clone();
+        let spells = spell_slots([a, b], current, &flash_key);
+        eprintln!(
+            "[sorts] avant D = {}, F = {} ; après D = {}, F = {} (Saut éclair : {flash_key})",
+            current[0], current[1], spells[0], spells[1]
+        );
         if spells != current {
             let body = json!({ "spell1Id": spells[0], "spell2Id": spells[1] });
             let url = format!("{base}/lol-champ-select/v1/session/my-selection");
@@ -1360,19 +1390,6 @@ impl Tracker {
             return loading;
         };
 
-        let mut items: Vec<(u64, String)> = p["items"]
-            .as_array()
-            .map(|list| {
-                list.iter()
-                    .filter_map(|it| {
-                        let name = it["displayName"].as_str()?.to_string();
-                        Some((it["slot"].as_u64().unwrap_or(99), name))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        items.sort_by_key(|(slot, _)| *slot);
-
         // Les 10 champions, chaque équipe dans l'ordre haut, jungle, milieu, bas, support.
         let lane_order = |player: &Value| {
             let lane = player["position"].as_str().unwrap_or_default();
@@ -1471,7 +1488,6 @@ impl Tracker {
             assists: score("assists"),
             cs: score("creepScore"),
             gold: me["currentGold"].as_f64().unwrap_or(0.0) as u64,
-            items: items.into_iter().map(|(_, name)| name).collect(),
             position: my_lane.to_string(),
             skin_id,
             allies,
@@ -1781,6 +1797,7 @@ impl Tracker {
         self.profile = None;
         self.profile_due = true;
         self.spells_set = None;
+        self.seen_spells = None;
         self.last_phase = None;
         self.rune_import = None;
         self.spell_names.clear();
@@ -1796,6 +1813,12 @@ fn my_cell(session: &Value) -> Option<&Value> {
         .as_array()?
         .iter()
         .find(|p| p["cellId"] == session["localPlayerCellId"])
+}
+
+/// Sorts d'un joueur de la sélection : [D, F] ; None si le client ne donne pas deux sorts valables.
+fn spells_of(cell: &Value) -> Option<[i64; 2]> {
+    let spell = |key: &str| cell[key].as_i64().filter(|id| *id > 0);
+    Some([spell("spell1Id")?, spell("spell2Id")?])
 }
 
 /// Champion verrouillé : d'après le client, sinon d'après ton action « choix » terminée,

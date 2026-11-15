@@ -8,10 +8,7 @@ use overlay::Overlay;
 use settings::Settings;
 use std::{
     path::PathBuf,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
-    },
+    sync::{atomic::Ordering, Arc, Mutex},
 };
 use tauri::{
     menu::{Menu, MenuItem},
@@ -153,7 +150,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![get_state, set_opponent, get_settings, set_settings, install_update])
         // Images lues dans le client : lcu://localhost/<numéro du champion>, lcu://localhost/item-<numéro de l'objet>,
         // lcu://localhost/splash-<numéro du skin> (illustration), lcu://localhost/perk-<numéro de la rune ou de la voie>,
-        // lcu://localhost/rank-<rang en minuscules> (emblème).
+        // lcu://localhost/rank-<rang en minuscules> (emblème), lcu://localhost/gold (icône de l'or).
         .register_asynchronous_uri_scheme_protocol("lcu", move |_ctx, request, responder| {
             let icons = icons.clone();
             let path = request.uri().path().trim_start_matches('/').to_string();
@@ -171,6 +168,8 @@ pub fn run() {
                     }
                 } else if let Some(tier) = path.strip_prefix("rank-") {
                     icons.rank_emblem(tier).await.map(|png| (png, "image/png"))
+                } else if path == "gold" {
+                    icons.gold_icon().await.map(|png| (png, "image/png"))
                 } else if let Some(skin) = path.strip_prefix("splash-") {
                     match number(skin).filter(|id| *id > 0) {
                         Some(id) => icons.splash(id).await.map(|jpg| (jpg, "image/jpeg")),
@@ -236,9 +235,9 @@ pub fn run() {
                 });
             }
 
-            // Écarts d'or sur le tableau des scores : la touche Tab est suivie à part, bien plus souvent.
-            let gold_ready = Arc::new(AtomicBool::new(false));
-            overlay::watch_scoreboard(app.handle().clone(), gold_ready.clone());
+            // Fenêtres posées sur le jeu : elles suivent la touche Tab, regardée à part, bien plus souvent.
+            let ready = Arc::new(overlay::Ready::default());
+            overlay::watch_tab(app.handle().clone(), ready.clone());
 
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -273,16 +272,18 @@ pub fn run() {
                         *handle.state::<Latest>().0.lock().unwrap() = snap.clone();
                         let _ = handle.emit("lol-state", &snap);
                     }
-                    // Panneau des objets sur le bord gauche du jeu, tant qu'il reste des objets à acheter.
-                    let build_wanted =
-                        settings.show_build_overlay && snap.game.as_ref().is_some_and(|g| g.ready && !g.panel.is_empty());
-                    overlay::update(&handle, Overlay::Build, build_wanted);
-                    // Écarts d'or : prêts dès que la partie a commencé ; Tab les fait apparaître.
-                    let gold = settings.show_gold_overlay && snap.game.as_ref().is_some_and(|g| g.ready);
-                    if gold {
-                        overlay::prepare(&handle, Overlay::Gold);
+                    // En partie, Tab fait apparaître le panneau des objets (tant qu'il en reste à acheter)
+                    // et les écarts d'or.
+                    let started = snap.game.as_ref().filter(|g| g.ready);
+                    let build = settings.show_build_overlay && started.is_some_and(|g| !g.panel.is_empty());
+                    let gold = settings.show_gold_overlay && started.is_some();
+                    for (wanted, which) in [(build, Overlay::Build), (gold, Overlay::Gold)] {
+                        if wanted {
+                            overlay::prepare(&handle, which);
+                        }
                     }
-                    gold_ready.store(gold, Ordering::Relaxed);
+                    ready.build.store(build, Ordering::Relaxed);
+                    ready.gold.store(gold, Ordering::Relaxed);
                     let delay = lol::Tracker::next_delay(&snap);
                     previous = snap;
                     tokio::time::sleep(delay).await;

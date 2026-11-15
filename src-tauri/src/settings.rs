@@ -19,9 +19,9 @@ pub struct Settings {
     pub notify_match_found: bool,
     /// true = la croix réduit l'app dans la zone de notification (près de l'horloge).
     pub close_to_tray: bool,
-    /// En partie : objets à acheter sur le bord gauche de l'écran du jeu.
+    /// En partie, en tenant Tab : objets à acheter sur le bord gauche de l'écran du jeu.
     pub show_build_overlay: bool,
-    /// En partie : écarts d'or à côté du tableau des scores, tant que Tab est tenu.
+    /// En partie, en tenant Tab : écarts d'or à côté du tableau des scores.
     pub show_gold_overlay: bool,
 }
 

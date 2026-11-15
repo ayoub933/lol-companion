@@ -1847,7 +1847,7 @@ body.board .loading {
   line-height: 1;
 }
 
-/* Toi : l'illustration de ton skin, puis tes chiffres et tes objets. */
+/* Toi : l'illustration de ton skin, puis tes chiffres. */
 .card.me {
   padding: 0 0 12px;
   overflow: hidden;
@@ -1887,21 +1887,8 @@ body.board .me-hero {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.card.me .cells,
-.card.me .chips {
+.card.me .cells {
   margin: 0 12px;
-}
-
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.chips span {
-  padding: 5px 16px 5px 10px;
-  background: var(--chip);
-  font-size: 13px;
-  clip-path: polygon(0 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
 }
 
 /* Face-à-face : en tableau de bord, les cinq couloirs se partagent la hauteur du bloc. */

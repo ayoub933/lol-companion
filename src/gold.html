@@ -41,6 +41,19 @@
         letter-spacing: 0.06em;
         color: #a39d8d;
       }
+      /* Icône de l'or du jeu ; si le client ne la donne pas, une pièce dessinée à sa place. */
+      .coin {
+        width: calc(16 * var(--u));
+        height: calc(16 * var(--u));
+        flex: none;
+        object-fit: contain;
+      }
+      span.coin {
+        box-sizing: border-box;
+        border-radius: 50%;
+        background: radial-gradient(circle at 35% 30%, #fff1b0, #e2b13c 55%, #9a6b12);
+        border: calc(1 * var(--u)) solid #6d4a0c;
+      }
       /* Ton équipe devant : le bleu du tableau ; l'équipe d'en face devant : son rouge. */
       .up {
         color: #51a2e6;
@@ -56,7 +69,7 @@
   <body>
     <div id="board"></div>
     <script>
-      const { invoke } = window.__TAURI__.core;
+      const { invoke, convertFileSrc } = window.__TAURI__.core;
       const { listen } = window.__TAURI__.event;
       const board = document.getElementById("board");
       // Lignes du tableau des scores, de haut en bas.
@@ -84,15 +97,36 @@
       const worth = (team) =>
         team.length && team.every((p) => p.itemsValue != null) ? team.reduce((sum, p) => sum + p.itemsValue, 0) : null;
 
+      // Icône de l'or, servie par l'app (lcu://localhost/gold) ; introuvable une fois : la pièce dessinée ensuite.
+      let coinMissing = false;
+      function coin() {
+        const drawn = () => {
+          const span = document.createElement("span");
+          span.className = "coin";
+          return span;
+        };
+        if (coinMissing) return drawn();
+        const img = document.createElement("img");
+        img.className = "coin";
+        img.alt = "";
+        img.addEventListener("error", () => {
+          coinMissing = true;
+          img.replaceWith(drawn());
+        });
+        img.src = convertFileSrc("gold", "lcu");
+        return img;
+      }
+
       function pill([label, y, gap]) {
         const box = document.createElement("div");
         box.className = "pill";
         box.style.top = `calc(${y} * var(--u))`;
+        // L'écart d'équipe : son nom et l'icône de l'or devant le chiffre.
         if (label) {
           const k = document.createElement("span");
           k.className = "k";
           k.textContent = label;
-          box.append(k);
+          box.append(k, coin());
         }
         const value = document.createElement("span");
         value.className = Math.abs(gap) < EVEN ? "even" : gap > 0 ? "up" : "down";

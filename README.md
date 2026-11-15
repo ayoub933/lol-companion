@@ -84,8 +84,8 @@ Windows » : c'est l'exe de développement qui serait lancé au démarrage.
   (chacun peut être coupé). Les recommandations restent affichées.
 - Saut éclair sur D ou F, ou « sa touche actuelle » (sinon F).
 - Sets d'objets : un seul, remplacé à chaque partie, ou un par champion.
-- En partie : le panneau des objets à acheter sur le bord gauche du jeu, et les écarts d'or
-  à côté du tableau des scores quand tu tiens Tab (chacun peut être coupé).
+- En partie, quand tu tiens Tab : le panneau des objets à acheter sur le bord gauche du jeu, et les
+  écarts d'or à côté du tableau des scores (chacun peut être coupé).
 - Lancer avec Windows (l'app démarre cachée près de l'horloge), afficher la fenêtre
   quand le client LoL s'ouvre, notification quand une partie est trouvée, et ce que fait la croix.
 
@@ -118,7 +118,10 @@ joués pour ce champion et ton poste, puis :
 4. ajoute à la boutique un set d'objets « LoL Companion · <champion> ».
 
 - La première fois, il faut une page de runes libre, ou une page renommée « LoL Companion ».
-- Sorts : si tu les changes toi-même pendant la sélection, l'app n'y touche plus.
+- Sorts : si tu les changes toi-même pendant la sélection, l'app n'y touche plus. Avec « sa touche
+  actuelle », le Saut éclair reste là où tu l'avais mis ; si le client donne des sorts illisibles au
+  moment de l'import, l'app prend ceux qu'elle a lus juste avant, et n'y touche pas si elle n'en a aucun.
+  Le terminal note chaque changement (« [sorts] avant D = 4, F = 14 ; après … »).
 - Set d'objets : le client n'accepte que la liste complète de tes sets. L'app la relit
   juste avant d'écrire, garde tes autres sets tels quels et n'écrit rien si la liste
   est illisible. Elle vérifie ensuite que tes sets sont toujours là.
@@ -149,25 +152,29 @@ Une fois la partie lancée :
   équipe (valeur de ses objets au prix de la boutique, l'or en poche ne compte pas) avec l'écart en
   grand au milieu, sur une case bleue si ton équipe est devant, orange si c'est l'équipe d'en face
   (grise à moins de 100 pièces d'écart) ;
-- ta carte : ton skin, KDA, CS, or en poche, objets ;
+- ta carte : ton skin, KDA, CS, or en poche ;
 - le face-à-face, couloir par couloir : niveau, KDA et rang de chacun, et au milieu l'écart d'or
   du couloir, sur une case aux mêmes couleurs. Sans postes (ARAM...), les deux équipes côte à côte.
   « Rang masqué » : joueur en mode streamer.
 
-**Panneau des objets à acheter**, posé sur le jeu, collé au bord gauche de l'écran, à mi-hauteur :
-juste les icônes, de haut en bas : départ, 1er objet (avec un autre choix, plus petit), bottes,
-2e objet (avec un autre choix). Ce sont les objets du duel contre ton vrai adversaire de couloir,
-choisis comme en sélection ; trop peu de parties sur ce duel : ceux de ton champion à ton poste.
+En tenant Tab (avec le tableau des scores), deux choses s'affichent par-dessus le jeu.
+
+**Panneau des objets à acheter**, collé au bord gauche de l'écran, à mi-hauteur : juste les icônes,
+une rangée numérotée par achat, de haut en bas : départ, 1er objet (avec un autre choix, plus petit),
+bottes, 2e objet (avec un autre choix). Le 1 est toujours le prochain achat. Ce sont les objets du duel
+contre ton vrai adversaire de couloir, choisis comme en sélection ; trop peu de parties sur ce duel :
+ceux de ton champion à ton poste.
 - Un objet acheté et toujours là 30 secondes plus tard quitte le panneau pour de bon, même revendu
   ensuite (un achat annulé ou revendu dans les 30 secondes ne compte pas). Le 1er et le 2e objet
   partent aussi si tu as pris leur autre choix ; la rangée du départ part dès ton premier achat,
-  même si c'est un autre départ. Le panneau disparaît quand tout est acheté.
-- Il se cache quand le jeu n'est pas au premier plan (Alt+Tab, clic sur un autre écran).
+  même si c'est un autre départ. Les rangées restantes sont renumérotées ; quand tout est acheté,
+  il n'y a plus de panneau.
 
-**Écarts d'or sur le tableau des scores** : tant que tu tiens Tab, une colonne d'écarts s'affiche
-juste à gauche du tableau des scores : celui de ton équipe à hauteur de l'en-tête, puis celui de
-chaque couloir à hauteur de sa ligne (bleu : ton joueur est devant, rouge : celui d'en face ;
-« −1,2k » = 1 200 pièces de retard). Sans postes (ARAM...), seulement celui de l'équipe.
+**Écarts d'or**, en colonne juste à gauche du tableau des scores : celui de ton équipe à hauteur de
+l'en-tête, avec l'icône de l'or, puis celui de chaque couloir à hauteur de sa ligne (bleu : ton joueur
+est devant, rouge : celui d'en face ; « −1,2k » = 1 200 pièces de retard). Sans postes (ARAM...),
+seulement celui de l'équipe. L'icône de l'or est celle du client (tableau des scores de l'historique) ;
+s'il ne la donne pas, elle est prise sur CommunityDragon, sinon une pièce dessinée la remplace.
 - Les positions sont celles du tableau des scores en 1920 × 1080 (relevées sur une capture), mises à
   l'échelle de la hauteur de l'écran. Si tu changes l'échelle de l'interface du jeu ou si tu déplaces le
   tableau, elles peuvent ne plus tomber en face des lignes.
@@ -175,6 +182,7 @@ chaque couloir à hauteur de sa ligne (bleu : ton joueur est devant, rouge : cel
   au jeu comme d'habitude. Si tu as changé la touche du tableau des scores, ça ne suit pas.
 
 Pour les deux :
+- Ils ne s'affichent que jeu au premier plan (pas après un Alt+Tab ou un clic sur un autre écran).
 - Les clics les traversent et ils ne prennent jamais le clavier.
 - Il faut LoL en mode d'affichage « Sans bordure » : en plein écran, le jeu passe par-dessus tout.
 - Ils peuvent être coupés dans les réglages (roue ⚙, « En partie »).
