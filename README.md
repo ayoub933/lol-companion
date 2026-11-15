@@ -99,7 +99,10 @@ Les deux équipes s'affichent en colonnes : la tienne à gauche, dans l'ordre de
 (un champion seulement survolé est atténué, le tien est en bleu), les adversaires à droite.
 
 **Avant de verrouiller : aide au choix.** Avec les données OP.GG :
-- « Contre X » : les 3 champions qui gagnent le plus contre ton adversaire direct, à ton poste ;
+- « Contre X » : les 10 champions qui gagnent le plus contre ton adversaire direct, à ton poste,
+  avec leur % de victoires contre lui ; les 3 premiers sur un podium (or, argent, bronze). La liste
+  vient de tous les duels de ton adversaire sur OP.GG (ceux joués dans au moins 0,5 % de ses parties) ;
+  en attendant, ou si OP.GG ne la donne pas, les 3 contres de son analyse ;
 - « Avec Y » : les 3 champions qui vont le mieux avec ton partenaire (ton jungler si tu es
   haut ou milieu, ton milieu si tu es jungler, l'autre joueur du bas pour le duo).
 

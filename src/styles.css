@@ -1393,6 +1393,198 @@ button.pick:hover {
   font-size: 12px;
 }
 
+/* Aide au choix : les champions qui battent ton adversaire. Les 3 premiers sur un podium (2e, 1er, 3e)
+   aux cadres or, argent et bronze, les 4e à 10e en lignes sur deux colonnes. */
+.counters,
+.duo {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.duo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.counters + .duo {
+  margin-top: 8px;
+}
+.podium {
+  flex: none;
+  height: 128px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 8px;
+}
+.pod {
+  /* Couleur de la médaille (r, g, b) : or par défaut. */
+  --medal: 245, 196, 81;
+  position: relative;
+  box-sizing: border-box;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 170px;
+  height: 100%;
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid rgba(var(--medal), 0.8);
+  border-radius: 3px;
+  background: linear-gradient(180deg, rgba(var(--medal), 0.24), rgba(var(--medal), 0.04) 75%), var(--panel);
+  box-shadow: 0 0 18px -8px rgba(var(--medal), 0.9);
+}
+.pod.silver {
+  --medal: 200, 208, 218;
+  height: 90%;
+}
+.pod.bronze {
+  --medal: 214, 140, 86;
+  height: 82%;
+}
+.pod .place {
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  padding: 3px 10px 2px 7px;
+  border-top-left-radius: 3px;
+  background: rgb(var(--medal));
+  color: var(--bg);
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 1;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+}
+.pod .icon {
+  width: 30px;
+  height: 30px;
+}
+.pod.gold .icon {
+  width: 36px;
+  height: 36px;
+}
+.pod .pchamp {
+  max-width: 100%;
+  margin-top: 1px;
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 15px;
+  line-height: 1.05;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pod .pct {
+  color: rgb(var(--medal));
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 19px;
+  line-height: 1;
+}
+.pod .pct small {
+  font-size: 12px;
+}
+.pod .pgames {
+  font-size: 11px;
+  color: var(--muted);
+}
+.ranks {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(4, auto);
+  grid-auto-flow: column;
+  gap: 3px 8px;
+}
+.rrow {
+  min-width: 0;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 3px;
+  background: var(--panel);
+}
+.rrow .rank {
+  flex: none;
+  width: 15px;
+  text-align: center;
+  color: var(--muted);
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 13px;
+}
+.rrow .icon {
+  width: 18px;
+  height: 18px;
+  clip-path: polygon(3px 0, 100% 0, calc(100% - 3px) 100%, 0 100%);
+}
+.rrow .rname {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rrow .rpct {
+  flex: none;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 13px;
+}
+/* Avec les contres au-dessus : les 3 partenaires sur une ligne, en petit. */
+.with-counters .duo-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.with-counters .duo-list .pick {
+  height: 26px;
+  gap: 6px;
+  padding: 0 11px 0 5px;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
+}
+.with-counters .duo-list .icon {
+  width: 18px;
+  height: 18px;
+}
+.with-counters .duo-list .pname {
+  font-size: 13px;
+}
+.with-counters .duo-list .tag {
+  letter-spacing: 0;
+}
+/* Tableau de bord : le podium prend la hauteur qui reste (dans une limite), les lignes restent en dessous. */
+body.board #help.grow #help-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 7px;
+}
+/* Ses éléments se placent directement dans la liste : la place en trop va sous les partenaires, pas entre les deux. */
+body.board #help.grow .counters {
+  display: contents;
+}
+body.board #help.grow .podium {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 104px;
+  max-height: 210px;
+}
+
 .card.runes {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

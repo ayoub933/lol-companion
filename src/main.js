@@ -582,28 +582,73 @@ function renderPicks(runes) {
   $("pick-enemies").replaceChildren(...rows);
 }
 
-// Avant de verrouiller : qui bat ton adversaire, qui va bien avec ton partenaire.
+// Avant de verrouiller : les 10 champions qui battent le mieux ton adversaire (podium or, argent, bronze
+// pour les 3 premiers), puis ceux qui vont le mieux avec ton partenaire.
+const MEDALS = ["gold", "silver", "bronze"];
 function renderHelp(runes) {
   const help = runes.help;
   $("help").hidden = !help;
   if (!help) return;
-  const block = (title, aside, picks) =>
-    !title
-      ? []
-      : [
-          el("div", "sub-head", [el("span", "kicker", title), el("span", "aside", aside)]),
-          ...picks.map((p) =>
+  const percent = (p) => `${decimal(p.winRate * 100)}\u00a0%`;
+  const games = (n) => (n > 1 ? `${whole(n)} parties` : `${n} partie`);
+  const tip = (p, place) =>
+    `${place}. ${p.name} : ${percent(p)} de victoires contre ${help.opponent}${p.games ? ` (${games(p.games)})` : ""}`;
+  const head = (title, aside) => el("div", "sub-head", [el("span", "kicker", title), el("span", "aside", aside)]);
+  const counters = help.opponent && help.counters.length > 0;
+  const blocks = [];
+  if (counters) {
+    const podium = help.counters.slice(0, 3).map((p, i) => {
+      const card = el("div", `pod ${MEDALS[i]}`, [
+        el("span", "place", i + 1),
+        champIcon(p.championId, p.name),
+        el("span", "pchamp", upper(p.name)),
+        el("span", "pct", [decimal(p.winRate * 100), el("small", "", " %")]),
+        p.games ? el("span", "pgames", games(p.games)) : null,
+      ]);
+      card.title = tip(p, i + 1);
+      return card;
+    });
+    // Comme un vrai podium : le 2e à gauche, le 1er au milieu, le 3e à droite.
+    if (podium.length > 1) podium.splice(0, 2, podium[1], podium[0]);
+    const ranks = help.counters.slice(3).map((p, i) => {
+      const row = el("div", "rrow", [
+        el("span", "rank", i + 4),
+        champIcon(p.championId, p.name),
+        el("span", "rname", upper(p.name)),
+        el("span", "rpct", percent(p)),
+      ]);
+      row.title = tip(p, i + 4);
+      return row;
+    });
+    blocks.push(
+      el("div", "counters", [
+        head(`CONTRE ${upper(help.opponent)}`, "victoires contre lui"),
+        el("div", "podium", podium),
+        ranks.length ? el("div", "ranks", ranks) : null,
+      ]),
+    );
+  }
+  if (help.partner) {
+    blocks.push(
+      el("div", "duo", [
+        head(`AVEC ${upper(help.partner)}`, "victoires en duo"),
+        el(
+          "div",
+          "duo-list",
+          help.synergies.map((p) =>
             el("div", "pick", [
               champIcon(p.championId, p.name),
               el("span", "pname", upper(p.name)),
-              el("span", "tag", `${number(p.winRate * 100)} %`),
+              el("span", "tag", percent(p)),
             ]),
           ),
-        ];
-  $("help-list").replaceChildren(
-    ...block(help.opponent && `CONTRE ${upper(help.opponent)}`, "victoires contre lui", help.counters),
-    ...block(help.partner && `AVEC ${upper(help.partner)}`, "victoires en duo", help.synergies),
-  );
+        ),
+      ]),
+    );
+  }
+  $("help-list").replaceChildren(...blocks);
+  // Avec les contres au-dessus, les partenaires tiennent sur une ligne.
+  $("help-list").classList.toggle("with-counters", counters);
   const empty = !help.counters.length && !help.synergies.length;
   $("help-pending").textContent = help.pending ? "Recherche sur OP.GG…" : empty ? "Pas de suggestion d'OP.GG ici." : "";
 }

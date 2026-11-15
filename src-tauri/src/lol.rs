@@ -31,6 +31,8 @@ const FLASH: i64 = 4;
 const REMAKE_SECONDS: u64 = 300;
 /// Parties montrées dans l'historique du salon.
 const MATCHES_SHOWN: usize = 10;
+/// Contres proposés en sélection (les champions qui battent le mieux ton adversaire).
+const COUNTERS_SHOWN: usize = 10;
 /// Après une partie, ses stats arrivent dans l'historique du client avec un peu de retard.
 const RECORD_RETRY: Duration = Duration::from_secs(5);
 const RECORD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
@@ -563,6 +565,8 @@ pub struct Tracker {
     profile_due: bool,
     /// Contres et partenaires d'OP.GG par (champion, poste, mode).
     help_cache: HashMap<(i64, String, String), opgg::Help>,
+    /// Liste complète des contres d'un champion à un poste : (champion, poste) -> contres.
+    counters_cache: HashMap<(i64, String), Vec<opgg::Pick>>,
     /// Sorts mis par l'app pendant cette sélection : s'ils ont changé depuis, c'est toi qui les as changés.
     spells_set: Option<[i64; 2]>,
     /// Ton champion, ton poste et ton adversaire à la fin de la sélection, pour l'historique.
@@ -610,6 +614,7 @@ impl Tracker {
             profile: None,
             profile_due: true,
             help_cache: HashMap::new(),
+            counters_cache: HashMap::new(),
             spells_set: None,
             last_pick: None,
             game: None,
@@ -812,16 +817,22 @@ impl Tracker {
         if opponent.is_none() && partner.is_none() {
             return None;
         }
-        // Les 3 meilleurs, sans les champions déjà pris ou bannis.
-        let free = |list: &[opgg::Pick]| -> Vec<opgg::Pick> {
-            list.iter().filter(|p| !taken.contains(&p.champion_id)).take(3).cloned().collect()
+        // Les meilleurs, sans les champions déjà pris ou bannis.
+        let free = |list: &[opgg::Pick], count: usize| -> Vec<opgg::Pick> {
+            list.iter().filter(|p| !taken.contains(&p.champion_id)).take(count).cloned().collect()
         };
         let mut help = PickHelp::default();
         let mut asked = false;
         if let Some(opponent) = opponent {
             help.opponent = opponent.name.clone();
             match self.help_of(opponent, position, mode, &mut asked).await {
-                Some(found) => help.counters = free(&found.counters),
+                Some(found) => {
+                    // Les 10 qui le battent le mieux ; en attendant (ou si OP.GG ne la donne pas), les 3 de l'analyse.
+                    let all = self.counters_of(base, password, opponent, &found, position, &mut asked).await;
+                    help.pending |= all.is_none();
+                    let list = all.as_deref().filter(|all| !all.is_empty()).unwrap_or(&found.counters);
+                    help.counters = free(list, COUNTERS_SHOWN);
+                }
                 None => help.pending = true,
             }
         }
@@ -829,11 +840,51 @@ impl Tracker {
             let partner = self.champ(base, password, id).await;
             help.partner = partner.name.clone();
             match self.help_of(&partner, partner_position, mode, &mut asked).await {
-                Some(found) => help.synergies = free(found.synergies.get(position).map(Vec::as_slice).unwrap_or_default()),
+                Some(found) => help.synergies = free(found.synergies.get(position).map(Vec::as_slice).unwrap_or_default(), 3),
                 None => help.pending = true,
             }
         }
         Some(help)
+    }
+
+    /// Liste complète des contres de ton adversaire (gardée en mémoire). OP.GG la donne avec un guide
+    /// de couloir, qui demande un duel : on prend son premier contre de l'analyse, un duel courant.
+    /// None : question remise au tour suivant (`asked`).
+    #[allow(clippy::too_many_arguments)]
+    async fn counters_of(
+        &mut self,
+        base: &str,
+        password: &str,
+        opponent: &opgg::Champ,
+        help: &opgg::Help,
+        position: &str,
+        asked: &mut bool,
+    ) -> Option<Vec<opgg::Pick>> {
+        let key = (opponent.id, position.to_string());
+        if let Some(found) = self.counters_cache.get(&key) {
+            return Some(found.clone());
+        }
+        let Some(first) = help.counters.first() else {
+            return Some(Vec::new());
+        };
+        if *asked {
+            return None;
+        }
+        *asked = true;
+        let against = self.champ(base, password, first.champion_id).await;
+        // En cas d'échec, on garde une liste vide (les 3 de l'analyse restent affichés) pour ne pas redemander.
+        let found = match self.opgg.counters(opponent, &against, position).await {
+            Ok(found) => {
+                eprintln!("[aide] {} {position} : {} contres (liste complète)", opponent.name, found.len());
+                found
+            }
+            Err(e) => {
+                eprintln!("[aide] {} {position}, liste des contres : {e}", opponent.name);
+                Vec::new()
+            }
+        };
+        self.counters_cache.insert(key, found.clone());
+        Some(found)
     }
 
     /// Contres et partenaires d'OP.GG, gardés en mémoire. None : question remise au tour suivant (`asked`).

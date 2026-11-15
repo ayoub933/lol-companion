@@ -186,6 +186,26 @@ impl Client {
         Ok(help_from(&doc))
     }
 
+    /// Tous les champions qui battent ce champion à ce poste, du meilleur au moins bon, avec leur % de victoires
+    /// contre lui. C'est la liste complète de ses duels, donnée avec son guide de couloir (contre `against`,
+    /// n'importe quel adversaire courant) ; l'analyse générale n'en donne que 3.
+    pub async fn counters(&mut self, champ: &Champ, against: &Champ, position: &str) -> Result<Vec<Pick>, String> {
+        let args = json!({
+            "position": position,
+            "my_champion": self.name_of(champ),
+            "opponent_champion": self.name_of(against),
+            "lang": LANG,
+            "client_app": APP,
+        });
+        let text = self.tool_text("lol_get_lane_matchup_guide", args).await?;
+        let doc = to_json_doc(&text).ok_or_else(|| UNREADABLE.to_string())?;
+        let id = doc["data"]["summary"]["id"].as_i64().unwrap_or(0);
+        if id != 0 && id != champ.id {
+            return Err(format!("OP.GG a renvoyé les duels d'un autre champion ({id})"));
+        }
+        Ok(counters_from(&doc))
+    }
+
     /// Runes, build et conseils d'OP.GG pour ton champion contre ton adversaire direct.
     pub async fn matchup(&mut self, me: &Champ, opponent: &Champ, position: &str) -> Result<Matchup, String> {
         let args = json!({
@@ -485,6 +505,29 @@ fn matchup_from(doc: &Value, opponent_id: i64) -> Option<Matchup> {
         play_style: text(&d["recommended_play_style"]),
         tip: text(&d["opponent_champion_tip"]),
     })
+}
+
+/// Ses duels (« counters » : ses parties et ses victoires contre chaque adversaire), vus de l'autre côté :
+/// le % de victoires de chaque adversaire contre lui, du plus haut au plus bas. Seuls comptent les duels
+/// assez joués (au moins 0,5 % de ses parties) : sur trop peu de parties, le % ne veut rien dire.
+fn counters_from(doc: &Value) -> Vec<Pick> {
+    let list = doc["data"]["counters"].as_array().map(Vec::as_slice).unwrap_or_default();
+    let total: u64 = list.iter().filter_map(|c| c["play"].as_u64()).sum();
+    let mut picks: Vec<Pick> = list
+        .iter()
+        .filter_map(|c| {
+            let games = c["play"].as_u64().filter(|&games| games > 0 && games * 200 >= total)?;
+            let wins = c["win"].as_u64()?.min(games);
+            Some(Pick {
+                champion_id: c["champion_id"].as_i64()?,
+                name: c["champion_name"].as_str().unwrap_or_default().to_string(),
+                win_rate: (games - wins) as f64 / games as f64,
+                games,
+            })
+        })
+        .collect();
+    picks.sort_by(|a, b| b.win_rate.total_cmp(&a.win_rate).then(b.games.cmp(&a.games)));
+    picks
 }
 
 /// « weak_counters » : les champions qui le battent ; « synergies » : ses meilleurs duos, par poste du partenaire.
