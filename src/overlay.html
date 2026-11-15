@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>LoL Companion · objets</title>
+    <!-- Panneau posé sur le jeu : juste les icônes, collées au bord gauche, à mi-hauteur. -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: transparent;
+      }
+      /* La fenêtre fait 34 % de la hauteur de l'écran du jeu : 1 unité = 1 pixel sur un écran 1080p. */
+      :root {
+        --u: calc(100vh / 367);
+      }
+      #panel {
+        position: absolute;
+        left: calc(12 * var(--u));
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        flex-direction: column;
+        gap: calc(22 * var(--u));
+      }
+      .row {
+        display: flex;
+        align-items: flex-end;
+        gap: calc(6 * var(--u));
+      }
+      .icon {
+        position: relative;
+        border-radius: calc(4 * var(--u));
+        overflow: hidden;
+        box-shadow: 0 calc(1 * var(--u)) calc(4 * var(--u)) rgba(0, 0, 0, 0.7);
+      }
+      .icon img {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .main {
+        width: calc(40 * var(--u));
+        height: calc(40 * var(--u));
+      }
+      .starter {
+        width: calc(34 * var(--u));
+        height: calc(34 * var(--u));
+      }
+      .boots {
+        width: calc(30 * var(--u));
+        height: calc(30 * var(--u));
+      }
+      /* Autre choix possible : plus petit et un peu effacé. */
+      .alt {
+        width: calc(30 * var(--u));
+        height: calc(30 * var(--u));
+        opacity: 0.75;
+      }
+      .count {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        padding: 0 calc(3 * var(--u));
+        border-top-left-radius: calc(3 * var(--u));
+        background: rgba(0, 0, 0, 0.8);
+        color: #f2f2f2;
+        font: calc(11 * var(--u)) / 1.2 "Segoe UI", system-ui, sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="panel"></div>
+    <script>
+      const { invoke, convertFileSrc } = window.__TAURI__.core;
+      const { listen } = window.__TAURI__.event;
+      const panel = document.getElementById("panel");
+      // Build affiché, pour ne pas tout redessiner à chaque mise à jour de la partie.
+      let shown = "";
+
+      // Icône d'un objet, servie par l'app depuis le client (lcu://localhost/item-<numéro>).
+      function icon(item, size) {
+        const box = document.createElement("div");
+        box.className = `icon ${size}`;
+        const img = document.createElement("img");
+        img.alt = "";
+        img.src = convertFileSrc(`item-${item.id}`, "lcu");
+        // Le client peut être lent juste au début de la partie : un second essai.
+        img.addEventListener("error", () => {
+          if (img.dataset.retry) return;
+          img.dataset.retry = "1";
+          setTimeout(() => (img.src = `${convertFileSrc(`item-${item.id}`, "lcu")}?retry`), 2000);
+        });
+        box.append(img);
+        if (item.count > 1) {
+          const count = document.createElement("span");
+          count.className = "count";
+          count.textContent = `×${item.count}`;
+          box.append(count);
+        }
+        return box;
+      }
+
+      function row(...icons) {
+        const div = document.createElement("div");
+        div.className = "row";
+        div.append(...icons.filter(Boolean));
+        return div;
+      }
+
+      // De haut en bas : départ, 1er objet (et son autre choix), bottes, 2e objet (et son autre choix).
+      function render(state) {
+        const build = state?.game?.build ?? null;
+        const key = JSON.stringify(build);
+        if (key === shown) return;
+        shown = key;
+        if (!build) {
+          panel.replaceChildren();
+          return;
+        }
+        const pick = (item, size) => item && icon(item, size);
+        const rows = [
+          row(...build.starter.map((item) => icon(item, "starter"))),
+          row(pick(build.core[0], "main"), pick(build.firstAlt, "alt")),
+          row(pick(build.boots[0], "boots")),
+          row(pick(build.core[1], "main"), pick(build.secondAlt, "alt")),
+        ];
+        panel.replaceChildren(...rows.filter((r) => r.childElementCount > 0));
+      }
+
+      window.addEventListener("DOMContentLoaded", async () => {
+        await listen("lol-state", (event) => render(event.payload));
+        render(await invoke("get_state"));
+      });
+    </script>
+  </body>
+</html>

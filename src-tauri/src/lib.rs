@@ -1,6 +1,7 @@
 mod history;
 mod lol;
 mod opgg;
+mod overlay;
 mod settings;
 
 use settings::Settings;
@@ -125,14 +126,20 @@ pub fn run() {
         .manage(Opponent(Mutex::new(None)))
         .manage(PendingUpdate(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![get_state, set_opponent, get_settings, set_settings, install_update])
-        // Icônes des champions, lues dans le client : lcu://localhost/<numéro du champion>.
+        // Icônes lues dans le client : lcu://localhost/<numéro du champion>, lcu://localhost/item-<numéro de l'objet>.
         .register_asynchronous_uri_scheme_protocol("lcu", move |_ctx, request, responder| {
             let icons = icons.clone();
-            let id = request.uri().path().trim_start_matches('/').parse::<u32>().ok();
+            let path = request.uri().path().trim_start_matches('/').to_string();
             tauri::async_runtime::spawn(async move {
-                let png = match id {
-                    Some(id) => icons.champion_icon(id).await,
-                    None => None,
+                let png = match path.strip_prefix("item-") {
+                    Some(item) => match item.parse::<i64>() {
+                        Ok(id) => icons.item_icon(id).await,
+                        Err(_) => None,
+                    },
+                    None => match path.parse::<u32>() {
+                        Ok(id) => icons.champion_icon(id).await,
+                        Err(_) => None,
+                    },
                 };
                 let response = match png {
                     Some(png) => tauri::http::Response::builder().header("Content-Type", "image/png").body(png),
@@ -218,6 +225,10 @@ pub fn run() {
                         *handle.state::<Latest>().0.lock().unwrap() = snap.clone();
                         let _ = handle.emit("lol-state", &snap);
                     }
+                    // Panneau des objets sur le bord gauche du jeu, jusqu'à ce que tes deux premiers objets soient faits.
+                    let build_wanted = settings.show_build_overlay
+                        && snap.game.as_ref().is_some_and(|g| g.ready && g.build.is_some() && !g.build_done);
+                    overlay::update(&handle, build_wanted);
                     let delay = lol::Tracker::next_delay(&snap);
                     previous = snap;
                     tokio::time::sleep(delay).await;

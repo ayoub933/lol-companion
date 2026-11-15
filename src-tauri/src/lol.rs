@@ -32,6 +32,8 @@ const REMAKE_SECONDS: u64 = 300;
 /// Après une partie, ses stats arrivent dans l'historique du client avec un peu de retard.
 const RECORD_RETRY: Duration = Duration::from_secs(5);
 const RECORD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
+/// Prix total à partir duquel un objet qui ne s'améliore plus compte comme objet terminé (hors bottes).
+const FINISHED_PRICE: u64 = 2000;
 
 /// Ce que l'interface affiche. Envoyé au front à chaque changement.
 #[derive(Serialize, Clone, Default, PartialEq, Debug)]
@@ -186,13 +188,24 @@ pub struct MatchupInfo {
     pub error: Option<String>,
 }
 
-/// Accès au client partagé avec l'interface, pour afficher les icônes des champions.
+/// Accès au client partagé avec l'interface, pour afficher les icônes des champions et des objets.
 #[derive(Clone)]
 pub struct Assets {
     http: reqwest::Client,
     /// (adresse, mot de passe) de l'API du client ; None si le client est fermé.
     auth: Arc<Mutex<Option<(String, String)>>>,
     icons: Arc<Mutex<HashMap<u32, Vec<u8>>>>,
+    /// Objets du jeu d'après le client, lus une fois.
+    items: Arc<Mutex<HashMap<i64, ItemData>>>,
+    item_icons: Arc<Mutex<HashMap<i64, Vec<u8>>>>,
+}
+
+#[derive(Clone)]
+struct ItemData {
+    /// Chemin de l'icône dans le client.
+    icon: String,
+    /// Objet terminé (cher, ne s'améliore plus, pas des bottes).
+    finished: bool,
 }
 
 impl Assets {
@@ -206,7 +219,7 @@ impl Assets {
             .timeout(Duration::from_secs(2))
             .build()
             .expect("impossible de créer le client HTTP");
-        Self { http, auth: Arc::default(), icons: Arc::default() }
+        Self { http, auth: Arc::default(), icons: Arc::default(), items: Arc::default(), item_icons: Arc::default() }
     }
 
     /// Icône carrée d'un champion (PNG), lue dans le client puis gardée en mémoire.
@@ -229,6 +242,60 @@ impl Assets {
         self.icons.lock().unwrap().insert(id, png.clone());
         Some(png)
     }
+
+    /// Icône d'un objet (PNG), lue dans le client puis gardée en mémoire.
+    pub async fn item_icon(&self, id: i64) -> Option<Vec<u8>> {
+        if let Some(png) = self.item_icons.lock().unwrap().get(&id) {
+            return Some(png.clone());
+        }
+        if !self.load_items().await {
+            return None;
+        }
+        let icon = self.items.lock().unwrap().get(&id)?.icon.clone();
+        let (base, password) = self.auth.lock().unwrap().clone()?;
+        let resp = self.http.get(format!("{base}{icon}")).basic_auth("riot", Some(password)).send().await.ok()?;
+        if !resp.status().is_success() {
+            return None;
+        }
+        let png = resp.bytes().await.ok()?.to_vec();
+        self.item_icons.lock().unwrap().insert(id, png.clone());
+        Some(png)
+    }
+
+    /// Lit une fois la liste des objets du client. false si elle n'est pas disponible.
+    async fn load_items(&self) -> bool {
+        if !self.items.lock().unwrap().is_empty() {
+            return true;
+        }
+        let Some((base, password)) = self.auth.lock().unwrap().clone() else {
+            return false;
+        };
+        let url = format!("{base}/lol-game-data/assets/v1/items.json");
+        let Ok(resp) = self.http.get(url).basic_auth("riot", Some(password)).send().await else {
+            return false;
+        };
+        let Ok(Value::Array(list)) = resp.json::<Value>().await else {
+            return false;
+        };
+        let items: HashMap<i64, ItemData> = list
+            .iter()
+            .filter_map(|it| {
+                let boots = it["categories"].as_array().is_some_and(|c| c.iter().any(|x| x == "Boots"));
+                let last = it["to"].as_array().is_none_or(Vec::is_empty);
+                let finished = !boots && last && it["priceTotal"].as_u64().unwrap_or(0) >= FINISHED_PRICE;
+                Some((it["id"].as_i64()?, ItemData { icon: it["iconPath"].as_str()?.to_string(), finished }))
+            })
+            .collect();
+        let loaded = !items.is_empty();
+        *self.items.lock().unwrap() = items;
+        loaded
+    }
+
+    /// Nombre d'objets terminés parmi ceux-ci (0 tant que la liste des objets n'est pas lue).
+    fn finished_count(&self, owned: &[i64]) -> usize {
+        let items = self.items.lock().unwrap();
+        owned.iter().filter(|id| items.get(id).is_some_and(|i| i.finished)).count()
+    }
 }
 
 #[derive(Serialize, Clone, Default, PartialEq, Debug)]
@@ -249,6 +316,10 @@ pub struct Game {
     /// Les 10 champions : ton équipe et l'équipe adverse, chacune triée par poste.
     pub allies: Vec<Player>,
     pub enemies: Vec<Player>,
+    /// Objets à acheter, pour le panneau posé sur le jeu : ceux du duel contre ton adversaire de couloir.
+    pub build: Option<opgg::Build>,
+    /// true une fois tes deux premiers objets faits : le panneau se range.
+    pub build_done: bool,
 }
 
 /// Un champion de la partie, tel que le tableau des scores (Tab) le montre.
@@ -277,10 +348,15 @@ struct CurrentGame {
     champion_id: i64,
     position: String,
     opponent_id: Option<i64>,
+    /// Mode de jeu au sens d'OP.GG ("ranked", "aram"...).
+    mode: String,
     allies: Vec<Player>,
     enemies: Vec<Player>,
     /// Rang de chaque joueur, par champion.
     ranks: HashMap<i64, Rank>,
+    /// Objets du panneau, et pour quels (champion, poste, adversaire) ils ont été cherchés.
+    build: Option<opgg::Build>,
+    build_for: Option<(i64, String, Option<i64>)>,
 }
 
 /// Partie finie, en attente de ses stats dans l'historique du client.
@@ -780,10 +856,7 @@ impl Tracker {
         }
 
         // Le build s'affiche et part dans le client même si la page de runes a été refusée.
-        let mut build = chosen.build;
-        if position == "support" && !build.is_empty() && !build.starter.iter().any(|i| i.id == ATLAS) {
-            build.starter.insert(0, opgg::Item { id: ATLAS, name: "Atlas".to_string(), count: 1 });
-        }
+        let build = with_atlas(chosen.build, position);
         if !build.is_empty() {
             result.spells = self.spell_names(base, password, &build.spells).await;
             if self.settings.import_spells {
@@ -1107,6 +1180,10 @@ impl Tracker {
                 game.opponent_id = opponent;
             }
         }
+        // Objets du panneau, et s'ils sont déjà faits d'après ton inventaire.
+        let owned: Vec<i64> = p["items"].as_array().into_iter().flatten().filter_map(|it| it["itemID"].as_i64()).collect();
+        let build = self.game_build(base, password).await;
+        let build_done = build.as_ref().is_some_and(|b| self.first_items_done(b, &owned));
 
         let score = |key: &str| p["scores"][key].as_u64().unwrap_or(0);
         Game {
@@ -1122,7 +1199,70 @@ impl Tracker {
             items: items.into_iter().map(|(_, name)| name).collect(),
             allies,
             enemies,
+            build,
+            build_done,
         }
+    }
+
+    /// Objets du panneau en jeu : ceux du duel contre ton adversaire de couloir (si OP.GG a assez de parties),
+    /// sinon ceux de ton champion à ton poste. Cherchés une fois par (champion, poste, adversaire).
+    async fn game_build(&mut self, base: &str, password: &str) -> Option<opgg::Build> {
+        let game = self.game.as_ref()?;
+        let key = (game.champion_id, game.position.clone(), game.opponent_id);
+        if game.build_for.as_ref() == Some(&key) {
+            return game.build.clone();
+        }
+        if key.0 <= 0 || key.1.is_empty() {
+            return None;
+        }
+        let mode = game.mode.clone();
+        let me = self.champ(base, password, key.0).await;
+        let mut build = None;
+        if let Some(id) = key.2 {
+            let opponent = self.champ(base, password, id).await;
+            match self.matchup(&me, &opponent, &key.1).await {
+                Ok(m) if m.analysis.runes.games >= MIN_MATCHUP_GAMES => build = Some(m.analysis.build),
+                Ok(_) => eprintln!("[panneau] {} vs {} : trop peu de parties, objets généraux", me.name, opponent.name),
+                Err(e) => eprintln!("[panneau] duel introuvable ({e}), objets généraux"),
+            }
+        }
+        if build.is_none() {
+            match self.analysis(&me, &key.1, &mode).await {
+                Ok(a) => build = Some(a.build),
+                Err(e) => eprintln!("[panneau] objets introuvables : {e}"),
+            }
+        }
+        let build = build.filter(|b| !b.is_empty()).map(|b| with_atlas(b, &key.1));
+        if let Some(b) = &build {
+            let name = |i: Option<&opgg::Item>| i.map_or_else(|| "-".to_string(), |i| i.name.clone());
+            eprintln!(
+                "[panneau] {} : départ {}, 1er {} (ou {}), bottes {}, 2e {} (ou {})",
+                me.name,
+                b.starter.iter().map(|i| i.name.as_str()).collect::<Vec<_>>().join(" + "),
+                name(b.core.first()),
+                name(b.first_alt.as_ref()),
+                name(b.boots.first()),
+                name(b.core.get(1)),
+                name(b.second_alt.as_ref()),
+            );
+            // Liste des objets du client : pour les icônes et pour voir quand tes objets sont faits.
+            self.assets.load_items().await;
+        }
+        if let Some(game) = &mut self.game {
+            game.build_for = Some(key);
+            game.build = build.clone();
+        }
+        build
+    }
+
+    /// true quand tes deux premiers objets sont faits : ceux du panneau (ou leur autre choix),
+    /// ou deux autres objets terminés si tu as pris un autre chemin.
+    fn first_items_done(&self, build: &opgg::Build, owned: &[i64]) -> bool {
+        let has = |main: Option<&opgg::Item>, alt: Option<&opgg::Item>| {
+            [main, alt].into_iter().flatten().any(|i| owned.contains(&i.id))
+        };
+        let planned = has(build.core.first(), build.first_alt.as_ref()) && has(build.core.get(1), build.second_alt.as_ref());
+        planned || self.assets.finished_count(owned) >= 2
     }
 
     /// La partie d'après le client : les joueurs (sauf ceux en mode streamer, que le client ne donne pas)
@@ -1138,7 +1278,7 @@ impl Tracker {
         if !me.is_empty() && theirs.iter().any(|p| p["puuid"] == me.as_str()) {
             std::mem::swap(&mut mine, &mut theirs);
         }
-        let mut game = CurrentGame { game_id, ..Default::default() };
+        let mut game = CurrentGame { game_id, mode: game_mode(&data["queue"]).to_string(), ..Default::default() };
         // Ce que la sélection a donné ; la partie en cours le précisera.
         if let Some((champion_id, position, opponent_id)) = self.last_pick.clone() {
             game.champion_id = champion_id;
@@ -1431,6 +1571,14 @@ fn rank_in(stats: &Value, queue: &str) -> Rank {
         wins: entry["wins"].as_u64().unwrap_or(0),
         losses: entry["losses"].as_u64().unwrap_or(0),
     }
+}
+
+/// Support : l'Atlas en premier objet de départ (OP.GG ne le compte pas dans les départs).
+fn with_atlas(mut build: opgg::Build, position: &str) -> opgg::Build {
+    if position == "support" && !build.is_empty() && !build.starter.iter().any(|i| i.id == ATLAS) {
+        build.starter.insert(0, opgg::Item { id: ATLAS, name: "Atlas".to_string(), count: 1 });
+    }
+    build
 }
 
 /// Set d'objets au format du client : il apparaît dans la boutique, pour ce champion.

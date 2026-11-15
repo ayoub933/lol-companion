@@ -11,6 +11,10 @@ const APP: &str = concat!("LoL Companion/", env!("CARGO_PKG_VERSION"));
 /// Tranche de rangs des stats. None = tous les rangs ; sinon par ex. Some("emerald_plus").
 const TIER: Option<&str> = None;
 const UNREADABLE: &str = "Réponse OP.GG illisible (format changé ?)";
+/// Objets d'un duel : on prend le meilleur % de victoires parmi les choix joués au moins autant de fois
+/// (en dessous, un % élevé peut n'être que du hasard), sinon le plus joué.
+const MIN_PLAY: u64 = 100;
+static NULL: Value = Value::Null;
 /// Champs demandés à OP.GG, recopiés de la liste fermée donnée par leur outil.
 const FIELDS: [&str; 11] = [
     "data.summary.{id,is_rip,is_rotation,roles}",
@@ -57,6 +61,9 @@ pub struct Build {
     /// Les 3 objets principaux, dans l'ordre d'achat.
     pub core: Vec<Item>,
     pub boots: Vec<Item>,
+    /// Autre choix pour le 1er et le 2e objet principal (duel seulement).
+    pub first_alt: Option<Item>,
+    pub second_alt: Option<Item>,
     /// Choix les plus joués en 4e, 5e et 6e objet, sans ceux déjà au-dessus.
     pub options: Vec<Item>,
     /// Identifiants des sorts d'invocateur (4 = Saut éclair...).
@@ -444,11 +451,12 @@ fn matchup_from(doc: &Value, opponent_id: i64) -> Option<Matchup> {
             .map(|items| items.iter().filter(|i| i["play"].as_u64().unwrap_or(0) >= 10).take(3).cloned().collect())
             .unwrap_or_default()
     };
+    let pick = |key: &str| best(d[key].as_array().into_iter().flatten()).unwrap_or(&NULL);
     // Même forme que l'analyse générale, pour la lire de la même façon.
     let shaped = json!({
-        "starter_items": d["starter_items"][0],
-        "core_items": d["core_items"][0],
-        "boots": d["boots"][0],
+        "starter_items": pick("starter_items"),
+        "core_items": pick("core_items"),
+        "boots": pick("boots"),
         "fourth_items": step(4),
         "fifth_items": step(5),
         "sixth_items": step(6),
@@ -456,10 +464,21 @@ fn matchup_from(doc: &Value, opponent_id: i64) -> Option<Matchup> {
         "skills": d["skills"][0],
         "skill_masteries": d["skill_masteries"][0],
     });
+    let mut build = build_build(&shaped);
+    // Autre choix pour le 1er (puis le 2e) objet : le meilleur des objets achetés à ce rang, hors ceux déjà retenus.
+    let other = |depth: i64, taken: &[i64]| -> Option<Item> {
+        let rank = d["single_items"].as_array()?.iter().find(|s| s["depth"] == depth)?;
+        let free = rank["items"].as_array()?.iter().filter(|e| e["ids"][0].as_i64().is_some_and(|id| !taken.contains(&id)));
+        items_of(best(free)?).into_iter().next()
+    };
+    let mut taken: Vec<i64> = build.core.iter().take(2).map(|i| i.id).collect();
+    build.first_alt = other(1, &taken);
+    taken.extend(build.first_alt.as_ref().map(|i| i.id));
+    build.second_alt = other(2, &taken);
     let versus = d["counters"].as_array().into_iter().flatten().find(|c| c["champion_id"] == opponent_id);
     let text = |v: &Value| v.as_str().unwrap_or_default().to_string();
     Some(Matchup {
-        analysis: Analysis { runes, build: build_build(&shaped) },
+        analysis: Analysis { runes, build },
         games: versus.and_then(|c| c["play"].as_u64()).unwrap_or(0),
         wins: versus.and_then(|c| c["win"].as_u64()).unwrap_or(0),
         advantage: text(&d["lane_advantage_champion"]),
@@ -542,22 +561,39 @@ fn build_runes(champion_id: i64, r: &Value) -> Option<Runes> {
     })
 }
 
-fn build_build(data: &Value) -> Build {
-    // Objets d'une entrée « CoreItems » ; les doublons sont regroupés (2 potions = une ligne ×2).
-    let items = |entry: &Value| -> Vec<Item> {
-        let mut out: Vec<Item> = Vec::new();
-        let ids = entry["ids"].as_array().into_iter().flatten().enumerate();
-        for (i, id) in ids.filter_map(|(i, v)| Some((i, v.as_i64()?))) {
-            match out.iter_mut().find(|it| it.id == id) {
-                Some(it) => it.count += 1,
-                None => {
-                    let name = entry["ids_names"][i].as_str().map_or_else(|| id.to_string(), str::to_string);
-                    out.push(Item { id, name, count: 1 });
-                }
+/// Le choix retenu dans une liste OP.GG (triée de la plus jouée à la moins jouée) :
+/// le meilleur % de victoires parmi les choix joués au moins `MIN_PLAY` fois, sinon le plus joué.
+fn best<'a>(entries: impl IntoIterator<Item = &'a Value>) -> Option<&'a Value> {
+    let entries: Vec<&Value> = entries.into_iter().collect();
+    let rate = |e: &Value| e["win"].as_f64().unwrap_or(0.0) / e["play"].as_f64().unwrap_or(0.0).max(1.0);
+    let mut chosen: Option<&Value> = None;
+    for &e in entries.iter().filter(|e| e["play"].as_u64().unwrap_or(0) >= MIN_PLAY) {
+        // À égalité, on garde le plus joué (le premier).
+        if chosen.is_none_or(|c| rate(e) > rate(c)) {
+            chosen = Some(e);
+        }
+    }
+    chosen.or_else(|| entries.first().copied())
+}
+
+/// Objets d'une entrée « CoreItems » ; les doublons sont regroupés (2 potions = une ligne ×2).
+fn items_of(entry: &Value) -> Vec<Item> {
+    let mut out: Vec<Item> = Vec::new();
+    let ids = entry["ids"].as_array().into_iter().flatten().enumerate();
+    for (i, id) in ids.filter_map(|(i, v)| Some((i, v.as_i64()?))) {
+        match out.iter_mut().find(|it| it.id == id) {
+            Some(it) => it.count += 1,
+            None => {
+                let name = entry["ids_names"][i].as_str().map_or_else(|| id.to_string(), str::to_string);
+                out.push(Item { id, name, count: 1 });
             }
         }
-        out
-    };
+    }
+    out
+}
+
+fn build_build(data: &Value) -> Build {
+    let items = items_of;
     let core = items(&data["core_items"]);
     let boots = items(&data["boots"]);
     let mut options: Vec<Item> = Vec::new();
@@ -577,6 +613,8 @@ fn build_build(data: &Value) -> Build {
         starter: items(&data["starter_items"]),
         core,
         boots,
+        first_alt: None,
+        second_alt: None,
         options,
         spells: data["summoner_spells"]["ids"].as_array().into_iter().flatten().filter_map(Value::as_i64).collect(),
         skill_max: texts(&data["skill_masteries"]["ids"]),

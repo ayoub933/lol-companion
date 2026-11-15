@@ -84,6 +84,7 @@ Windows » : c'est l'exe de développement qui serait lancé au démarrage.
   (chacun peut être coupé). Les recommandations restent affichées.
 - Saut éclair sur D ou F, ou « sa touche actuelle » (sinon F).
 - Sets d'objets : un seul, remplacé à chaque partie, ou un par champion.
+- En partie : le panneau des objets à acheter sur le bord gauche du jeu.
 - Lancer avec Windows (l'app démarre cachée près de l'horloge), afficher la fenêtre
   quand le client LoL s'ouvre, notification quand une partie est trouvée, et ce que fait la croix.
 
@@ -123,6 +124,8 @@ joués pour ce champion et ton poste, puis :
 - Runes, build et set d'objets passent alors à ceux du duel (« vs Sett »), avec tes stats contre lui
   et le conseil d'OP.GG (en anglais, OP.GG ne le traduit pas). Moins de 50 parties pour la page de
   runes du duel : les runes générales restent.
+- Objets du duel (départ, objets principaux, bottes) : le meilleur % de victoires parmi les choix
+  joués au moins 100 fois (en dessous, un % élevé peut être du hasard), sinon le plus joué.
 - Si l'app a déjà enregistré des parties de ce duel, ton bilan s'affiche (« 2 V – 1 D »).
 
 Stats OP.GG tous rangs par défaut : pour changer, modifie `TIER` dans `src-tauri/src/opgg.rs`
@@ -136,6 +139,16 @@ anonymes : le client ne donne pas leur compte, l'app n'a donc pas leur rang.
 
 Une fois la partie lancée : ta carte (KDA, CS, or, objets), et pour chacun des 10 champions
 son niveau et son KDA, comme le tableau des scores (Tab).
+
+**Panneau des objets à acheter**, posé sur le jeu, collé au bord gauche de l'écran, à mi-hauteur :
+juste les icônes, de haut en bas : départ, 1er objet (avec un autre choix, plus petit), bottes,
+2e objet (avec un autre choix). Ce sont les objets du duel contre ton vrai adversaire de couloir,
+choisis comme en sélection ; trop peu de parties sur ce duel : ceux de ton champion à ton poste.
+- Il se range une fois tes deux premiers objets faits, et se cache quand le jeu n'est pas au
+  premier plan (Alt+Tab, clic sur un autre écran).
+- Les clics le traversent et il ne prend jamais le clavier.
+- Il faut LoL en mode d'affichage « Sans bordure » : en plein écran, le jeu passe par-dessus tout.
+- Il peut être coupé dans les réglages.
 
 CS : pendant la partie, l'API de Riot ne les donne que par paliers de 10 (0, 10, 20…).
 L'app affiche une fourchette (« 80–89 ») et un rythme par minute estimé ; le compte exact
@@ -178,7 +191,8 @@ Quand une partie est trouvée, une notification Windows le signale. L'app n'acce
 - `src-tauri/src/settings.rs` : réglages.
 - `src-tauri/src/lib.rs` : fenêtre, icône près de l'horloge, mises à jour, boucle qui prévient
   l'interface quand l'état change.
-- `src/` : l'interface (`index.html`, `main.js`, `styles.css`).
+- `src-tauri/src/overlay.rs` : fenêtre du panneau posé sur le jeu.
+- `src/` : l'interface (`index.html`, `main.js`, `styles.css`) et le panneau en jeu (`overlay.html`).
 - `.github/workflows/release.yml` : construction de l'installateur sur GitHub.
 
 Si le client n'est pas détecté (installation inhabituelle), indique le chemin du lockfile :

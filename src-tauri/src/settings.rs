@@ -19,6 +19,8 @@ pub struct Settings {
     pub notify_match_found: bool,
     /// true = la croix réduit l'app dans la zone de notification (près de l'horloge).
     pub close_to_tray: bool,
+    /// En partie : objets à acheter sur le bord gauche de l'écran du jeu.
+    pub show_build_overlay: bool,
 }
 
 impl Default for Settings {
@@ -33,6 +35,7 @@ impl Default for Settings {
             show_on_client_start: true,
             notify_match_found: true,
             close_to_tray: true,
+            show_build_overlay: true,
         }
     }
 }
