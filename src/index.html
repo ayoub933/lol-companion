@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="styles.css" />
+    <title>LoL Companion</title>
+    <script type="module" src="/main.js" defer></script>
+  </head>
+
+  <body>
+    <header>
+      <h1>LoL Companion <span class="version">v0.8</span></h1>
+      <div class="header-right">
+        <span id="status" class="pill off">Client non détecté</span>
+        <button id="settings-button" class="icon-button" title="Réglages" aria-label="Réglages">⚙</button>
+      </div>
+    </header>
+
+    <section class="card notice" id="update" hidden>
+      <span id="update-text"></span>
+      <button id="update-button">Installer et redémarrer</button>
+    </section>
+
+    <section class="card" id="settings" hidden>
+      <div class="row">
+        <div class="label">Réglages</div>
+        <button class="link" id="settings-close">Fermer</button>
+      </div>
+      <div class="setting-group">
+        <div class="k">Import automatique en sélection</div>
+        <label><input type="checkbox" data-setting="importRunes" /> Page de runes</label>
+        <label><input type="checkbox" data-setting="importItemSet" /> Set d'objets</label>
+        <label><input type="checkbox" data-setting="importSpells" /> Sorts d'invocateur</label>
+        <label class="choice">
+          Saut éclair sur
+          <select data-setting="flashKey">
+            <option value="auto">sa touche actuelle (sinon F)</option>
+            <option value="D">D</option>
+            <option value="F">F</option>
+          </select>
+        </label>
+        <label class="choice">
+          Sets d'objets
+          <select data-setting="itemSetPerChampion">
+            <option value="false">un seul, remplacé à chaque partie</option>
+            <option value="true">un par champion</option>
+          </select>
+        </label>
+      </div>
+      <div class="setting-group">
+        <div class="k">Fenêtre</div>
+        <label><input type="checkbox" data-setting="startWithWindows" /> Lancer avec Windows (cachée près de l'horloge)</label>
+        <label><input type="checkbox" data-setting="showOnClientStart" /> L'afficher quand le client LoL s'ouvre</label>
+        <label><input type="checkbox" data-setting="notifyMatchFound" /> Notification quand une partie est trouvée</label>
+        <label><input type="checkbox" data-setting="closeToTray" /> La croix la cache près de l'horloge (pour quitter : clic droit sur l'icône)</label>
+      </div>
+      <div class="muted" id="settings-status"></div>
+    </section>
+
+    <!-- Fenêtre large : deux colonnes (équipes à droite). Fenêtre étroite : une seule. -->
+    <main id="main">
+      <div class="col">
+        <section class="card" id="account" hidden>
+          <div class="label">Compte</div>
+          <div class="big" id="riot-id">—</div>
+          <div class="muted" id="level"></div>
+          <div id="profile" hidden>
+            <dl class="ranks" id="ranks"></dl>
+            <div class="muted" id="recent"></div>
+            <div class="chips" id="recent-champions"></div>
+          </div>
+        </section>
+
+        <section class="card" id="phase-card" hidden>
+          <div class="label">Phase</div>
+          <div class="big" id="phase">—</div>
+        </section>
+
+        <section class="card" id="runes" hidden>
+          <div class="label">Runes OP.GG</div>
+          <div class="with-icon">
+            <img class="champ" id="runes-icon" alt="" hidden />
+            <div>
+              <div class="big" id="runes-title"></div>
+              <div class="muted" id="runes-detail"></div>
+              <div class="muted" id="runes-stats"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" id="build" hidden>
+          <div class="label">Build OP.GG</div>
+          <dl id="build-list"></dl>
+          <div class="muted" id="spells-note"></div>
+          <div class="muted" id="item-set"></div>
+        </section>
+
+        <section class="card" id="game" hidden>
+          <div class="row">
+            <div class="label">Partie en cours</div>
+            <div class="muted" id="game-time"></div>
+          </div>
+          <div class="muted" id="game-loading">Chargement de la partie…</div>
+          <div id="game-stats" hidden>
+            <div class="big" id="champion"></div>
+            <div class="grid">
+              <div><span class="k">KDA</span><span id="kda"></span></div>
+              <div><span class="k">CS</span><span id="cs"></span><span class="k" id="cs-rate"></span></div>
+              <div><span class="k">Or</span><span id="gold"></span></div>
+            </div>
+            <ul id="items"></ul>
+          </div>
+        </section>
+
+        <section class="card" id="last-game" hidden>
+          <div class="row">
+            <div class="label">Dernière partie</div>
+            <div class="muted" id="last-when"></div>
+          </div>
+          <div class="with-icon">
+            <img class="champ" id="last-icon" alt="" hidden />
+            <div>
+              <div class="big" id="last-title"></div>
+              <div class="muted" id="last-detail"></div>
+            </div>
+          </div>
+          <div class="grid" id="last-grid"></div>
+        </section>
+
+        <section class="card" id="stats" hidden>
+          <div class="label">Tes stats · parties suivies par l'app</div>
+          <div id="stats-champions"></div>
+          <div class="label sub" id="duels-label">Tes duels</div>
+          <div id="stats-duels"></div>
+        </section>
+
+        <p class="hint" id="hint">Lance le client League of Legends : l'app s'y connecte toute seule.</p>
+      </div>
+      <div class="col">
+        <section class="card" id="opponent" hidden>
+          <div class="teams">
+            <div class="team">
+              <div class="label">Ton équipe</div>
+              <div id="select-allies"></div>
+            </div>
+            <div class="team right">
+              <div class="label">Adversaires</div>
+              <div id="select-enemies"></div>
+            </div>
+          </div>
+          <div id="duel" hidden>
+            <div class="muted" id="opponent-mode"></div>
+            <div class="muted" id="matchup-stats"></div>
+            <div class="muted" id="duel-history"></div>
+            <div class="muted tip" id="matchup-tip"></div>
+          </div>
+        </section>
+
+        <section class="card" id="help" hidden>
+          <div class="label">Aide au choix · OP.GG</div>
+          <div id="help-counters"></div>
+          <div id="help-synergies"></div>
+          <div class="muted" id="help-pending"></div>
+        </section>
+
+        <section class="card" id="teams" hidden>
+          <div class="teams">
+            <div class="team">
+              <div class="label">Ton équipe</div>
+              <div id="team-allies"></div>
+            </div>
+            <div class="team right">
+              <div class="label">Adversaires</div>
+              <div id="team-enemies"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>
