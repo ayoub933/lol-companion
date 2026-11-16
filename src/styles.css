@@ -1019,6 +1019,40 @@ body.board .hrow {
   letter-spacing: 0.06em;
   color: var(--muted);
 }
+/* Fermer le détail : un bouton rouge bien visible, avec sa croix. */
+.close-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 15px 6px 16px;
+  border: none;
+  background: #e5383b;
+  color: #fff;
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  cursor: pointer;
+  clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
+}
+.close-btn:hover,
+.close-btn:focus-visible {
+  background: #ff4d50;
+}
+.close-btn:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px #fff;
+}
+.close-btn svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
 .match-teams {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

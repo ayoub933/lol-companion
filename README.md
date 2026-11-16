@@ -232,8 +232,8 @@ Un clic sur une partie de l'historique (ou sur la dernière, en grand) déroule 
 le salon : les 10 joueurs, ton équipe à gauche et celle d'en face à droite (l'une sous l'autre si la
 fenêtre est étroite). Pour chacun : champion et niveau, sorts, rune principale et voie secondaire,
 nom et rang solo/duo actuel, score carry, KDA, dégâts aux champions (barre à l'échelle de la
-partie), or, CS, balises posées et objets. Un nouveau clic sur la même partie, « FERMER » ou Échap
-le referme. Le détail vient du client : il doit être lancé.
+partie), or, CS, balises posées et objets. Pour le refermer : le bouton rouge « FERMER ✕ », Échap, ou un clic
+n'importe où ailleurs dans l'app. Le détail vient du client : il doit être lancé.
 
 Le score carry (0 à 10) classe les 10 joueurs du MVP au dernier : médaille d'or avec une étoile pour le
 MVP, d'argent et de bronze pour les 2e et 3e, et l'icône de leur champion dans un cadre épais de la même

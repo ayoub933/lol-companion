@@ -1233,6 +1233,17 @@ window.addEventListener("DOMContentLoaded", async () => {
   $("settings-button").addEventListener("click", toggleSettings);
   $("settings-close").addEventListener("click", toggleSettings);
   $("match-close").addEventListener("click", closeMatch);
+  // Détail ouvert : un clic ailleurs dans l'app le referme, sans rien déclencher d'autre.
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (!openGame || $("match").contains(event.target)) return;
+      event.stopPropagation();
+      event.preventDefault();
+      closeMatch();
+    },
+    true,
+  );
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && openGame) closeMatch();
   });
