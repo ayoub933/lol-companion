@@ -263,7 +263,9 @@ Le barème reprend celui de dpm.lol, retrouvé à partir de leurs notes détaill
 - objectifs : ceux de l'équipe (dragon et nashor 2, héraut 3, larve 0,5) et les dégâts aux objectifs ;
 - équipe : participation aux kills (au-delà de 25 %), part des dégâts et des dégâts encaissés ;
 - résultat : +3 pour une victoire, −3 pour une défaite ;
-- rôle : première tour (+5) et tours détruites ; pour le support, balises de contrôle, balises
+- rôle : première tour de son couloir (+5 au joueur dont l'équipe l'a prise ; le client ne dit que qui a
+  pris la première tour de la partie, et dans les autres couloirs c'est l'équipe gagnante, comme dans 30
+  couloirs sur 36 chez dpm.lol) et tours détruites ; pour le support, balises de contrôle, balises
   détruites et quête de support finie ; et, pour ce que le client ne donne pas (plaques, solo kills,
   crabes, alliés sauvés…), la moyenne de dpm.lol pour ce rôle.
 

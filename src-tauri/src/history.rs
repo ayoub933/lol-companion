@@ -503,6 +503,11 @@ fn carry_scores(doc: &Value, participants: &[Value], roles: &[Role]) -> Vec<f64>
             })
             .sum()
     };
+    let team_towers = |team: &Value| -> f64 {
+        let teams = doc["teams"].as_array().into_iter().flatten();
+        teams.filter(|t| &t["teamId"] == team).map(|t| t["towerKills"].as_f64().unwrap_or(0.0)).sum()
+    };
+    let first_tower = |p: &Value| flag(p, "firstTowerKill") || flag(p, "firstTowerAssist");
     let final_support_item = |p: &Value| {
         (0..7).any(|k| p["stats"][format!("item{k}")].as_i64().is_some_and(|item| SUPPORT_ITEMS[3..].contains(&item)))
     };
@@ -547,8 +552,15 @@ fn carry_scores(doc: &Value, participants: &[Value], roles: &[Role]) -> Vec<f64>
             points += if flag(p, "win") { 3.0 } else { -3.0 };
             // Rôle.
             points += s.missing + s.turret * stat(p, "turretKills");
-            if matches!(role, Role::Top | Role::Mid | Role::Bot) && (flag(p, "firstTowerKill") || flag(p, "firstTowerAssist")) {
-                points += 5.0;
+            // Première tour de son couloir : +5 au joueur dont l'équipe l'a prise. Le client ne dit que qui a pris
+            // la première tour de la partie ; dans les autres couloirs, c'est l'équipe gagnante (vrai pour 30
+            // couloirs sur 36 sur dpm.lol), si elle a pris au moins une tour.
+            if matches!(role, Role::Top | Role::Mid | Role::Bot) {
+                let lane_first = first_tower(p)
+                    || (!opponent.is_some_and(&first_tower) && flag(p, "win") && team_towers(team) > 0.0);
+                if lane_first {
+                    points += 5.0;
+                }
             }
             if *role == Role::Support {
                 points += (0.44 * stat(p, "visionWardsBoughtInGame") + 0.27).clamp(-3.0, 3.5);
