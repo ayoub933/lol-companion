@@ -519,7 +519,7 @@ function medal(place) {
   return node;
 }
 
-// Score carry d'un joueur (0 à 10) et sa place dans la partie : médaille pour le podium, sinon la place
+// Score carry d'un joueur (0 à 100) et sa place dans la partie : médaille pour le podium, sinon la place
 // dans un rond. Comme dpm.lol : « MVP » sous le score du meilleur de l'équipe gagnante, « ACE » sous
 // celui du meilleur de l'équipe perdante.
 function carryCell(p, title) {
@@ -527,7 +527,7 @@ function carryCell(p, title) {
   if (p.place > 3) badge.title = `${p.place}e score carry de la partie`;
   const tag = title && el("span", `k ${title.toLowerCase()}`, title);
   if (tag) tag.title = title === "MVP" ? "Meilleur score de l'équipe gagnante" : "Meilleur score de l'équipe perdante";
-  return el("div", "mcarry", [badge, el("div", "mpair", [el("span", "v", decimal(p.score)), tag])]);
+  return el("div", "mcarry", [badge, el("div", "mpair", [el("span", "v", String(Math.round(p.score))), tag])]);
 }
 
 // ---------- Détail d'une partie (salon) ----------

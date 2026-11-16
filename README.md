@@ -248,31 +248,35 @@ nom et rang solo/duo actuel, score carry, KDA, dégâts aux champions (barre à 
 partie), or, CS, balises posées et objets. Pour le refermer : le bouton rouge « FERMER ✕ », Échap, ou un clic
 n'importe où ailleurs dans l'app. Le détail vient du client : il doit être lancé.
 
-Le score carry (0 à 10) classe les 10 joueurs : médaille d'or avec une étoile pour le meilleur score,
+Le score carry (0 à 100) classe les 10 joueurs : médaille d'or avec une étoile pour le meilleur score,
 d'argent et de bronze pour les 2e et 3e, et l'icône de leur champion dans un cadre épais de la même
 couleur ; les autres ont leur place dans un rond. Comme sur dpm.lol, « MVP » marque le meilleur de
-l'équipe gagnante et « ACE » le meilleur de l'équipe perdante. Il est calculé par l'app (U.GG et OP.GG ne publient pas
-leur formule), selon le rôle de chacun, trouvé équipe par équipe : Châtiment → jungle, objet de support →
-support, puis le couloir annoncé par le client pour le haut, le milieu et le bas (une fois chacun, le dernier
-rôle libre au dernier joueur). Ce couloir vient d'une vieille estimation de Riot qui se trompe parfois (des
-tops annoncés en jungle) : la jungle et le support ne s'y fient jamais. Chaque stat est comparée à celle du joueur du même rôle en face (le KDA et la
-participation aux kills, à toute la partie), puis moyenne pondérée selon le rôle :
+l'équipe gagnante et « ACE » le meilleur de l'équipe perdante.
 
-| Stat | Haut | Jungle | Milieu | Bas | Support |
-| --- | --- | --- | --- | --- | --- |
-| KDA (ramené entre 0 et 1 : KDA / (KDA + 3)) | 3 | 3 | 3 | 3 | 4 |
-| Participation aux kills | 1,5 | 2,5 | 2 | 1,5 | 2,5 |
-| Dégâts aux champions | 2 | 1,5 | 2,5 | 2,5 | – |
-| Or | 1,5 | 1 | 1,5 | 1,5 | – |
-| CS | 1,5 | 1 | 1,5 | 2 | – |
-| Vision | 0,5 | 2 | 0,5 | 0,5 | 2,5 |
-| Dégâts encaissés | 1,5 | 1 | 0,5 | 0,5 | 1 |
-| Dégâts aux objectifs | 1 | 2 | 0,5 | 1 | – |
-| Impact : le meilleur de ses dégâts (Pyke, mages), soins et boucliers, ou contrôle | – | – | – | – | 2,5 |
+Le barème reprend celui de dpm.lol, retrouvé à partir de leurs notes détaillées (12 parties classées,
+120 joueurs) : 15 points de base, puis
 
-Les soins viennent du client (les boucliers aussi s'il les donne). Rôle introuvable ou ARAM : KDA ×3,
-participation ×2, dégâts ×2, or ×1,5, le reste ×1, comparés aux autres joueurs sans rôle (en ARAM, toute
-la partie).
+- global : kills et assistances (+0,75, +0,8 en haut, +0,85/+0,9 en support), morts (−1,5, −1,25 en
+  support), premier sang (+5) ; or, dégâts, CS et vision par minute comparés à une référence du rôle
+  (de −4 à +10 chacun ; pas de CS pour le support) ;
+- couloir : écart d'or et de CS par minute avec le joueur du même rôle en face (de −5 à +10) ;
+- objectifs : ceux de l'équipe (dragon et nashor 2, héraut 3, larve 0,5) et les dégâts aux objectifs ;
+- équipe : participation aux kills (au-delà de 25 %), part des dégâts et des dégâts encaissés ;
+- résultat : +3 pour une victoire, −3 pour une défaite ;
+- rôle : première tour (+5) et tours détruites ; pour le support, balises de contrôle, balises
+  détruites et quête de support finie ; et, pour ce que le client ne donne pas (plaques, solo kills,
+  crabes, alliés sauvés…), la moyenne de dpm.lol pour ce rôle.
+
+Le client ne donne pas les stats de début de partie (avance à 15 minutes, CS à 10 minutes) : le couloir
+utilise donc les écarts de fin de partie. Sur ces 12 parties, le classement obtenu suit celui de dpm.lol
+à 0,97 près (corrélation de rang) et les notes à environ 4 points près.
+
+Le rôle de chaque joueur vient de l'objet lié au rôle que le client donne (quêtes de rôle) ; à défaut,
+équipe par équipe : Châtiment → jungle, objet de support → support, puis le couloir annoncé par le client
+pour le haut, le milieu et le bas (une fois chacun, le dernier rôle libre au dernier joueur). Ce couloir
+vient d'une vieille estimation de Riot qui se trompe parfois (des tops annoncés en jungle) : la jungle et
+le support ne s'y fient jamais. Hors de la Faille (ARAM…), tout le monde est noté comme un milieu, sans
+couloir ni rôle.
 
 Plusieurs comptes sur le même PC : chaque partie est enregistrée avec le compte qui l'a jouée, et le
 salon ne montre que celles du compte connecté (client fermé : celles du dernier compte qui a joué).
