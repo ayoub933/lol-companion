@@ -254,25 +254,115 @@ pub struct MatchPlayer {
     pub place: u32,
 }
 
-/// Poids des stats du score « carry », dans l'ordre de carry_scores : KDA, participation aux kills,
-/// dégâts aux champions, or, CS, vision, dégâts encaissés (les tanks), dégâts aux objectifs.
-const CARRY_WEIGHTS: [f64; 8] = [3.0, 2.0, 2.0, 1.5, 1.0, 1.0, 1.0, 1.0];
+/// Objets de support : l'Atlas du monde, ses étapes (Boussole runique, Butin des mondes) et ses 5 versions
+/// finales. Qui en a un joue support.
+const SUPPORT_ITEMS: [i64; 8] = [3865, 3866, 3867, 3869, 3870, 3871, 3876, 3877];
+/// Sort d'invocateur Châtiment : qui l'a joue jungle.
+const SMITE: i64 = 11;
 
-/// Score « carry » de chaque participant (même ordre), de 0 à 10. Chaque stat compte en proportion de la
-/// meilleure de la partie (le meilleur a 1, celui qui en a deux fois moins 0,5), puis moyenne pondérée.
-/// Le KDA est d'abord ramené entre 0 et 1 (KDA / (KDA + 3)) : un 20/0/10 n'écrase pas tous les autres.
-/// Une stat que personne n'a (ex. dégâts aux objectifs absents du document) ne compte pas.
-fn carry_scores(participants: &[Value]) -> Vec<f64> {
+/// Rôle d'un joueur, pour son score carry.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Role {
+    Top,
+    Jungle,
+    Mid,
+    Bot,
+    Support,
+    /// Hors de la Faille (ARAM...) ou rôle introuvable.
+    Other,
+}
+
+impl Role {
+    /// Poids des stats du score carry, dans l'ordre : KDA, participation aux kills, dégâts aux champions, or,
+    /// CS, vision, dégâts encaissés, dégâts aux objectifs, impact de support. Le support ne compte ni ses
+    /// dégâts ni son or ni ses CS mais son impact : le meilleur de ses dégâts (Pyke, mages), de ses soins et
+    /// boucliers ou de son contrôle ; et son KDA pèse plus. La vision pèse plus en jungle et en support.
+    fn weights(self) -> [f64; 9] {
+        match self {
+            Role::Top => [3.0, 1.5, 2.0, 1.5, 1.5, 0.5, 1.5, 1.0, 0.0],
+            Role::Jungle => [3.0, 2.5, 1.5, 1.0, 1.0, 2.0, 1.0, 2.0, 0.0],
+            Role::Mid => [3.0, 2.0, 2.5, 1.5, 1.5, 0.5, 0.5, 0.5, 0.0],
+            Role::Bot => [3.0, 1.5, 2.5, 1.5, 2.0, 0.5, 0.5, 1.0, 0.0],
+            Role::Support => [4.0, 2.5, 0.0, 0.0, 0.0, 2.5, 1.0, 0.0, 2.5],
+            Role::Other => [3.0, 2.0, 2.0, 1.5, 1.0, 1.0, 1.0, 1.0, 0.0],
+        }
+    }
+}
+
+/// Rôle d'un participant d'après ses objets, ses sorts et le couloir donné par le client.
+fn role_of(p: &Value) -> Role {
+    let items: Vec<i64> = (0..7).filter_map(|i| p["stats"][format!("item{i}")].as_i64()).collect();
+    if items.iter().any(|item| SUPPORT_ITEMS.contains(item)) {
+        return Role::Support;
+    }
+    if [&p["spell1Id"], &p["spell2Id"]].iter().any(|spell| spell.as_i64() == Some(SMITE)) {
+        return Role::Jungle;
+    }
+    let timeline = &p["timeline"];
+    match (timeline["lane"].as_str().unwrap_or_default(), timeline["role"].as_str().unwrap_or_default()) {
+        ("TOP", _) => Role::Top,
+        ("JUNGLE", _) => Role::Jungle,
+        ("MIDDLE" | "MID", _) => Role::Mid,
+        ("BOTTOM" | "BOT", "DUO_SUPPORT" | "SUPPORT") => Role::Support,
+        ("BOTTOM" | "BOT", _) => Role::Bot,
+        _ => Role::Other,
+    }
+}
+
+/// Rôle de chaque participant (même ordre), sur la Faille de l'invocateur ; ailleurs (ARAM...), aucun.
+/// Dans chaque équipe : sans objet de support, le support est celui qui a le moins de sbires (s'il en a
+/// moins de 3 par minute) ; et s'il ne reste qu'un rôle pour un seul joueur, c'est le sien.
+fn roles(doc: &Value, participants: &[Value]) -> Vec<Role> {
+    if doc["mapId"] != 11 {
+        return vec![Role::Other; participants.len()];
+    }
+    let mut roles: Vec<Role> = participants.iter().map(role_of).collect();
+    let minutes = (doc["gameDuration"].as_f64().unwrap_or(0.0) / 60.0).max(1.0);
+    let minions = |i: usize| participants[i]["stats"]["totalMinionsKilled"].as_f64().unwrap_or(0.0);
+    for team in [100, 200] {
+        let members: Vec<usize> = (0..participants.len()).filter(|i| participants[*i]["teamId"] == team).collect();
+        if !members.iter().any(|i| roles[*i] == Role::Support) {
+            let fewest = members
+                .iter()
+                .copied()
+                .filter(|i| roles[*i] != Role::Jungle)
+                .min_by(|a, b| minions(*a).total_cmp(&minions(*b)));
+            if let Some(i) = fewest.filter(|i| minions(*i) < 3.0 * minutes) {
+                roles[i] = Role::Support;
+            }
+        }
+        let unknown: Vec<usize> = members.iter().copied().filter(|i| roles[*i] == Role::Other).collect();
+        let missing: Vec<Role> = [Role::Top, Role::Jungle, Role::Mid, Role::Bot, Role::Support]
+            .into_iter()
+            .filter(|role| !members.iter().any(|i| roles[*i] == *role))
+            .collect();
+        if let ([i], [role]) = (unknown.as_slice(), missing.as_slice()) {
+            roles[*i] = *role;
+        }
+    }
+    roles
+}
+
+/// Score « carry » de chaque participant (même ordre), de 0 à 10 : qui a le mieux fait son travail.
+/// Chaque stat est rapportée à la meilleure des joueurs du même rôle (toi et ton vis-à-vis : le meilleur a 1,
+/// celui qui en a deux fois moins 0,5) ; le KDA et la participation aux kills, à la meilleure de la partie.
+/// Puis moyenne pondérée selon le rôle (Role::weights). Le KDA est d'abord ramené entre 0 et 1
+/// (KDA / (KDA + 3)) : un 20/0/10 n'écrase pas tous les autres. Une stat que personne n'a ne compte pas.
+fn carry_scores(participants: &[Value], roles: &[Role]) -> Vec<f64> {
     let stat = |p: &Value, key: &str| p["stats"][key].as_f64().unwrap_or(0.0);
     let team_kills = |team: &Value| -> f64 {
         participants.iter().filter(|p| &p["teamId"] == team).map(|p| stat(p, "kills")).sum()
     };
-    let rows: Vec<[f64; 8]> = participants
+    // Par joueur : KDA ramené entre 0 et 1, participation aux kills, dégâts aux champions, or, CS, vision,
+    // dégâts encaissés, dégâts aux objectifs, soins et boucliers donnés, contrôle des ennemis (secondes).
+    let rows: Vec<[f64; 10]> = participants
         .iter()
         .map(|p| {
             let n = |key: &str| stat(p, key);
             let takedowns = n("kills") + n("assists");
             let kda = takedowns / n("deaths").max(1.0);
+            // Soins et boucliers sur les alliés si le client les donne ; sinon tous ses soins.
+            let given = n("totalHealsOnTeammates") + n("totalDamageShieldedOnTeammates");
             [
                 kda / (kda + 3.0),
                 (takedowns / team_kills(&p["teamId"]).max(1.0)).min(1.0),
@@ -282,24 +372,28 @@ fn carry_scores(participants: &[Value]) -> Vec<f64> {
                 n("visionScore"),
                 n("totalDamageTaken") + n("damageSelfMitigated"),
                 n("damageDealtToObjectives"),
+                if given > 0.0 { given } else { n("totalHeal") },
+                n("timeCCingOthers"),
             ]
         })
         .collect();
-    let mut best = [0.0_f64; 8];
-    for row in &rows {
-        for (b, value) in best.iter_mut().zip(row) {
-            *b = b.max(*value);
-        }
-    }
-    rows.iter()
-        .map(|row| {
-            let (mut total, mut weights) = (0.0, 0.0);
-            for ((value, best), weight) in row.iter().zip(&best).zip(CARRY_WEIGHTS) {
-                if *best > 0.0 {
-                    total += weight * value / best;
-                    weights += weight;
-                }
-            }
+    (0..rows.len())
+        .map(|i| {
+            // Part de la meilleure valeur (toute la partie pour les deux premières, sinon ce rôle).
+            let ratio = |s: usize| -> Option<f64> {
+                let best = (0..rows.len())
+                    .filter(|j| s < 2 || roles[*j] == roles[i])
+                    .map(|j| rows[j][s])
+                    .fold(0.0, f64::max);
+                (best > 0.0).then_some(rows[i][s] / best)
+            };
+            let impact = [2, 8, 9].into_iter().filter_map(&ratio).reduce(f64::max);
+            let values = [ratio(0), ratio(1), ratio(2), ratio(3), ratio(4), ratio(5), ratio(6), ratio(7), impact];
+            let (total, weights) = values
+                .iter()
+                .zip(roles[i].weights())
+                .filter_map(|(value, weight)| value.map(|v| (v * weight, weight)))
+                .fold((0.0, 0.0), |(t, w), (v, weight)| (t + v, w + weight));
             if weights > 0.0 { 10.0 * total / weights } else { 0.0 }
         })
         .collect()
@@ -311,7 +405,7 @@ pub fn match_from(doc: &Value, champion_id: i64) -> Option<MatchDetails> {
     let identities = doc["participantIdentities"].as_array();
     let my_team = &participants.iter().find(|p| p["championId"] == champion_id)?["teamId"];
     // Score « carry » et place de chaque participant (par son numéro dans la partie).
-    let scores = carry_scores(participants);
+    let scores = carry_scores(participants, &roles(doc, participants));
     let mut order: Vec<usize> = (0..participants.len()).collect();
     order.sort_by(|a, b| scores[*b].total_cmp(&scores[*a]));
     let carry = |p: &Value| -> (f64, u32) {

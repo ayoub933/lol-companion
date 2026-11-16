@@ -235,12 +235,28 @@ nom et rang solo/duo actuel, score carry, KDA, dégâts aux champions (barre à 
 partie), or, CS, balises posées et objets. Un nouveau clic sur la même partie, « FERMER » ou Échap
 le referme. Le détail vient du client : il doit être lancé.
 
-Le score carry (0 à 10) classe les 10 joueurs du MVP au dernier : médaille d'or pour le MVP, d'argent
-et de bronze pour les 2e et 3e, avec l'icône de leur champion cerclée de la même couleur. Il est
-calculé par l'app (U.GG et OP.GG ne publient pas leur formule) avec les stats de fin de partie :
-chacune compte en proportion de la meilleure de la partie, puis moyenne pondérée — KDA ×3,
-participation aux kills ×2, dégâts aux champions ×2, or ×1,5, CS, vision, dégâts encaissés et
-dégâts aux objectifs ×1. Le KDA est d'abord ramené entre 0 et 1 (KDA / (KDA + 3)).
+Le score carry (0 à 10) classe les 10 joueurs du MVP au dernier : médaille d'or avec une étoile pour le
+MVP, d'argent et de bronze pour les 2e et 3e, et l'icône de leur champion dans un cadre épais de la même
+couleur ; les autres ont leur place dans un rond. Il est calculé par l'app (U.GG et OP.GG ne publient pas
+leur formule), selon le rôle de chacun : objet de support → support, Châtiment → jungle, sinon le couloir
+donné par le client. Chaque stat est comparée à celle du joueur du même rôle en face (le KDA et la
+participation aux kills, à toute la partie), puis moyenne pondérée selon le rôle :
+
+| Stat | Haut | Jungle | Milieu | Bas | Support |
+| --- | --- | --- | --- | --- | --- |
+| KDA (ramené entre 0 et 1 : KDA / (KDA + 3)) | 3 | 3 | 3 | 3 | 4 |
+| Participation aux kills | 1,5 | 2,5 | 2 | 1,5 | 2,5 |
+| Dégâts aux champions | 2 | 1,5 | 2,5 | 2,5 | – |
+| Or | 1,5 | 1 | 1,5 | 1,5 | – |
+| CS | 1,5 | 1 | 1,5 | 2 | – |
+| Vision | 0,5 | 2 | 0,5 | 0,5 | 2,5 |
+| Dégâts encaissés | 1,5 | 1 | 0,5 | 0,5 | 1 |
+| Dégâts aux objectifs | 1 | 2 | 0,5 | 1 | – |
+| Impact : le meilleur de ses dégâts (Pyke, mages), soins et boucliers, ou contrôle | – | – | – | – | 2,5 |
+
+Les soins viennent du client (les boucliers aussi s'il les donne). Rôle introuvable ou ARAM : KDA ×3,
+participation ×2, dégâts ×2, or ×1,5, le reste ×1, comparés aux autres joueurs sans rôle (en ARAM, toute
+la partie).
 
 Plusieurs comptes sur le même PC : chaque partie est enregistrée avec le compte qui l'a jouée, et le
 salon ne montre que celles du compte connecté (client fermé : celles du dernier compte qui a joué).

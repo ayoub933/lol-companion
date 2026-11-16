@@ -1034,7 +1034,7 @@ body.board .hrow {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 8px 8px 8px;
+  padding: 8px 6px;
   background: var(--panel-2);
   border-top: 3px solid var(--accent);
 }
@@ -1076,10 +1076,10 @@ body.board .hrow {
 /* Colonnes : joueur, KDA, dégâts, or, CS, balises, objets. */
 .mrow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 50px 56px 68px 40px 44px 40px 78px;
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) 72px 54px 62px 40px 42px 40px 78px;
+  gap: 5px;
   align-items: center;
-  padding: 4px 6px;
+  padding: 4px 5px;
   background: var(--panel);
 }
 .mrow.labels {
@@ -1110,21 +1110,34 @@ body.board .hrow {
   width: 36px;
   height: 36px;
 }
-/* Podium du score carry : l'icône du champion cerclée d'or (MVP), d'argent ou de bronze. */
-.mrow.p1 .mchamp {
-  --ring: 245, 196, 81;
-  filter: drop-shadow(1.5px 0 0 rgb(var(--ring))) drop-shadow(-1.5px 0 0 rgb(var(--ring)))
-    drop-shadow(0 1.5px 0 rgb(var(--ring))) drop-shadow(0 -1.5px 0 rgb(var(--ring)))
-    drop-shadow(0 0 7px rgba(var(--ring), 0.7));
-}
+/* Podium du score carry : l'icône du champion dans un cadre épais d'or (MVP), d'argent ou de bronze,
+   à sa forme (derrière l'icône), avec un halo de la même couleur. */
+.mrow.p1 .mchamp,
 .mrow.p2 .mchamp,
 .mrow.p3 .mchamp {
-  --ring: 200, 208, 218;
-  filter: drop-shadow(1px 0 0 rgb(var(--ring))) drop-shadow(-1px 0 0 rgb(var(--ring)))
-    drop-shadow(0 1px 0 rgb(var(--ring))) drop-shadow(0 -1px 0 rgb(var(--ring)));
+  z-index: 0;
+}
+.mrow.p1 .mchamp::before,
+.mrow.p2 .mchamp::before,
+.mrow.p3 .mchamp::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  z-index: -1;
+  background: var(--ring);
+  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+}
+.mrow.p1 .mchamp {
+  --ring: linear-gradient(160deg, #fff6cc, #f5c451 45%, #9c7410);
+  filter: drop-shadow(0 0 6px rgba(245, 196, 81, 0.8));
+}
+.mrow.p2 .mchamp {
+  --ring: linear-gradient(160deg, #ffffff, #c8d0da 45%, #6f7a87);
+  filter: drop-shadow(0 0 5px rgba(200, 208, 218, 0.55));
 }
 .mrow.p3 .mchamp {
-  --ring: 214, 140, 86;
+  --ring: linear-gradient(160deg, #ffe2c4, #d68c56 45%, #7a4219);
+  filter: drop-shadow(0 0 5px rgba(214, 140, 86, 0.6));
 }
 .mchamp .icon {
   width: 36px;
@@ -1220,31 +1233,64 @@ body.board .hrow {
   line-height: 1;
   color: var(--muted);
 }
-/* Score carry : médaille pour le podium, puis le score et la place (MVP, 2e, 3e...). */
+/* Score carry : médaille pour le podium (sinon la place dans un rond de même largeur), puis le score.
+   Le tout au milieu de sa colonne, entre le joueur et le KDA ; les scores restent alignés. */
 .mcarry {
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  gap: 3px;
+}
+.mcarry .mpair {
+  width: 27px;
+}
+.mrow.labels span:nth-child(2) {
+  text-align: center;
 }
 .medal {
   flex: none;
   display: block;
-  width: 19px;
-  height: 25px;
-  margin-top: -3px;
+  width: 33px;
+  height: 33px;
+}
+.medal.rank {
+  display: grid;
+  place-items: center;
+}
+.medal.rank b {
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  background: var(--chip);
+  border: 1px solid var(--line);
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 12px;
+  color: var(--muted);
 }
 .medal svg {
   display: block;
   width: 100%;
   height: 100%;
+  overflow: visible;
 }
 .medal text {
   font-family: var(--display);
+  font-style: italic;
   font-weight: 800;
-  font-size: 11px;
+  font-size: 13px;
 }
 .medal.m1 {
-  filter: drop-shadow(0 0 5px rgba(245, 196, 81, 0.6));
+  filter: drop-shadow(0 0 3px rgba(245, 196, 81, 0.75));
+}
+.medal.m2 {
+  filter: drop-shadow(0 0 2px rgba(200, 208, 218, 0.5));
+}
+.medal.m3 {
+  filter: drop-shadow(0 0 2px rgba(214, 140, 86, 0.55));
 }
 .mpair .k.mvp {
   font-family: var(--display);

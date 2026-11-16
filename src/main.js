@@ -464,39 +464,69 @@ function lpBadge(change, size = "") {
   return badge;
 }
 
-// Médaille des 3 meilleurs scores carry : or (MVP), argent, bronze, aux couleurs du podium de la sélection.
+// Médaille du podium du score carry : disque métallique gravé de la place dans une couronne de lauriers,
+// et une étoile au-dessus pour le MVP. Or, argent et bronze du podium de la sélection.
 // [reflet, couleur, ombre, chiffre]
 const MEDAL_COLORS = {
-  1: ["#fff4c2", "#f5c451", "#9c7410", "#3d2a00"],
-  2: ["#ffffff", "#c8d0da", "#76818e", "#252a31"],
-  3: ["#ffdcb8", "#d68c56", "#83491d", "#331a06"],
+  1: ["#fff6cc", "#f5c451", "#9c7410", "#4a3300"],
+  2: ["#ffffff", "#c8d0da", "#6f7a87", "#262b33"],
+  3: ["#ffe2c4", "#d68c56", "#7a4219", "#3b1f08"],
 };
+
+// Couronne de lauriers (dessin fixe, calculé une fois) : des paires de feuilles le long d'un arc à gauche,
+// écartées de la branche, puis la même branche en miroir à droite.
+const LAUREL = (() => {
+  const leaf = "M0 0C1.6-1.5 1.9-4.2 0-6.6C-1.9-4.2-1.6-1.5 0 0Z";
+  const leaves = [];
+  for (const deg of [112, 135, 158, 181, 204, 226]) {
+    const a = (deg * Math.PI) / 180;
+    // Sens de la branche (vers son bout) : la tangente à l'arc.
+    const along = (Math.atan2(-Math.sin(a), -Math.cos(a)) * 180) / Math.PI;
+    for (const side of [1, -1]) {
+      const r = 14 + side * 1.3;
+      const x = (20 + r * Math.cos(a)).toFixed(2);
+      const y = (21 + r * Math.sin(a)).toFixed(2);
+      leaves.push(`<path d="${leaf}" transform="translate(${x} ${y}) rotate(${(along - side * 32).toFixed(1)})"/>`);
+    }
+  }
+  const branch = leaves.join("");
+  return `${branch}<g transform="translate(40 0) scale(-1 1)">${branch}</g>`;
+})();
+
+// Étoile du MVP, au-dessus du disque.
+const STAR = Array.from({ length: 10 }, (_, k) => {
+  const r = k % 2 ? 1.7 : 4;
+  const a = ((-90 + k * 36) * Math.PI) / 180;
+  return `${(20 + r * Math.cos(a)).toFixed(2)},${(4.6 + r * Math.sin(a)).toFixed(2)}`;
+}).join(" ");
 
 function medal(place) {
   const [light, main, dark, ink] = MEDAL_COLORS[place];
+  const id = `carry-medal-${place}`;
   const node = el("span", `medal m${place}`);
-  // Dessin fixe (aucune donnée extérieure) : ruban, disque dégradé, liseré, place.
-  node.innerHTML = `<svg viewBox="0 0 24 31" aria-hidden="true">
-    <defs><radialGradient id="medal-${place}" cx="35%" cy="30%" r="80%">
+  // Dessin fixe (aucune donnée extérieure).
+  node.innerHTML = `<svg viewBox="0 0 40 40" aria-hidden="true">
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2=".35" y2="1">
       <stop offset="0" stop-color="${light}"/><stop offset=".5" stop-color="${main}"/><stop offset="1" stop-color="${dark}"/>
-    </radialGradient></defs>
-    <path d="M5 0h6l4 12H9z" fill="#2456d6"/><path d="M13 0h6l-4 12H9z" fill="#8eaef0"/>
-    <circle cx="12" cy="20.5" r="9.5" fill="url(#medal-${place})" stroke="${dark}"/>
-    <circle cx="12" cy="20.5" r="7" fill="none" stroke="${light}" stroke-opacity=".7" stroke-width=".8"/>
-    <text x="12" y="24.4" text-anchor="middle" fill="${ink}">${place}</text>
+    </linearGradient></defs>
+    <g fill="url(#${id})" stroke="${dark}" stroke-width=".5">${LAUREL}</g>
+    ${place === 1 ? `<polygon points="${STAR}" fill="url(#${id})" stroke="${dark}" stroke-width=".6"/>` : ""}
+    <circle cx="20" cy="21" r="9.2" fill="url(#${id})" stroke="${dark}" stroke-width="1.1"/>
+    <circle cx="20" cy="21" r="7.2" fill="none" stroke="${light}" stroke-opacity=".8" stroke-width=".8"/>
+    <text x="20" y="25.7" text-anchor="middle" fill="${ink}">${place}</text>
   </svg>`;
   node.title = place === 1 ? "MVP : meilleur score carry de la partie" : `${place}e meilleur score carry de la partie`;
   return node;
 }
 
-// Score carry d'un joueur (0 à 10) et sa place dans la partie : médaille pour le podium.
+// Score carry d'un joueur (0 à 10) et sa place dans la partie : médaille pour le podium, sinon la place
+// dans un rond ; « MVP » sous le score du meilleur.
 function carryCell(p) {
+  const badge = p.place <= 3 ? medal(p.place) : el("span", "medal rank", [el("b", "", String(p.place))]);
+  if (p.place > 3) badge.title = `${p.place}e score carry de la partie`;
   return el("div", "mcarry", [
-    p.place <= 3 ? medal(p.place) : el("span", "medal"),
-    el("div", "mpair", [
-      el("span", "v", decimal(p.score)),
-      el("span", `k${p.place === 1 ? " mvp" : ""}`, p.place === 1 ? "MVP" : `${p.place}e`),
-    ]),
+    badge,
+    el("div", "mpair", [el("span", "v", decimal(p.score)), p.place === 1 && el("span", "k mvp", "MVP")]),
   ]);
 }
 
