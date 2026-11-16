@@ -47,9 +47,22 @@ Mise en place, une seule fois :
    certificat payant : Windows SmartScreen affiche « Windows a protégé votre ordinateur »,
    clique sur « Informations complémentaires » puis « Exécuter quand même ».
 
-Versions suivantes : change la version dans `tauri.conf.json` et `Cargo.toml`, commit, push,
-puis un nouveau tag (`v0.8.1`...). L'app installée affiche un bandeau « Nouvelle version
-disponible » au démarrage suivant ; le bouton installe et relance l'app.
+Versions suivantes (ex. 0.9.1), depuis le dossier `lol-companion` :
+
+1. Le numéro, à 3 endroits : dans `src-tauri/tauri.conf.json`, `"version": "0.9.1"` et le titre
+   `"LoL Companion 0.9.1"` ; dans `src-tauri/Cargo.toml`, `version = "0.9.1"`.
+2. `cargo build --manifest-path src-tauri/Cargo.toml` (met `Cargo.lock` au même numéro).
+3. Envoyer le code puis le tag :
+   ```powershell
+   git add -A
+   git commit -m "Version 0.9.1"
+   git push
+   git tag v0.9.1
+   git push origin v0.9.1
+   ```
+4. L'onglet Actions du dépôt montre la construction (10 à 15 minutes), puis la page Releases a le
+   nouvel installateur. L'app installée affiche un bandeau « Nouvelle version disponible » à son
+   démarrage suivant ; le bouton installe et relance l'app.
 
 Installateur fabriqué sur ton PC plutôt que sur GitHub (dans `src-tauri\target\release\bundle\nsis\`) :
 
