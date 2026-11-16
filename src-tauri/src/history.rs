@@ -289,54 +289,68 @@ impl Role {
     }
 }
 
-/// Rôle d'un participant d'après ses objets, ses sorts et le couloir donné par le client.
-fn role_of(p: &Value) -> Role {
-    let items: Vec<i64> = (0..7).filter_map(|i| p["stats"][format!("item{i}")].as_i64()).collect();
-    if items.iter().any(|item| SUPPORT_ITEMS.contains(item)) {
-        return Role::Support;
-    }
-    if [&p["spell1Id"], &p["spell2Id"]].iter().any(|spell| spell.as_i64() == Some(SMITE)) {
-        return Role::Jungle;
-    }
-    let timeline = &p["timeline"];
-    match (timeline["lane"].as_str().unwrap_or_default(), timeline["role"].as_str().unwrap_or_default()) {
-        ("TOP", _) => Role::Top,
-        ("JUNGLE", _) => Role::Jungle,
-        ("MIDDLE" | "MID", _) => Role::Mid,
-        ("BOTTOM" | "BOT", "DUO_SUPPORT" | "SUPPORT") => Role::Support,
-        ("BOTTOM" | "BOT", _) => Role::Bot,
-        _ => Role::Other,
-    }
-}
-
 /// Rôle de chaque participant (même ordre), sur la Faille de l'invocateur ; ailleurs (ARAM...), aucun.
-/// Dans chaque équipe : sans objet de support, le support est celui qui a le moins de sbires (s'il en a
-/// moins de 3 par minute) ; et s'il ne reste qu'un rôle pour un seul joueur, c'est le sien.
+/// Rempli équipe par équipe, un rôle par joueur :
+/// - jungle : Châtiment (s'ils sont plusieurs, celui qui a tué le plus de monstres) ;
+/// - support : l'objet de support (sinon celui qui a le moins de sbires, s'il en a moins de 3 par minute) ;
+/// - haut, milieu, bas : le couloir annoncé par le client, une fois chacun ; le dernier rôle libre va au
+///   dernier joueur sans rôle.
+///
+/// Le couloir du client vient d'une ancienne estimation de Riot (la position en début de partie) et se
+/// trompe parfois (ex. deux tops annoncés en jungle) : la jungle et le support ne s'y fient donc jamais.
 fn roles(doc: &Value, participants: &[Value]) -> Vec<Role> {
+    let mut roles = vec![Role::Other; participants.len()];
     if doc["mapId"] != 11 {
-        return vec![Role::Other; participants.len()];
+        return roles;
     }
-    let mut roles: Vec<Role> = participants.iter().map(role_of).collect();
     let minutes = (doc["gameDuration"].as_f64().unwrap_or(0.0) / 60.0).max(1.0);
-    let minions = |i: usize| participants[i]["stats"]["totalMinionsKilled"].as_f64().unwrap_or(0.0);
+    let stat = |i: usize, key: &str| participants[i]["stats"][key].as_f64().unwrap_or(0.0);
+    let smite = |i: usize| [&participants[i]["spell1Id"], &participants[i]["spell2Id"]].iter().any(|s| s.as_i64() == Some(SMITE));
+    let support_item = |i: usize| {
+        (0..7).any(|k| participants[i]["stats"][format!("item{k}")].as_i64().is_some_and(|item| SUPPORT_ITEMS.contains(&item)))
+    };
     for team in [100, 200] {
-        let members: Vec<usize> = (0..participants.len()).filter(|i| participants[*i]["teamId"] == team).collect();
-        if !members.iter().any(|i| roles[*i] == Role::Support) {
-            let fewest = members
-                .iter()
-                .copied()
-                .filter(|i| roles[*i] != Role::Jungle)
-                .min_by(|a, b| minions(*a).total_cmp(&minions(*b)));
-            if let Some(i) = fewest.filter(|i| minions(*i) < 3.0 * minutes) {
-                roles[i] = Role::Support;
+        let mut free: Vec<usize> = (0..participants.len()).filter(|i| participants[*i]["teamId"] == team).collect();
+        let jungler = free
+            .iter()
+            .copied()
+            .filter(|i| smite(*i))
+            .max_by(|a, b| stat(*a, "neutralMinionsKilled").total_cmp(&stat(*b, "neutralMinionsKilled")));
+        if let Some(i) = jungler {
+            roles[i] = Role::Jungle;
+            free.retain(|j| *j != i);
+        }
+        let minions = |i: &usize| stat(*i, "totalMinionsKilled");
+        let support = free
+            .iter()
+            .copied()
+            .filter(|i| support_item(*i))
+            .min_by(|a, b| minions(a).total_cmp(&minions(b)))
+            .or_else(|| {
+                free.iter().copied().min_by(|a, b| minions(a).total_cmp(&minions(b))).filter(|i| minions(i) < 3.0 * minutes)
+            });
+        if let Some(i) = support {
+            roles[i] = Role::Support;
+            free.retain(|j| *j != i);
+        }
+        let mut open = vec![Role::Top, Role::Mid, Role::Bot];
+        let mut unknown = Vec::new();
+        for i in free {
+            let lane = match participants[i]["timeline"]["lane"].as_str().unwrap_or_default() {
+                "TOP" => Some(Role::Top),
+                "MIDDLE" | "MID" => Some(Role::Mid),
+                "BOTTOM" | "BOT" => Some(Role::Bot),
+                _ => None,
+            };
+            match lane.filter(|lane| open.contains(lane)) {
+                Some(lane) => {
+                    roles[i] = lane;
+                    open.retain(|role| *role != lane);
+                }
+                None => unknown.push(i),
             }
         }
-        let unknown: Vec<usize> = members.iter().copied().filter(|i| roles[*i] == Role::Other).collect();
-        let missing: Vec<Role> = [Role::Top, Role::Jungle, Role::Mid, Role::Bot, Role::Support]
-            .into_iter()
-            .filter(|role| !members.iter().any(|i| roles[*i] == *role))
-            .collect();
-        if let ([i], [role]) = (unknown.as_slice(), missing.as_slice()) {
+        if let ([i], [role]) = (unknown.as_slice(), open.as_slice()) {
             roles[*i] = *role;
         }
     }
@@ -405,7 +419,26 @@ pub fn match_from(doc: &Value, champion_id: i64) -> Option<MatchDetails> {
     let identities = doc["participantIdentities"].as_array();
     let my_team = &participants.iter().find(|p| p["championId"] == champion_id)?["teamId"];
     // Score « carry » et place de chaque participant (par son numéro dans la partie).
-    let scores = carry_scores(participants, &roles(doc, participants));
+    let roles = roles(doc, participants);
+    // Rôles trouvés, à côté du couloir annoncé par le client (pour vérifier sur une vraie partie).
+    let name_of = |p: &Value| {
+        identities
+            .into_iter()
+            .flatten()
+            .find(|identity| identity["participantId"] == p["participantId"])
+            .and_then(|identity| identity["player"]["gameName"].as_str())
+            .unwrap_or("?")
+    };
+    let found: Vec<String> = participants
+        .iter()
+        .zip(&roles)
+        .map(|(p, role)| {
+            let lane = |key: &str| p["timeline"][key].as_str().unwrap_or("-").to_string();
+            format!("{} {:?} (client {}/{})", name_of(p), role, lane("lane"), lane("role"))
+        })
+        .collect();
+    eprintln!("[détail] partie {} : {}", doc["gameId"], found.join(", "));
+    let scores = carry_scores(participants, &roles);
     let mut order: Vec<usize> = (0..participants.len()).collect();
     order.sort_by(|a, b| scores[*b].total_cmp(&scores[*a]));
     let carry = |p: &Value| -> (f64, u32) {
