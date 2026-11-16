@@ -833,6 +833,14 @@ body.board .mcard {
   justify-content: space-between;
   gap: 8px;
 }
+.last-lp {
+  display: flex;
+  margin-right: auto;
+}
+.last-lp:empty,
+#match-lp:empty {
+  display: none;
+}
 .result {
   flex: none;
   padding: 5px 26px 3px 12px;
@@ -923,7 +931,7 @@ body.board .hrow {
   position: relative;
   flex: none;
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) 56px 46px 62px;
+  grid-template-columns: 30px minmax(0, 1fr) 62px 56px 46px 62px;
   gap: 8px;
   align-items: center;
   padding: 4px 10px 4px 13px;
@@ -1068,7 +1076,7 @@ body.board .hrow {
 /* Colonnes : joueur, KDA, dégâts, or, CS, balises, objets. */
 .mrow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 58px 74px 40px 46px 40px 78px;
+  grid-template-columns: minmax(0, 1fr) 50px 56px 68px 40px 44px 40px 78px;
   gap: 6px;
   align-items: center;
   padding: 4px 6px;
@@ -1101,7 +1109,22 @@ body.board .hrow {
   flex: none;
   width: 36px;
   height: 36px;
-  background: var(--chip);
+}
+/* Podium du score carry : l'icône du champion cerclée d'or (MVP), d'argent ou de bronze. */
+.mrow.p1 .mchamp {
+  --ring: 245, 196, 81;
+  filter: drop-shadow(1.5px 0 0 rgb(var(--ring))) drop-shadow(-1.5px 0 0 rgb(var(--ring)))
+    drop-shadow(0 1.5px 0 rgb(var(--ring))) drop-shadow(0 -1.5px 0 rgb(var(--ring)))
+    drop-shadow(0 0 7px rgba(var(--ring), 0.7));
+}
+.mrow.p2 .mchamp,
+.mrow.p3 .mchamp {
+  --ring: 200, 208, 218;
+  filter: drop-shadow(1px 0 0 rgb(var(--ring))) drop-shadow(-1px 0 0 rgb(var(--ring)))
+    drop-shadow(0 1px 0 rgb(var(--ring))) drop-shadow(0 -1px 0 rgb(var(--ring)));
+}
+.mrow.p3 .mchamp {
+  --ring: 214, 140, 86;
 }
 .mchamp .icon {
   width: 36px;
@@ -1197,6 +1220,40 @@ body.board .hrow {
   line-height: 1;
   color: var(--muted);
 }
+/* Score carry : médaille pour le podium, puis le score et la place (MVP, 2e, 3e...). */
+.mcarry {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.medal {
+  flex: none;
+  display: block;
+  width: 19px;
+  height: 25px;
+  margin-top: -3px;
+}
+.medal svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.medal text {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 11px;
+}
+.medal.m1 {
+  filter: drop-shadow(0 0 5px rgba(245, 196, 81, 0.6));
+}
+.mpair .k.mvp {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: rgb(245, 196, 81);
+}
+
 /* Barre des dégâts, à l'échelle du plus gros total de la partie. */
 .mbar {
   display: block;
@@ -1269,6 +1326,66 @@ body.board .hrow {
   flex-direction: column;
   align-items: flex-end;
   gap: 2px;
+}
+.hlp {
+  display: flex;
+  justify-content: center;
+}
+
+/* LP gagnés ou perdus d'une classée : flèche vers le haut (vert-bleu) ou vers le bas (rouge-rose). */
+.lp-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px 2px 9px;
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 16px;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--muted);
+  background: var(--chip);
+  clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
+}
+/* La flèche : vers le haut, tournée pour une perte ; aucune si les LP n'ont pas bougé. */
+.lp-change::before {
+  content: "";
+  flex: none;
+  width: 10px;
+  height: 12px;
+  background: currentColor;
+  clip-path: polygon(50% 0, 100% 50%, 67% 50%, 67% 100%, 33% 100%, 33% 50%, 0 50%);
+}
+.lp-change small {
+  font-size: 0.68em;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.lp-change.up {
+  color: var(--victory);
+  background: rgba(47, 208, 181, 0.2);
+}
+.lp-change.down {
+  color: var(--defeat);
+  background: rgba(255, 90, 122, 0.2);
+}
+.lp-change.down::before {
+  transform: rotate(180deg);
+}
+.lp-change.big {
+  gap: 6px;
+  padding: 5px 15px 3px 13px;
+  font-size: 23px;
+  clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
+}
+.lp-change.big::before {
+  width: 14px;
+  height: 17px;
+}
+.lp-change.even::before {
+  display: none;
 }
 .hnum .v {
   font-family: var(--display);

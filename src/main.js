@@ -363,6 +363,7 @@ function renderFeatured(last, recording) {
     $("last-result").textContent = "TERMINÉE";
     $("last-result").className = "result neutral";
     $("last-meta").textContent = "DERNIER MATCH";
+    $("last-lp").replaceChildren();
     $("last-versus").replaceChildren(el("span", "muted", "Récupération de tes stats dans l'historique du client…"));
     $("last-grid").replaceChildren();
     $("last-when").textContent = "";
@@ -371,6 +372,7 @@ function renderFeatured(last, recording) {
   $("last-game").className = `panel last${last.win ? "" : " lost"}`;
   $("last-result").textContent = last.win ? "VICTOIRE" : "DÉFAITE";
   $("last-result").className = `result${last.win ? "" : " lost"}`;
+  $("last-lp").replaceChildren(...[lpBadge(last.lpChange, "big")].filter(Boolean));
   $("last-meta").textContent = ["DERNIER MATCH", queueName(last), clock(last.duration)].join(" · ");
   $("last-versus").replaceChildren(
     ...[
@@ -407,6 +409,7 @@ function historyRow(game) {
       el("span", "hname", [upper(game.champion), game.opponent && el("small", "", ` VS ${upper(game.opponent)}`)]),
       el("span", "hmeta", [el("b", "", game.win ? "VICTOIRE" : "DÉFAITE"), ` · ${queueName(game)}${lane ? ` · ${lane}` : ""}`]),
     ]),
+    el("div", "hlp", [lpBadge(game.lpChange)]),
     value(`${game.kills}/${game.deaths}/${game.assists}`, `${kda(game.kills, game.deaths, game.assists)} KDA`),
     value(String(game.cs), `${decimal(game.cs / Math.max(minutes, 1))}/min`),
     value(clock(game.duration), ago(ended(game))),
@@ -449,6 +452,54 @@ function renderStats(state, show) {
   );
 }
 
+// ---------- LP et score carry ----------
+
+// LP gagnés (flèche vers le haut, vert-bleu) ou perdus (vers le bas, rouge-rose) en classée ;
+// rien si l'app ne les connaît pas.
+function lpBadge(change, size = "") {
+  if (change == null) return null;
+  const kind = change > 0 ? "up" : change < 0 ? "down" : "even";
+  const badge = el("span", `lp-change ${kind} ${size}`.trim(), [String(Math.abs(change)), el("small", "", "LP")]);
+  badge.title = change > 0 ? `${change} LP gagnés` : change < 0 ? `${-change} LP perdus` : "LP inchangés";
+  return badge;
+}
+
+// Médaille des 3 meilleurs scores carry : or (MVP), argent, bronze, aux couleurs du podium de la sélection.
+// [reflet, couleur, ombre, chiffre]
+const MEDAL_COLORS = {
+  1: ["#fff4c2", "#f5c451", "#9c7410", "#3d2a00"],
+  2: ["#ffffff", "#c8d0da", "#76818e", "#252a31"],
+  3: ["#ffdcb8", "#d68c56", "#83491d", "#331a06"],
+};
+
+function medal(place) {
+  const [light, main, dark, ink] = MEDAL_COLORS[place];
+  const node = el("span", `medal m${place}`);
+  // Dessin fixe (aucune donnée extérieure) : ruban, disque dégradé, liseré, place.
+  node.innerHTML = `<svg viewBox="0 0 24 31" aria-hidden="true">
+    <defs><radialGradient id="medal-${place}" cx="35%" cy="30%" r="80%">
+      <stop offset="0" stop-color="${light}"/><stop offset=".5" stop-color="${main}"/><stop offset="1" stop-color="${dark}"/>
+    </radialGradient></defs>
+    <path d="M5 0h6l4 12H9z" fill="#2456d6"/><path d="M13 0h6l-4 12H9z" fill="#8eaef0"/>
+    <circle cx="12" cy="20.5" r="9.5" fill="url(#medal-${place})" stroke="${dark}"/>
+    <circle cx="12" cy="20.5" r="7" fill="none" stroke="${light}" stroke-opacity=".7" stroke-width=".8"/>
+    <text x="12" y="24.4" text-anchor="middle" fill="${ink}">${place}</text>
+  </svg>`;
+  node.title = place === 1 ? "MVP : meilleur score carry de la partie" : `${place}e meilleur score carry de la partie`;
+  return node;
+}
+
+// Score carry d'un joueur (0 à 10) et sa place dans la partie : médaille pour le podium.
+function carryCell(p) {
+  return el("div", "mcarry", [
+    p.place <= 3 ? medal(p.place) : el("span", "medal"),
+    el("div", "mpair", [
+      el("span", "v", decimal(p.score)),
+      el("span", `k${p.place === 1 ? " mvp" : ""}`, p.place === 1 ? "MVP" : `${p.place}e`),
+    ]),
+  ]);
+}
+
 // ---------- Détail d'une partie (salon) ----------
 
 // Partie ouverte en détail ; null = panneau fermé. Une réponse arrivée après un autre clic est ignorée.
@@ -483,6 +534,7 @@ function openMatch(game) {
   panel.classList.add("unroll");
   $("match-result").textContent = game.win ? "VICTOIRE" : "DÉFAITE";
   $("match-result").className = `result${game.win ? "" : " lost"}`;
+  $("match-lp").replaceChildren(...[lpBadge(game.lpChange, "big")].filter(Boolean));
   $("match-title").replaceChildren(
     ...[
       el("span", "ally", upper(game.champion)),
@@ -542,7 +594,7 @@ function renderMatch(details, game) {
 
 function matchTeam(team, ours, most, duration) {
   const sum = (key) => team.players.reduce((total, p) => total + p[key], 0);
-  const labels = ["JOUEUR", "KDA", "DÉGÂTS", "OR", "CS", "BALISES", "OBJETS"].map((text) => el("span", "", text));
+  const labels = ["JOUEUR", "CARRY", "KDA", "DÉGÂTS", "OR", "CS", "BALISES", "OBJETS"].map((text) => el("span", "", text));
   return el("div", `mteam ${ours ? "us" : "them"}`, [
     el("div", "mteam-head", [
       el("span", "side", ours ? "TON ÉQUIPE" : "EN FACE"),
@@ -569,8 +621,9 @@ function matchRow(p, most, duration) {
   const fill = el("span");
   fill.style.width = `${(p.damage / most) * 100}%`;
   const minutes = Math.max(duration / 60, 1);
-  return el("div", `mrow${p.me ? " me" : ""}`, [
+  return el("div", `mrow${p.me ? " me" : ""}${p.place <= 3 ? ` p${p.place}` : ""}`, [
     el("div", "mcell-group", [champion, spells, runes, who]),
+    carryCell(p),
     el("div", "mpair", [el("span", "v", `${p.kills}/${p.deaths}/${p.assists}`), el("span", "k", `${kda(p.kills, p.deaths, p.assists)} KDA`)]),
     el("div", "mpair", [el("span", "v", whole(p.damage)), el("span", "mbar", [fill])]),
     el("span", "mnum", kilo(p.gold)),

@@ -222,12 +222,25 @@ adversaire et poste pour les parties suivies par l'app), et tes stats par champi
 minute, % de victoires) et par duel. L'ARAM est compté à part. Les stats de l'app commencent à la
 première partie jouée avec elle ; l'historique des 10 parties vient du client et les montre toutes.
 
+En classée (solo/duo et flexible), les LP gagnés ou perdus : l'app lit ton rang au début de la partie
+et après (une fois que ton rang compte la partie), et affiche l'écart avec une flèche vers le haut en
+vert-bleu ou vers le bas en rouge-rose, dans l'historique (entre le mode de jeu et le KDA), sur la
+dernière partie et dans son détail. Les montées et descentes de division sont comptées (100 LP par
+division, 400 par rang, puis les LP de Maître et au-dessus). Seulement pour les parties jouées avec l'app.
+
 Un clic sur une partie de l'historique (ou sur la dernière, en grand) déroule son détail par-dessus
 le salon : les 10 joueurs, ton équipe à gauche et celle d'en face à droite (l'une sous l'autre si la
 fenêtre est étroite). Pour chacun : champion et niveau, sorts, rune principale et voie secondaire,
-nom et rang solo/duo actuel, KDA, dégâts aux champions (barre à l'échelle de la partie), or, CS,
-balises posées et objets. Un nouveau clic sur la même partie, « FERMER » ou Échap le referme.
-Le détail vient du client : il doit être lancé.
+nom et rang solo/duo actuel, score carry, KDA, dégâts aux champions (barre à l'échelle de la
+partie), or, CS, balises posées et objets. Un nouveau clic sur la même partie, « FERMER » ou Échap
+le referme. Le détail vient du client : il doit être lancé.
+
+Le score carry (0 à 10) classe les 10 joueurs du MVP au dernier : médaille d'or pour le MVP, d'argent
+et de bronze pour les 2e et 3e, avec l'icône de leur champion cerclée de la même couleur. Il est
+calculé par l'app (U.GG et OP.GG ne publient pas leur formule) avec les stats de fin de partie :
+chacune compte en proportion de la meilleure de la partie, puis moyenne pondérée — KDA ×3,
+participation aux kills ×2, dégâts aux champions ×2, or ×1,5, CS, vision, dégâts encaissés et
+dégâts aux objectifs ×1. Le KDA est d'abord ramené entre 0 et 1 (KDA / (KDA + 3)).
 
 Plusieurs comptes sur le même PC : chaque partie est enregistrée avec le compte qui l'a jouée, et le
 salon ne montre que celles du compte connecté (client fermé : celles du dernier compte qui a joué).

@@ -36,6 +36,8 @@ const COUNTERS_SHOWN: usize = 10;
 /// Après une partie, ses stats arrivent dans l'historique du client avec un peu de retard.
 const RECORD_RETRY: Duration = Duration::from_secs(5);
 const RECORD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
+/// Partie classée dans l'historique mais pas encore comptée dans ton rang : on attend au plus ça ses LP.
+const LP_WAIT: Duration = Duration::from_secs(3 * 60);
 /// Objet gardé ce temps-là après son achat : acheté pour de bon, il quitte le panneau (un achat annulé ou
 /// revendu tout de suite n'y compte pas).
 const BOUGHT_AFTER: Duration = Duration::from_secs(30);
@@ -627,6 +629,8 @@ struct CurrentGame {
     listed: HashSet<i64>,
     /// Ton skin, pour l'historique.
     skin_id: i64,
+    /// Ton rang dans la file de la partie (solo/duo ou flexible) au début de la partie : LP d'avant.
+    lp_before: Option<Rank>,
     /// Objets du panneau, et pour quels (champion, poste, adversaire) ils ont été cherchés.
     build: Option<opgg::Build>,
     build_for: Option<(i64, String, Option<i64>)>,
@@ -641,6 +645,8 @@ struct Finished {
     game: CurrentGame,
     next_try: Instant,
     give_up: Instant,
+    /// Partie classée déjà dans l'historique : jusqu'à quand attendre que ton rang la compte (voir LP_WAIT).
+    lp_until: Option<Instant>,
 }
 
 /// Lit l'état du client et de la partie, en gardant ce qui ne change pas souvent.
@@ -825,7 +831,7 @@ impl Tracker {
         // Fin de partie : on va chercher ses stats exactes dans l'historique du client.
         if let Some(game) = self.game.take_if(|_| !in_game) {
             let now = Instant::now();
-            self.finished = Some(Finished { game, next_try: now, give_up: now + RECORD_TIMEOUT });
+            self.finished = Some(Finished { game, next_try: now, give_up: now + RECORD_TIMEOUT, lp_until: None });
         }
         self.record_finished(&base, &password).await;
 
@@ -1748,6 +1754,9 @@ impl Tracker {
                 if is_me && champion_id > 0 {
                     game.champion_id = champion_id;
                 }
+                if is_me {
+                    game.lp_before.clone_from(&rank);
+                }
                 let lane = p["selectedPosition"].as_str().unwrap_or_default();
                 let order = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"].iter().position(|l| *l == lane).unwrap_or(5);
                 let player = Player {
@@ -1825,6 +1834,7 @@ impl Tracker {
                 record.position.clone_from(&known.position);
                 record.opponent_id = known.opponent_id;
                 record.opponent.clone_from(&known.opponent);
+                record.lp_change = known.lp_change;
                 record.skin_id = known.skin_id;
             }
             profile.matches.push(record);
@@ -1861,6 +1871,8 @@ impl Tracker {
         match self.history.set_owners(&owners) {
             Ok(()) => {
                 eprintln!("[historique] {} anciennes parties rangées sous leur compte", owners.len());
+                // Les lignes de l'historique reprennent ce que l'app sait de ces parties (adversaire, LP...).
+                self.profile_due = true;
                 false
             }
             Err(e) => {
@@ -1897,6 +1909,31 @@ impl Tracker {
             }
             return;
         };
+        // Classée : LP gagnés ou perdus = tes LP maintenant moins ceux du début de la partie, une fois que
+        // ton rang compte la partie (une victoire ou une défaite de plus). D'habitude c'est déjà le cas
+        // quand elle arrive dans l'historique ; sinon on l'attend un peu.
+        let queue = match record.queue_id {
+            420 => Some("RANKED_SOLO_5x5"),
+            440 => Some("RANKED_FLEX_SR"),
+            _ => None,
+        };
+        if let (Some(queue), Some(before)) = (queue, game.lp_before.as_ref().filter(|r| ladder(r).is_some())) {
+            let stats = self.get(&format!("{base}/lol-ranked/v1/current-ranked-stats"), Some(password)).await;
+            let after = stats.map(|stats| rank_in(&stats, queue));
+            match after.filter(|a| a.wins + a.losses != before.wins + before.losses) {
+                Some(after) => record.lp_change = lp_gap(before, &after),
+                None => {
+                    if let Some(finished) = &mut self.finished {
+                        let until = *finished.lp_until.get_or_insert(now + LP_WAIT);
+                        if now < until {
+                            finished.next_try = now + RECORD_RETRY;
+                            return;
+                        }
+                    }
+                    eprintln!("[historique] partie {} : LP pas encore comptés, enregistrée sans", game.game_id);
+                }
+            }
+        }
         self.finished = None;
         if record.duration < REMAKE_SECONDS {
             eprintln!("[historique] partie {} annulée (remake) : pas enregistrée", game.game_id);
@@ -2107,6 +2144,25 @@ fn rank_in(stats: &Value, queue: &str) -> Rank {
         wins: entry["wins"].as_u64().unwrap_or(0),
         losses: entry["losses"].as_u64().unwrap_or(0),
     }
+}
+
+/// Position d'un rang sur l'échelle classée, en LP depuis Fer IV 0 LP : 400 par rang, 100 par division ;
+/// à partir de Maître, les LP s'ajoutent sans division. None hors classement (ou en placement).
+fn ladder(rank: &Rank) -> Option<i64> {
+    const BELOW_MASTER: [&str; 7] = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND"];
+    if matches!(rank.tier.as_str(), "MASTER" | "GRANDMASTER" | "CHALLENGER") {
+        return Some(7 * 400 + rank.lp);
+    }
+    let tier = BELOW_MASTER.iter().position(|t| *t == rank.tier)? as i64;
+    let division = ["IV", "III", "II", "I"].iter().position(|d| *d == rank.division)? as i64;
+    Some(tier * 400 + division * 100 + rank.lp)
+}
+
+/// LP gagnés (ou perdus) d'un rang à l'autre, montées et descentes de division comprises.
+/// None si l'un n'est pas classé, ou si l'écart est impossible en une partie (nouvelle saison...).
+fn lp_gap(before: &Rank, after: &Rank) -> Option<i64> {
+    let gap = ladder(after)? - ladder(before)?;
+    (gap.abs() <= 100).then_some(gap)
 }
 
 /// Support : l'Atlas en premier objet de départ (OP.GG ne le compte pas dans les départs).

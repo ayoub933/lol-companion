@@ -43,6 +43,10 @@ pub struct GameRecord {
     pub vision: u64,
     /// Skin joué (numéro du client, ex. 267002) ; 0 si inconnu.
     pub skin_id: i64,
+    /// En classée, LP gagnés (positif) ou perdus (négatif) : tes LP après la partie moins ceux d'avant.
+    /// Absent si l'app ne les a pas vus (autre file, partie jouée sans l'app...).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lp_change: Option<i64>,
 }
 
 /// Totaux d'un champion (ou d'un duel) : l'interface en tire les moyennes.
@@ -245,6 +249,60 @@ pub struct MatchPlayer {
     pub items: Vec<i64>,
     /// Rang solo/duo actuel ; None s'il n'a pas pu être lu.
     pub rank: Option<crate::lol::Rank>,
+    /// Score « carry » de 0 à 10 (voir carry_scores) et place dans la partie selon ce score (1 = MVP).
+    pub score: f64,
+    pub place: u32,
+}
+
+/// Poids des stats du score « carry », dans l'ordre de carry_scores : KDA, participation aux kills,
+/// dégâts aux champions, or, CS, vision, dégâts encaissés (les tanks), dégâts aux objectifs.
+const CARRY_WEIGHTS: [f64; 8] = [3.0, 2.0, 2.0, 1.5, 1.0, 1.0, 1.0, 1.0];
+
+/// Score « carry » de chaque participant (même ordre), de 0 à 10. Chaque stat compte en proportion de la
+/// meilleure de la partie (le meilleur a 1, celui qui en a deux fois moins 0,5), puis moyenne pondérée.
+/// Le KDA est d'abord ramené entre 0 et 1 (KDA / (KDA + 3)) : un 20/0/10 n'écrase pas tous les autres.
+/// Une stat que personne n'a (ex. dégâts aux objectifs absents du document) ne compte pas.
+fn carry_scores(participants: &[Value]) -> Vec<f64> {
+    let stat = |p: &Value, key: &str| p["stats"][key].as_f64().unwrap_or(0.0);
+    let team_kills = |team: &Value| -> f64 {
+        participants.iter().filter(|p| &p["teamId"] == team).map(|p| stat(p, "kills")).sum()
+    };
+    let rows: Vec<[f64; 8]> = participants
+        .iter()
+        .map(|p| {
+            let n = |key: &str| stat(p, key);
+            let takedowns = n("kills") + n("assists");
+            let kda = takedowns / n("deaths").max(1.0);
+            [
+                kda / (kda + 3.0),
+                (takedowns / team_kills(&p["teamId"]).max(1.0)).min(1.0),
+                n("totalDamageDealtToChampions"),
+                n("goldEarned"),
+                n("totalMinionsKilled") + n("neutralMinionsKilled"),
+                n("visionScore"),
+                n("totalDamageTaken") + n("damageSelfMitigated"),
+                n("damageDealtToObjectives"),
+            ]
+        })
+        .collect();
+    let mut best = [0.0_f64; 8];
+    for row in &rows {
+        for (b, value) in best.iter_mut().zip(row) {
+            *b = b.max(*value);
+        }
+    }
+    rows.iter()
+        .map(|row| {
+            let (mut total, mut weights) = (0.0, 0.0);
+            for ((value, best), weight) in row.iter().zip(&best).zip(CARRY_WEIGHTS) {
+                if *best > 0.0 {
+                    total += weight * value / best;
+                    weights += weight;
+                }
+            }
+            if weights > 0.0 { 10.0 * total / weights } else { 0.0 }
+        })
+        .collect()
 }
 
 /// Les deux équipes d'une partie complète du client ; « toi » = le joueur de ton champion.
@@ -252,6 +310,15 @@ pub fn match_from(doc: &Value, champion_id: i64) -> Option<MatchDetails> {
     let participants = doc["participants"].as_array()?;
     let identities = doc["participantIdentities"].as_array();
     let my_team = &participants.iter().find(|p| p["championId"] == champion_id)?["teamId"];
+    // Score « carry » et place de chaque participant (par son numéro dans la partie).
+    let scores = carry_scores(participants);
+    let mut order: Vec<usize> = (0..participants.len()).collect();
+    order.sort_by(|a, b| scores[*b].total_cmp(&scores[*a]));
+    let carry = |p: &Value| -> (f64, u32) {
+        let i = participants.iter().position(|q| q["participantId"] == p["participantId"]).unwrap_or(0);
+        let place = order.iter().position(|j| *j == i).unwrap_or(0) as u32 + 1;
+        ((scores.get(i).copied().unwrap_or(0.0) * 10.0).round() / 10.0, place)
+    };
     let player = |p: &Value| {
         let who = identities
             .into_iter()
@@ -263,6 +330,7 @@ pub fn match_from(doc: &Value, champion_id: i64) -> Option<MatchDetails> {
         let n = |key: &str| s[key].as_u64().unwrap_or(0);
         let id = |value: &Value| value.as_i64().unwrap_or(0);
         let name = text("gameName");
+        let (score, place) = carry(p);
         MatchPlayer {
             puuid: text("puuid"),
             name: if name.is_empty() { text("summonerName") } else { name },
@@ -283,6 +351,8 @@ pub fn match_from(doc: &Value, champion_id: i64) -> Option<MatchDetails> {
             // item0 à item6 (et item7 si le client en donne un de plus).
             items: (0..8).map_while(|i| s.get(format!("item{i}")).map(id)).collect(),
             rank: None,
+            score,
+            place,
         }
     };
     let team = |ours: bool| {
