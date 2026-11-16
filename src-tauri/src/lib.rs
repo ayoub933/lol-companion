@@ -60,6 +60,16 @@ fn set_settings(app: AppHandle, prefs: tauri::State<'_, Prefs>, settings: Settin
     Ok(settings)
 }
 
+/// Une partie de ton historique en détail (salon) : les 10 joueurs, ton équipe d'abord.
+#[tauri::command]
+async fn match_details(
+    assets: tauri::State<'_, lol::Assets>,
+    game_id: i64,
+    champion_id: i64,
+) -> Result<history::MatchDetails, String> {
+    assets.match_details(game_id, champion_id).await
+}
+
 /// Télécharge et installe la nouvelle version, puis relance l'app
 /// (sous Windows, l'installateur ferme l'app et la relance lui-même).
 #[tauri::command]
@@ -147,10 +157,19 @@ pub fn run() {
         .manage(Latest(Mutex::new(lol::Snapshot::default())))
         .manage(Opponent(Mutex::new(None)))
         .manage(PendingUpdate(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![get_state, set_opponent, get_settings, set_settings, install_update])
+        .manage(assets.clone())
+        .invoke_handler(tauri::generate_handler![
+            get_state,
+            set_opponent,
+            get_settings,
+            set_settings,
+            install_update,
+            match_details
+        ])
         // Images lues dans le client : lcu://localhost/<numéro du champion>, lcu://localhost/item-<numéro de l'objet>,
         // lcu://localhost/splash-<numéro du skin> (illustration), lcu://localhost/perk-<numéro de la rune ou de la voie>,
-        // lcu://localhost/rank-<rang en minuscules> (emblème), lcu://localhost/gold (icône de l'or).
+        // lcu://localhost/spell-<numéro du sort>, lcu://localhost/rank-<rang en minuscules> (emblème),
+        // lcu://localhost/gold (icône de l'or).
         .register_asynchronous_uri_scheme_protocol("lcu", move |_ctx, request, responder| {
             let icons = icons.clone();
             let path = request.uri().path().trim_start_matches('/').to_string();
@@ -164,6 +183,11 @@ pub fn run() {
                 } else if let Some(perk) = path.strip_prefix("perk-") {
                     match number(perk) {
                         Some(id) => icons.perk_icon(id).await.map(|png| (png, "image/png")),
+                        None => None,
+                    }
+                } else if let Some(spell) = path.strip_prefix("spell-") {
+                    match number(spell) {
+                        Some(id) => icons.spell_icon(id).await.map(|png| (png, "image/png")),
                         None => None,
                     }
                 } else if let Some(tier) = path.strip_prefix("rank-") {

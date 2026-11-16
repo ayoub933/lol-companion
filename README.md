@@ -222,8 +222,20 @@ adversaire et poste pour les parties suivies par l'app), et tes stats par champi
 minute, % de victoires) et par duel. L'ARAM est compté à part. Les stats de l'app commencent à la
 première partie jouée avec elle ; l'historique des 10 parties vient du client et les montre toutes.
 
+Un clic sur une partie de l'historique (ou sur la dernière, en grand) déroule son détail par-dessus
+le salon : les 10 joueurs, ton équipe à gauche et celle d'en face à droite (l'une sous l'autre si la
+fenêtre est étroite). Pour chacun : champion et niveau, sorts, rune principale et voie secondaire,
+nom et rang solo/duo actuel, KDA, dégâts aux champions (barre à l'échelle de la partie), or, CS,
+balises posées et objets. Un nouveau clic sur la même partie, « FERMER » ou Échap le referme.
+Le détail vient du client : il doit être lancé.
+
+Plusieurs comptes sur le même PC : chaque partie est enregistrée avec le compte qui l'a jouée, et le
+salon ne montre que celles du compte connecté (client fermé : celles du dernier compte qui a joué).
+Les parties enregistrées avant ce rangement sont rangées sous leur compte au lancement suivant avec le
+client : l'app relit chaque partie dans le client, 5 par 5, à l'accueil ou au salon.
+
 Fichiers, dans `%APPDATA%\com.perso.lol-companion\` :
-- `historique.jsonl` : une ligne par partie ;
+- `historique.jsonl` : une ligne par partie, avec le compte qui l'a jouée ;
 - `derniere-partie.json` : la dernière partie complète, telle que le client l'a donnée ;
 - `reglages.json` : tes réglages.
 

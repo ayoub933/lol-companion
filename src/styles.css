@@ -932,6 +932,299 @@ body.board .hrow {
 .hrow.lost {
   background: linear-gradient(90deg, var(--defeat-tint), transparent 55%) var(--panel);
 }
+/* Une partie s'ouvre en détail d'un clic ; celle qui est ouverte reste encadrée. */
+.hrow[data-game],
+.last[data-game] {
+  cursor: pointer;
+}
+.hrow[data-game]:hover,
+.last[data-game]:hover {
+  filter: brightness(1.15);
+}
+.hrow.open,
+.last.open {
+  outline: 2px solid var(--accent-light);
+  outline-offset: -2px;
+}
+
+/* ---------- Détail d'une partie (salon) ----------
+   Par-dessus le tableau de bord, sous la barre du haut ; il se déroule de haut en bas.
+   Les deux équipes côte à côte (l'une sous l'autre si la fenêtre est trop étroite). */
+.match {
+  position: fixed;
+  top: 54px;
+  left: 12px;
+  right: 12px;
+  z-index: 15;
+  max-height: calc(var(--vh, 720px) - 66px);
+  overflow: auto;
+  gap: 12px;
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.7);
+  container-type: inline-size;
+}
+.match.unroll {
+  animation: unroll 0.28s ease-out;
+}
+@keyframes unroll {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .match.unroll {
+    animation: none;
+  }
+}
+.match-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.match-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 25px;
+  line-height: 1;
+}
+.match-title .ally {
+  color: var(--accent-light);
+}
+.match-title .enemy {
+  color: var(--enemy-text);
+}
+.match-title small {
+  font-size: 13px;
+  color: var(--muted);
+}
+.match-meta {
+  margin-left: auto;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.match-teams {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+@container (max-width: 1000px) {
+  .match-teams {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* Une équipe : un trait de sa couleur en haut, son résultat, puis ses 5 joueurs. */
+.mteam {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 8px 8px;
+  background: var(--panel-2);
+  border-top: 3px solid var(--accent);
+}
+.mteam.them {
+  border-top-color: var(--enemy);
+}
+.mteam-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 0 2px 4px;
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 800;
+}
+.mteam-head .side {
+  font-size: 18px;
+  color: var(--accent-light);
+}
+.mteam.them .mteam-head .side {
+  color: var(--enemy-text);
+}
+.mteam-head .res {
+  font-size: 15px;
+}
+.mteam-head .res.win {
+  color: var(--victory);
+}
+.mteam-head .res.loss {
+  color: var(--defeat);
+}
+.mteam-head .tot {
+  margin-left: auto;
+  font-style: normal;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--muted);
+}
+/* Colonnes : joueur, KDA, dégâts, or, CS, balises, objets. */
+.mrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 58px 74px 40px 46px 40px 78px;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 6px;
+  background: var(--panel);
+}
+.mrow.labels {
+  padding-top: 0;
+  padding-bottom: 0;
+  background: none;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--faint);
+}
+/* Toi : ta ligne aux couleurs de ton équipe. */
+.mrow.me {
+  background: linear-gradient(90deg, rgba(36, 86, 214, 0.45), var(--panel) 70%);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.mcell-group {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+/* Taille fixe : une icône qui ne charge pas ne décale rien. */
+.mchamp {
+  position: relative;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  background: var(--chip);
+}
+.mchamp .icon {
+  width: 36px;
+  height: 36px;
+}
+.mchamp .lvl {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  min-width: 16px;
+  padding: 1px 2px 0;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 11px;
+  line-height: 1.1;
+  text-align: center;
+}
+/* Sorts, puis rune principale et voie secondaire : deux petites icônes l'une sur l'autre. */
+.mstack {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.micon {
+  width: 17px;
+  height: 17px;
+  background: var(--bg);
+}
+.micon.sub {
+  width: 13px;
+  height: 13px;
+  background: none;
+}
+.micon.empty {
+  display: block;
+  background: var(--chip);
+}
+.mwho {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-left: 3px;
+}
+.mname {
+  overflow: hidden;
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mname small {
+  font-family: var(--display);
+  font-weight: 700;
+  color: var(--accent-light);
+}
+.mrank {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 18px;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--muted);
+}
+.mrank .emblem.small {
+  width: 18px;
+  height: 18px;
+}
+.mrank .tier-name {
+  font-size: 11px;
+  color: var(--faint);
+}
+.mpair {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mpair .v,
+.mnum {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1;
+}
+.mpair .k {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--muted);
+}
+/* Barre des dégâts, à l'échelle du plus gros total de la partie. */
+.mbar {
+  display: block;
+  height: 5px;
+  background: var(--chip);
+}
+.mbar span {
+  display: block;
+  height: 100%;
+  background: var(--accent-light);
+}
+.mteam.them .mbar span {
+  background: var(--enemy);
+}
+/* Objets : deux rangées de quatre cases. */
+.mitems {
+  display: grid;
+  grid-template-columns: repeat(4, 18px);
+  grid-auto-rows: 18px;
+  gap: 2px;
+}
+.mitem {
+  width: 18px;
+  height: 18px;
+}
+.mitem.empty {
+  background: var(--chip);
+}
 .hmain {
   min-width: 0;
   display: flex;

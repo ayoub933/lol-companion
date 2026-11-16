@@ -340,6 +340,7 @@ function renderHistory(state, show) {
   $("history-empty").textContent = state.profile ? "Aucune partie récente." : "Lecture de ton historique…";
   renderFeatured(featured, state.recording);
   $("history-rows").replaceChildren(...rows.map(historyRow));
+  markOpenGame();
   const shown = [featured, ...rows].filter(Boolean);
   const wins = shown.filter((g) => g.win).length;
   $("history-aside").replaceChildren(
@@ -350,6 +351,12 @@ function renderHistory(state, show) {
 // Après la partie : tes stats exactes (CS compris), d'après l'historique du client.
 function renderFeatured(last, recording) {
   $("last-game").hidden = !last && !recording;
+  // Cliquable seulement avec une partie à ouvrir.
+  delete $("last-game").dataset.game;
+  $("last-game").removeAttribute("role");
+  $("last-game").removeAttribute("tabindex");
+  $("last-game").onclick = $("last-game").onkeydown = null;
+  if (last) clickable($("last-game"), last);
   if (!last) {
     if (!recording) return;
     $("last-game").className = "panel last neutral";
@@ -394,7 +401,7 @@ function historyRow(game) {
   const minutes = game.duration / 60;
   const lane = SHORT_POSITIONS[game.position];
   const value = (v, k) => el("div", "hnum", [el("span", "v", v), el("span", "k", k)]);
-  return el("div", `hrow${game.win ? "" : " lost"}`, [
+  const row = el("div", `hrow${game.win ? "" : " lost"}`, [
     champIcon(game.championId, game.champion),
     el("div", "hmain", [
       el("span", "hname", [upper(game.champion), game.opponent && el("small", "", ` VS ${upper(game.opponent)}`)]),
@@ -404,6 +411,8 @@ function historyRow(game) {
     value(String(game.cs), `${decimal(game.cs / Math.max(minutes, 1))}/min`),
     value(clock(game.duration), ago(ended(game))),
   ]);
+  clickable(row, game);
+  return row;
 }
 
 // Moyennes par champion, et bilan par duel, sur les parties enregistrées par l'app.
@@ -438,6 +447,137 @@ function renderStats(state, show) {
       ]),
     ),
   );
+}
+
+// ---------- Détail d'une partie (salon) ----------
+
+// Partie ouverte en détail ; null = panneau fermé. Une réponse arrivée après un autre clic est ignorée.
+let openGame = null;
+
+// « 16,0k » ; sous 1 000, le nombre.
+const kilo = (n) => (n >= 1000 ? `${decimal(n / 1000)}k` : String(n));
+
+// Petite icône du client (sort, rune, objet). Introuvable, même 2 secondes plus tard (ex. objet retiré du jeu
+// depuis la partie) : une case vide à sa place.
+function smallIcon(url, className) {
+  const img = el("img", className);
+  img.alt = "";
+  img.onerror = () => {
+    if (img.dataset.retried) return img.replaceWith(el("span", `${className} empty`));
+    img.dataset.retried = "1";
+    setTimeout(() => (img.src = `${url}?retry`), 2000);
+  };
+  img.src = url;
+  return img;
+}
+
+// Clic sur une partie de l'historique : le détail se déroule par-dessus le salon ;
+// un nouveau clic sur la même partie le referme.
+function openMatch(game) {
+  if (openGame?.gameId === game.gameId) return closeMatch();
+  openGame = game;
+  const panel = $("match");
+  panel.hidden = false;
+  panel.classList.remove("unroll");
+  void panel.offsetWidth; // relance l'animation
+  panel.classList.add("unroll");
+  $("match-result").textContent = game.win ? "VICTOIRE" : "DÉFAITE";
+  $("match-result").className = `result${game.win ? "" : " lost"}`;
+  $("match-title").replaceChildren(
+    ...[
+      el("span", "ally", upper(game.champion)),
+      game.opponent && el("small", "", "VS"),
+      game.opponent && el("span", "enemy", upper(game.opponent)),
+    ].filter(Boolean),
+  );
+  const date = new Date(game.date).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
+  $("match-meta").textContent = [queueName(game), clock(game.duration), ago(ended(game)), date].join(" · ");
+  $("match-teams").replaceChildren();
+  matchStatus("Lecture de la partie dans le client…");
+  markOpenGame();
+  invoke("match_details", { gameId: game.gameId, championId: game.championId })
+    .then((details) => openGame === game && renderMatch(details, game))
+    .catch((error) => openGame === game && matchStatus(String(error)));
+}
+
+function closeMatch() {
+  openGame = null;
+  $("match").hidden = true;
+  markOpenGame();
+}
+
+function matchStatus(text) {
+  $("match-status").hidden = !text;
+  $("match-status").textContent = text;
+}
+
+// La partie ouverte reste marquée dans l'historique (qui est refait à chaque mise à jour).
+function markOpenGame() {
+  for (const node of document.querySelectorAll("[data-game]")) {
+    node.classList.toggle("open", openGame != null && node.dataset.game === String(openGame.gameId));
+  }
+}
+
+// Rend une partie de l'historique cliquable (souris ou clavier).
+function clickable(node, game) {
+  node.dataset.game = game.gameId;
+  node.tabIndex = 0;
+  node.setAttribute("role", "button");
+  node.onclick = () => openMatch(game);
+  node.onkeydown = (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openMatch(game);
+    }
+  };
+}
+
+// Les deux équipes côte à côte ; les barres de dégâts se comparent sur toute la partie.
+function renderMatch(details, game) {
+  matchStatus("");
+  const players = details.teams.flatMap((team) => team.players);
+  const most = Math.max(1, ...players.map((p) => p.damage));
+  $("match-teams").replaceChildren(...details.teams.map((team, i) => matchTeam(team, i === 0, most, game.duration)));
+}
+
+function matchTeam(team, ours, most, duration) {
+  const sum = (key) => team.players.reduce((total, p) => total + p[key], 0);
+  const labels = ["JOUEUR", "KDA", "DÉGÂTS", "OR", "CS", "BALISES", "OBJETS"].map((text) => el("span", "", text));
+  return el("div", `mteam ${ours ? "us" : "them"}`, [
+    el("div", "mteam-head", [
+      el("span", "side", ours ? "TON ÉQUIPE" : "EN FACE"),
+      el("span", `res ${team.win ? "win" : "loss"}`, team.win ? "VICTOIRE" : "DÉFAITE"),
+      el("span", "tot", `${sum("kills")} / ${sum("deaths")} / ${sum("assists")} · ${kilo(sum("gold"))} d'or`),
+    ]),
+    el("div", "mrow labels", labels),
+    ...team.players.map((p) => matchRow(p, most, duration)),
+  ]);
+}
+
+// Un joueur : champion et niveau, sorts, runes, nom et rang, KDA, dégâts, or, CS, balises, objets.
+function matchRow(p, most, duration) {
+  const champion = el("div", "mchamp", [champIcon(p.championId, ""), el("span", "lvl", p.level)]);
+  const spells = el("div", "mstack", p.spells.map((id) => smallIcon(iconUrl(`spell-${id}`), "micon")));
+  const runes = el("div", "mstack", [
+    smallIcon(iconUrl(`perk-${p.keystone}`), "micon"),
+    smallIcon(iconUrl(`perk-${p.subStyle}`), "micon sub"),
+  ]);
+  const rank = el("span", "mrank");
+  if (p.rank) setRank(rank, p.rank, "small");
+  const who = el("div", "mwho", [el("span", "mname", p.me ? [p.name || "?", el("small", "", " · TOI")] : p.name || "?"), rank]);
+  who.title = p.tag ? `${p.name}#${p.tag}` : p.name;
+  const fill = el("span");
+  fill.style.width = `${(p.damage / most) * 100}%`;
+  const minutes = Math.max(duration / 60, 1);
+  return el("div", `mrow${p.me ? " me" : ""}`, [
+    el("div", "mcell-group", [champion, spells, runes, who]),
+    el("div", "mpair", [el("span", "v", `${p.kills}/${p.deaths}/${p.assists}`), el("span", "k", `${kda(p.kills, p.deaths, p.assists)} KDA`)]),
+    el("div", "mpair", [el("span", "v", whole(p.damage)), el("span", "mbar", [fill])]),
+    el("span", "mnum", kilo(p.gold)),
+    el("div", "mpair", [el("span", "v", String(p.cs)), el("span", "k", `${decimal(p.cs / minutes)}/min`)]),
+    el("span", "mnum", String(p.wards)),
+    el("div", "mitems", p.items.map((id) => (id ? smallIcon(iconUrl(`item-${id}`), "mitem") : el("span", "mitem empty")))),
+  ]);
 }
 
 // ---------- Sélection des champions ----------
@@ -918,6 +1058,7 @@ function render(state) {
 
   // Salon : seulement hors sélection et hors partie (la place y sert à autre chose).
   const lobby = found && !state.runes && !state.game;
+  if (!lobby && openGame) closeMatch();
   renderPlayer(state, lobby);
   renderHistory(state, lobby);
   renderStats(state, lobby);
@@ -1008,6 +1149,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   window.addEventListener("resize", layout);
   $("settings-button").addEventListener("click", toggleSettings);
   $("settings-close").addEventListener("click", toggleSettings);
+  $("match-close").addEventListener("click", closeMatch);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && openGame) closeMatch();
+  });
   for (const input of settingInputs()) input.addEventListener("change", saveSettings);
   $("update-button").addEventListener("click", async () => {
     $("update-button").disabled = true;

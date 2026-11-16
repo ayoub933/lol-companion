@@ -27,7 +27,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Appels HTTPS vers 127.0.0.1 (TLS natif de Windows, rien à compiler en plus).
 reqwest = { version = "0.13", default-features = false, features = ["json", "native-tls"] }
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time", "sync"] }
 
 [target.'cfg(windows)'.dependencies]
 # Fenêtres en jeu : trouver la fenêtre de LoL, s'afficher sans lui prendre le clavier, voir si Tab est tenue

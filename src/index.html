@@ -73,6 +73,19 @@
       <div class="muted" id="settings-status"></div>
     </section>
 
+    <!-- Salon : une partie de l'historique en détail, déroulée par-dessus le tableau de bord au clic.
+         Les deux équipes côte à côte : la tienne à gauche, celle d'en face à droite. -->
+    <section class="card match" id="match" hidden aria-label="Détail de la partie">
+      <div class="match-head">
+        <span class="result" id="match-result"></span>
+        <span class="match-title" id="match-title"></span>
+        <span class="match-meta" id="match-meta"></span>
+        <button class="link" id="match-close">FERMER</button>
+      </div>
+      <div class="match-teams" id="match-teams"></div>
+      <p class="empty-msg" id="match-status" hidden></p>
+    </section>
+
     <!-- Tableau de bord : des blocs encadrés, en colonnes alignées en haut et en bas (main.js, layout()).
          Fenêtre étroite : une seule colonne, les blocs dans l'ordre de styles.css. -->
     <main id="main">

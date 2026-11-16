@@ -223,8 +223,17 @@ pub struct Assets {
     splashes: Arc<Mutex<Vec<Splash>>>,
     /// Chemin de l'icône de chaque rune et de chaque voie de runes, lus une fois dans le client.
     perk_paths: Arc<Mutex<HashMap<i64, String>>>,
+    /// Chemin de l'icône de chaque sort d'invocateur, lus une fois dans le client.
+    spell_paths: Arc<Mutex<HashMap<i64, String>>>,
+    /// Parties déjà ouvertes en détail : (partie, ton champion) → les deux équipes.
+    matches: Arc<Mutex<HashMap<(i64, i64), history::MatchDetails>>>,
     /// Icônes des runes et emblèmes des rangs déjà lus, par chemin.
     images: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    /// Requêtes en cours vers le client : 6 au plus (voir client_file).
+    gate: Arc<tokio::sync::Semaphore>,
+    /// Listes lues une fois (objets, runes, sorts) : une seule lecture à la fois. Sans ça, chaque icône
+    /// demandée pendant la lecture relirait toute la liste.
+    loading: Arc<tokio::sync::Mutex<()>>,
     /// Pour Internet (CommunityDragon), avec la vérification normale des certificats.
     web: reqwest::Client,
 }
@@ -268,29 +277,101 @@ impl Assets {
             item_icons: Arc::default(),
             splashes: Arc::default(),
             perk_paths: Arc::default(),
+            spell_paths: Arc::default(),
+            matches: Arc::default(),
             images: Arc::default(),
+            gate: Arc::new(tokio::sync::Semaphore::new(6)),
+            loading: Arc::default(),
             web,
         }
+    }
+
+    /// Une partie de ton historique en détail (les 10 joueurs et leur rang solo/duo actuel), lue dans le
+    /// client puis gardée en mémoire. `champion_id` : ton champion, pour savoir quelle équipe est la tienne.
+    pub async fn match_details(&self, game_id: i64, champion_id: i64) -> Result<history::MatchDetails, String> {
+        if let Some(details) = self.matches.lock().unwrap().get(&(game_id, champion_id)) {
+            return Ok(details.clone());
+        }
+        let Some((base, password)) = self.auth.lock().unwrap().clone() else {
+            return Err("Lance le client League of Legends pour voir le détail de la partie.".to_string());
+        };
+        // Le client va la chercher chez Riot : ça peut prendre plus que les 2 secondes habituelles.
+        let resp = self
+            .http
+            .get(format!("{base}/lol-match-history/v1/games/{game_id}"))
+            .basic_auth("riot", Some(password))
+            .timeout(Duration::from_secs(10))
+            .send()
+            .await
+            .ok()
+            .filter(|resp| resp.status().is_success());
+        let doc = match resp {
+            Some(resp) => resp.json::<Value>().await.ok(),
+            None => None,
+        };
+        let mut details = doc
+            .as_ref()
+            .and_then(|doc| history::match_from(doc, champion_id))
+            .ok_or("Le client n'a pas donné le détail de cette partie.")?;
+        for player in details.teams.iter_mut().flat_map(|team| team.players.iter_mut()) {
+            if player.puuid.is_empty() {
+                continue;
+            }
+            let stats = self.client_file(&format!("/lol-ranked/v1/ranked-stats/{}", player.puuid)).await;
+            player.rank = stats
+                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                .map(|stats| rank_in(&stats, "RANKED_SOLO_5x5"));
+        }
+        self.matches.lock().unwrap().insert((game_id, champion_id), details.clone());
+        Ok(details)
+    }
+
+    /// Icône d'un sort d'invocateur (PNG), lue dans le client puis gardée en mémoire.
+    pub async fn spell_icon(&self, id: i64) -> Option<Vec<u8>> {
+        if self.spell_paths.lock().unwrap().is_empty() {
+            // Liste lue une seule fois : les icônes demandées en même temps attendent et s'en servent.
+            let _loading = self.loading.lock().await;
+            if self.spell_paths.lock().unwrap().is_empty() {
+                let doc = self.client_file("/lol-game-data/assets/v1/summoner-spells.json").await;
+                let doc = doc.and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok()).unwrap_or(Value::Null);
+                let paths: HashMap<i64, String> = doc
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|spell| Some((spell["id"].as_i64()?, spell["iconPath"].as_str()?.to_string())))
+                    .collect();
+                if paths.is_empty() {
+                    return None;
+                }
+                *self.spell_paths.lock().unwrap() = paths;
+            }
+        }
+        let path = self.spell_paths.lock().unwrap().get(&id)?.clone();
+        self.cached_client_file(&path).await
     }
 
     /// Icône d'une rune ou d'une voie de runes (PNG), lue dans le client puis gardée en mémoire.
     pub async fn perk_icon(&self, id: i64) -> Option<Vec<u8>> {
         if self.perk_paths.lock().unwrap().is_empty() {
-            let mut paths = HashMap::new();
-            // perks.json : une liste ; perkstyles.json : { "styles": [...] }.
-            for file in ["/lol-game-data/assets/v1/perks.json", "/lol-game-data/assets/v1/perkstyles.json"] {
-                let doc = self.client_file(file).await.and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
-                let doc = doc.unwrap_or(Value::Null);
-                for entry in doc.as_array().or(doc["styles"].as_array()).into_iter().flatten() {
-                    if let (Some(id), Some(path)) = (entry["id"].as_i64(), entry["iconPath"].as_str()) {
-                        paths.insert(id, path.to_string());
+            // Listes lues une seule fois (comme pour les sorts).
+            let _loading = self.loading.lock().await;
+            if self.perk_paths.lock().unwrap().is_empty() {
+                let mut paths = HashMap::new();
+                // perks.json : une liste ; perkstyles.json : { "styles": [...] }.
+                for file in ["/lol-game-data/assets/v1/perks.json", "/lol-game-data/assets/v1/perkstyles.json"] {
+                    let doc = self.client_file(file).await.and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
+                    let doc = doc.unwrap_or(Value::Null);
+                    for entry in doc.as_array().or(doc["styles"].as_array()).into_iter().flatten() {
+                        if let (Some(id), Some(path)) = (entry["id"].as_i64(), entry["iconPath"].as_str()) {
+                            paths.insert(id, path.to_string());
+                        }
                     }
                 }
+                if paths.is_empty() {
+                    return None;
+                }
+                *self.perk_paths.lock().unwrap() = paths;
             }
-            if paths.is_empty() {
-                return None;
-            }
-            *self.perk_paths.lock().unwrap() = paths;
         }
         let path = self.perk_paths.lock().unwrap().get(&id)?.clone();
         self.cached_client_file(&path).await
@@ -342,18 +423,7 @@ impl Assets {
         if let Some(png) = self.icons.lock().unwrap().get(&id) {
             return Some(png.clone());
         }
-        let (base, password) = self.auth.lock().unwrap().clone()?;
-        let resp = self
-            .http
-            .get(format!("{base}/lol-game-data/assets/v1/champion-icons/{id}.png"))
-            .basic_auth("riot", Some(password))
-            .send()
-            .await
-            .ok()?;
-        if !resp.status().is_success() {
-            return None;
-        }
-        let png = resp.bytes().await.ok()?.to_vec();
+        let png = self.client_file(&format!("/lol-game-data/assets/v1/champion-icons/{id}.png")).await?;
         self.icons.lock().unwrap().insert(id, png.clone());
         Some(png)
     }
@@ -367,12 +437,7 @@ impl Assets {
             return None;
         }
         let icon = self.items.lock().unwrap().get(&id)?.icon.clone();
-        let (base, password) = self.auth.lock().unwrap().clone()?;
-        let resp = self.http.get(format!("{base}{icon}")).basic_auth("riot", Some(password)).send().await.ok()?;
-        if !resp.status().is_success() {
-            return None;
-        }
-        let png = resp.bytes().await.ok()?.to_vec();
+        let png = self.client_file(&icon).await?;
         self.item_icons.lock().unwrap().insert(id, png.clone());
         Some(png)
     }
@@ -382,14 +447,15 @@ impl Assets {
         if !self.items.lock().unwrap().is_empty() {
             return true;
         }
-        let Some((base, password)) = self.auth.lock().unwrap().clone() else {
+        // Liste lue une seule fois (comme pour les sorts).
+        let _loading = self.loading.lock().await;
+        if !self.items.lock().unwrap().is_empty() {
+            return true;
+        }
+        let Some(bytes) = self.client_file("/lol-game-data/assets/v1/items.json").await else {
             return false;
         };
-        let url = format!("{base}/lol-game-data/assets/v1/items.json");
-        let Ok(resp) = self.http.get(url).basic_auth("riot", Some(password)).send().await else {
-            return false;
-        };
-        let Ok(Value::Array(list)) = resp.json::<Value>().await else {
+        let Ok(Value::Array(list)) = serde_json::from_slice::<Value>(&bytes) else {
             return false;
         };
         let items: HashMap<i64, ItemData> = list
@@ -444,8 +510,11 @@ impl Assets {
     }
 
     /// Un fichier du client (`path` commence par « / ») ; None si le client est fermé ou ne l'a pas.
+    /// Au plus 6 à la fois, comme un navigateur : une partie en détail demande ~80 icônes d'un coup,
+    /// et une rafale de connexions peut être refusée.
     async fn client_file(&self, path: &str) -> Option<Vec<u8>> {
         let (base, password) = self.auth.lock().unwrap().clone()?;
+        let _turn = self.gate.acquire().await.ok()?;
         let resp = self.http.get(format!("{base}{path}")).basic_auth("riot", Some(password)).send().await.ok()?;
         if !resp.status().is_success() {
             return None;
@@ -599,6 +668,10 @@ pub struct Tracker {
     /// Page de runes écrite par l'app pendant cette sélection : (numéro, runes). Si tu as changé de page
     /// ou de runes depuis, c'est ton choix : on n'y touche plus.
     page_set: Option<(i64, Vec<i64>)>,
+    /// Compte pour lequel les anciennes parties sans compte ont déjà été rangées.
+    owners_checked: Option<String>,
+    /// Parties sans compte déjà essayées en vain depuis le démarrage du client.
+    owners_skip: usize,
     /// Ton champion, ton poste et ton adversaire à la fin de la sélection, pour l'historique.
     last_pick: Option<(i64, String, Option<i64>)>,
     game: Option<CurrentGame>,
@@ -648,6 +721,8 @@ impl Tracker {
             spells_set: None,
             seen_spells: None,
             page_set: None,
+            owners_checked: None,
+            owners_skip: 0,
             last_pick: None,
             game: None,
             finished: None,
@@ -682,8 +757,9 @@ impl Tracker {
     pub async fn poll(&mut self, manual: Option<i64>, settings: &Settings) -> Snapshot {
         self.settings = settings.clone();
         self.refresh_lockfile();
-        // Client fermé (ou en train de démarrer) : l'historique de l'app reste consultable.
-        let offline = Snapshot { history: self.history.overview(), ..Default::default() };
+        // Client fermé (ou en train de démarrer) : l'historique de l'app reste consultable
+        // (celui du compte de la dernière partie, tant que le compte n'est pas connu).
+        let offline = Snapshot { history: self.history.overview(self.puuid.as_deref()), ..Default::default() };
         let Some((base, password)) = self.lcu.clone() else {
             return offline;
         };
@@ -720,6 +796,15 @@ impl Tracker {
                 self.profile = Some(profile);
             }
         }
+        // Parties enregistrées avant le rangement par compte : une fois par compte connecté, petit à petit
+        // et seulement à l'accueil ou au salon (le client va chercher chaque partie chez Riot).
+        if self.puuid.is_some()
+            && self.owners_checked != self.puuid
+            && matches!(phase.as_str(), "None" | "Lobby")
+            && self.assign_owners(&base, &password).await
+        {
+            self.owners_checked.clone_from(&self.puuid);
+        }
         if phase_changed && phase == "ChampSelect" {
             self.last_pick = None;
         }
@@ -752,7 +837,7 @@ impl Tracker {
             profile: self.profile.clone(),
             runes,
             game,
-            history: self.history.overview(),
+            history: self.history.overview(self.puuid.as_deref()),
             recording: self.finished.is_some(),
             update: None,
         }
@@ -828,7 +913,7 @@ impl Tracker {
         if champion_id > 0 {
             let opponent_id = opponent.as_ref().map(|o| o.id);
             if let Some(id) = opponent_id {
-                (result.duel_games, result.duel_wins) = self.history.versus(champion_id, id);
+                (result.duel_games, result.duel_wins) = self.history.versus(self.puuid.as_deref(), champion_id, id);
             }
             self.last_pick = Some((champion_id, position.to_string(), opponent_id));
         }
@@ -1736,7 +1821,7 @@ impl Tracker {
         for mut record in records {
             record.champion = self.champ(base, password, record.champion_id).await.name;
             // Partie suivie par l'app : on connaît aussi ton adversaire direct, ton poste et ton skin.
-            if let Some(known) = self.history.get(record.game_id) {
+            if let Some(known) = self.history.get(record.game_id, &record.puuid) {
                 record.position.clone_from(&known.position);
                 record.opponent_id = known.opponent_id;
                 record.opponent.clone_from(&known.opponent);
@@ -1745,6 +1830,45 @@ impl Tracker {
             profile.matches.push(record);
         }
         Some(profile)
+    }
+
+    /// Parties enregistrées avant le rangement par compte : celui qui jouait leur champion, d'après la partie
+    /// complète dans le client, est leur compte. Celles introuvables restent sans compte (réessayé au prochain
+    /// démarrage du client).
+    /// 5 parties par tour ; true quand il n'y en a plus à essayer.
+    async fn assign_owners(&mut self, base: &str, password: &str) -> bool {
+        // Les premières parties sans compte sont celles déjà essayées en vain (elles gardent leur place).
+        let batch: Vec<(i64, i64)> = self.history.unowned().into_iter().skip(self.owners_skip).take(5).collect();
+        if batch.is_empty() {
+            if self.owners_skip > 0 {
+                eprintln!("[historique] {} anciennes parties : compte introuvable pour l'instant", self.owners_skip);
+            }
+            return true;
+        }
+        let mut owners = HashMap::new();
+        for (game_id, champion_id) in &batch {
+            let doc = self.get(&format!("{base}/lol-match-history/v1/games/{game_id}"), Some(password)).await;
+            match doc.as_ref().and_then(|doc| history::owner_of(doc, *champion_id)) {
+                Some(puuid) => {
+                    owners.insert(*game_id, puuid);
+                }
+                None => self.owners_skip += 1,
+            }
+        }
+        if owners.is_empty() {
+            return false;
+        }
+        match self.history.set_owners(&owners) {
+            Ok(()) => {
+                eprintln!("[historique] {} anciennes parties rangées sous leur compte", owners.len());
+                false
+            }
+            Err(e) => {
+                // Fichier pas réécrit : on réessaiera au prochain démarrage du client.
+                eprintln!("[historique] {e}");
+                true
+            }
+        }
     }
 
     /// Partie finie : ses stats exactes arrivent dans l'historique du client un peu après la fin.
@@ -1758,7 +1882,7 @@ impl Tracker {
             return;
         }
         let game = finished.game.clone();
-        if now > finished.give_up || self.history.contains(game.game_id) {
+        if now > finished.give_up || self.history.contains(game.game_id, self.puuid.as_deref().unwrap_or_default()) {
             eprintln!("[historique] partie {} : abandon (introuvable ou déjà enregistrée)", game.game_id);
             self.finished = None;
             return;
@@ -1855,6 +1979,8 @@ impl Tracker {
         self.spells_set = None;
         self.seen_spells = None;
         self.page_set = None;
+        self.owners_checked = None;
+        self.owners_skip = 0;
         self.last_phase = None;
         self.rune_import = None;
         self.spell_names.clear();
