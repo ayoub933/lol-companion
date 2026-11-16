@@ -610,6 +610,38 @@ pub struct Player {
     pub items_value: Option<u64>,
     /// Joueur venu avec d'autres (duo, groupe) : numéro de son groupe dans la partie (1, 2…).
     pub group: Option<u8>,
+    /// Joueur déjà croisé dans une de tes 3 dernières parties.
+    pub met: Option<Met>,
+}
+
+/// Joueur déjà croisé dans une de tes 3 dernières parties, sans être venu avec toi.
+#[derive(Serialize, Clone, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Met {
+    /// 1 = ta dernière partie, 2 = l'avant-dernière, 3.
+    pub ago: u8,
+    /// true : il était dans ton équipe ; false : contre toi.
+    pub ally: bool,
+    /// Le champion qu'il jouait.
+    pub champion: String,
+}
+
+/// Une partie passée d'un joueur : son équipe, son champion et quand elle a commencé.
+#[derive(Clone, Copy, Default)]
+struct Past {
+    team: i64,
+    champion: i64,
+    start: i64,
+}
+
+/// Un joueur de la partie et ses dernières parties : pour les groupes et les joueurs déjà croisés.
+#[derive(Clone, Default)]
+struct Recent {
+    ally: bool,
+    champion_id: i64,
+    puuid: String,
+    /// Ses 20 dernières parties (sans celle en cours), par numéro de partie.
+    games: HashMap<i64, Past>,
 }
 
 /// La partie en cours : ses joueurs et leurs rangs (connus dès l'écran de chargement),
@@ -640,12 +672,13 @@ struct CurrentGame {
     held_since: HashMap<i64, Instant>,
     /// Objets gardés au moins 30 s : achetés pour de bon, ils ne reviennent plus dans le panneau.
     bought: HashSet<i64>,
-    /// Joueurs dont il reste à lire les dernières parties pour trouver les groupes : (ton équipe ?, champion, puuid).
-    to_check: Vec<(bool, i64, String)>,
-    /// Ceux déjà lus : (ton équipe ?, champion, équipe de chacune de ses dernières parties).
-    checked: Vec<(bool, i64, HashMap<i64, i64>)>,
+    /// Joueurs dont il reste à lire les dernières parties, et ceux déjà lus.
+    to_check: Vec<Recent>,
+    checked: Vec<Recent>,
     /// Groupe de chaque joueur venu avec d'autres, par champion.
     groups: HashMap<i64, u8>,
+    /// Joueurs déjà croisés dans tes 3 dernières parties, par champion.
+    met: HashMap<i64, Met>,
 }
 
 /// Partie finie, en attente de ses stats dans l'historique du client.
@@ -1561,6 +1594,7 @@ impl Tracker {
         };
         let ranks = self.game.as_ref().map(|g| &g.ranks);
         let groups = self.game.as_ref().map(|g| &g.groups);
+        let met = self.game.as_ref().map(|g| &g.met);
         // Joueur absent de ceux que le client donne : il est en mode streamer, son rang est caché.
         let hidden = |id: i64| self.game.as_ref().is_some_and(|g| !g.listed.is_empty() && !g.listed.contains(&id));
         // Inventaire : (objet, nombre).
@@ -1586,6 +1620,7 @@ impl Tracker {
                 position: player["position"].as_str().unwrap_or_default().to_string(),
                 items_value: self.assets.items_value(&inventory(player)),
                 group: groups.and_then(|g| g.get(&id)).copied(),
+                met: met.and_then(|m| m.get(&id)).cloned(),
             };
             if player["team"] == p["team"] {
                 allies.push(entry);
@@ -1757,7 +1792,8 @@ impl Tracker {
                 };
                 if let Some(puuid) = puuid.filter(|_| champion_id > 0) {
                     game.listed.insert(champion_id);
-                    game.to_check.push((allies, champion_id, puuid.to_string()));
+                    let puuid = puuid.to_string();
+                    game.to_check.push(Recent { ally: allies, champion_id, puuid, ..Default::default() });
                 }
                 if let Some(rank) = rank.as_ref().filter(|_| champion_id > 0) {
                     game.ranks.insert(champion_id, rank.clone());
@@ -1794,22 +1830,25 @@ impl Tracker {
         Some(game)
     }
 
-    /// Joueurs venus ensemble (duo, groupe), voir `find_groups`. Le client va chercher les 20 dernières parties de
-    /// chaque joueur chez Riot : 2 joueurs par passage (une par seconde), pour ne pas ralentir la partie.
+    /// Joueurs venus ensemble (duo, groupe, voir `find_groups`) et joueurs déjà croisés dans tes 3 dernières parties
+    /// (voir `find_met`). Le client va chercher les 20 dernières parties de chaque joueur chez Riot : 2 joueurs par
+    /// passage (une par seconde), pour ne pas ralentir la partie.
     async fn check_groups(&mut self, base: &str, password: &str) {
         let Some(game) = &self.game else {
             return;
         };
         let game_id = game.game_id;
-        let batch: Vec<(bool, i64, String)> = game.to_check.iter().take(2).cloned().collect();
+        let batch: Vec<Recent> = game.to_check.iter().take(2).cloned().collect();
         if batch.is_empty() {
             return;
         }
         let mut read = Vec::new();
-        for (ally, champion_id, puuid) in batch {
-            let url = format!("{base}/lol-match-history/v1/products/lol/{puuid}/matches?begIndex=0&endIndex=19");
-            let list = self.get_from_riot(&url, password).await;
-            read.push((ally, champion_id, list.map(|list| sides(&list, &puuid, game_id)).unwrap_or_default()));
+        for mut player in batch {
+            let url = format!("{base}/lol-match-history/v1/products/lol/{}/matches?begIndex=0&endIndex=19", player.puuid);
+            if let Some(list) = self.get_from_riot(&url, password).await {
+                player.games = past_games(&list, &player.puuid, game_id);
+            }
+            read.push(player);
         }
         let Some(game) = &mut self.game else {
             return;
@@ -1820,23 +1859,47 @@ impl Tracker {
             return;
         }
         game.groups = find_groups(&game.checked);
+        let found = find_met(&game.checked, self.puuid.as_deref().unwrap_or_default(), &game.groups);
+        // Le champion que chacun jouait alors : son nom.
+        let mut met = HashMap::new();
+        for (champion_id, (ago, ally, then)) in found {
+            met.insert(champion_id, Met { ago, ally, champion: self.champ(base, password, then).await.name });
+        }
+        let Some(game) = &mut self.game else {
+            return;
+        };
+        game.met = met;
         for player in game.allies.iter_mut().chain(game.enemies.iter_mut()) {
             player.group = game.groups.get(&player.champion_id).copied();
+            player.met = game.met.get(&player.champion_id).cloned();
         }
-        // Pour vérifier sur une vraie partie : parties lues par joueur, et parties jouées ensemble.
+        // Pour vérifier sur une vraie partie : parties lues par joueur, parties jouées ensemble, joueurs croisés.
         let name = |id: i64| game.allies.iter().chain(&game.enemies).find(|p| p.champion_id == id).map_or("?", |p| p.champion.as_str());
-        let read: Vec<String> = game.checked.iter().map(|(_, id, games)| format!("{} {}", name(*id), games.len())).collect();
+        let read: Vec<String> = game.checked.iter().map(|p| format!("{} {}", name(p.champion_id), p.games.len())).collect();
         let mut pairs = Vec::new();
         for (i, a) in game.checked.iter().enumerate() {
             for b in &game.checked[i + 1..] {
-                let n = together(&a.2, &b.2);
-                if a.0 == b.0 && n > 0 {
-                    pairs.push(format!("{} + {} {n}", name(a.1), name(b.1)));
+                let n = together(&a.games, &b.games);
+                if a.ally == b.ally && n > 0 {
+                    pairs.push(format!("{} + {} {n}", name(a.champion_id), name(b.champion_id)));
                 }
             }
         }
-        let pairs = if pairs.is_empty() { "aucune".to_string() } else { pairs.join(", ") };
-        eprintln!("[groupes] partie {game_id} : parties lues {} ; ensemble dans la même équipe : {pairs}", read.join(", "));
+        let met: Vec<String> = game
+            .met
+            .iter()
+            .map(|(id, m)| {
+                let relation = if m.ally { "avec toi" } else { "contre toi" };
+                format!("{} ({} partie(s) avant, {relation}, en {})", name(*id), m.ago, m.champion)
+            })
+            .collect();
+        let list = |items: Vec<String>| if items.is_empty() { "aucun".to_string() } else { items.join(", ") };
+        eprintln!(
+            "[groupes] partie {game_id} : parties lues {} ; ensemble dans la même équipe : {} ; déjà croisés : {}",
+            read.join(", "),
+            list(pairs),
+            list(met)
+        );
     }
 
     /// Ton rang (solo/duo et flexible) et tes 20 dernières parties, d'après le client.
@@ -2190,9 +2253,9 @@ fn spell_slots(wanted: [i64; 2], current: [i64; 2], flash_key: &str) -> [i64; 2]
     }
 }
 
-/// Équipe (100 ou 200) d'un joueur dans chacune de ses dernières parties, sans la partie en cours, d'après la liste
-/// du client (qui ne met en général que lui dans chaque partie).
-fn sides(list: &Value, puuid: &str, current: i64) -> HashMap<i64, i64> {
+/// Équipe (100 ou 200), champion et début de chacune des dernières parties d'un joueur, sans la partie en cours,
+/// d'après la liste du client (qui ne met en général que lui dans chaque partie).
+fn past_games(list: &Value, puuid: &str, current: i64) -> HashMap<i64, Past> {
     let games = list["games"]["games"].as_array().into_iter().flatten();
     games
         .filter_map(|g| {
@@ -2207,25 +2270,26 @@ fn sides(list: &Value, puuid: &str, current: i64) -> HashMap<i64, i64> {
             };
             // Sans numéro d'équipe, le résultat les sépare aussi : gagnants d'un côté, perdants de l'autre.
             let team = p["teamId"].as_i64().or_else(|| p["stats"]["win"].as_bool().map(|win| if win { 100 } else { 200 }))?;
-            Some((game_id, team))
+            let champion = p["championId"].as_i64().unwrap_or(0);
+            Some((game_id, Past { team, champion, start: g["gameCreation"].as_i64().unwrap_or(0) }))
         })
         .collect()
 }
 
-/// Parties jouées ensemble dans la même équipe, d'après l'équipe de chacun dans ses dernières parties.
-fn together(a: &HashMap<i64, i64>, b: &HashMap<i64, i64>) -> usize {
-    a.iter().filter(|(game, team)| b.get(game) == Some(team)).count()
+/// Parties jouées ensemble dans la même équipe, d'après les dernières parties de chacun.
+fn together(a: &HashMap<i64, Past>, b: &HashMap<i64, Past>) -> usize {
+    a.iter().filter(|(game, past)| b.get(game).is_some_and(|other| other.team == past.team)).count()
 }
 
 /// Joueurs venus ensemble : deux joueurs de la même équipe qui ont joué au moins 2 de leurs 20 dernières parties
 /// ensemble, du même côté (une seule peut être un hasard du matchmaking), et ceux liés à eux (groupe de 3 et plus).
 /// Numéro de groupe de chacun, par champion : 1, 2… en commençant par ton équipe.
-fn find_groups(players: &[(bool, i64, HashMap<i64, i64>)]) -> HashMap<i64, u8> {
+fn find_groups(players: &[Recent]) -> HashMap<i64, u8> {
     // Chacun part dans son propre groupe ; deux joueurs liés mettent leurs groupes en commun.
     let mut label: Vec<usize> = (0..players.len()).collect();
     for (i, a) in players.iter().enumerate() {
         for (j, b) in players.iter().enumerate().skip(i + 1) {
-            if a.0 == b.0 && together(&a.2, &b.2) >= 2 {
+            if a.ally == b.ally && together(&a.games, &b.games) >= 2 {
                 let (from, to) = (label[j], label[i]);
                 label.iter_mut().filter(|l| **l == from).for_each(|l| *l = to);
             }
@@ -2233,7 +2297,7 @@ fn find_groups(players: &[(bool, i64, HashMap<i64, i64>)]) -> HashMap<i64, u8> {
     }
     let mut numbers: Vec<usize> = Vec::new();
     let mut groups = HashMap::new();
-    let order = (0..players.len()).filter(|i| players[*i].0).chain((0..players.len()).filter(|i| !players[*i].0));
+    let order = (0..players.len()).filter(|i| players[*i].ally).chain((0..players.len()).filter(|i| !players[*i].ally));
     for i in order {
         if label.iter().filter(|l| **l == label[i]).count() < 2 {
             continue;
@@ -2245,9 +2309,31 @@ fn find_groups(players: &[(bool, i64, HashMap<i64, i64>)]) -> HashMap<i64, u8> {
                 numbers.len()
             }
         };
-        groups.insert(players[i].1, number as u8);
+        groups.insert(players[i].champion_id, number as u8);
     }
     groups
+}
+
+/// Joueurs déjà croisés dans tes 3 dernières parties, alliés ou adversaires, sauf ceux venus avec toi. Pour chacun
+/// (par champion) : la plus récente de ces parties (1 = ta dernière), s'il était dans ton équipe, son champion.
+fn find_met(players: &[Recent], me: &str, groups: &HashMap<i64, u8>) -> HashMap<i64, (u8, bool, i64)> {
+    let Some(mine) = players.iter().find(|p| !me.is_empty() && p.puuid == me) else {
+        return HashMap::new();
+    };
+    let mut last: Vec<(&i64, &Past)> = mine.games.iter().collect();
+    last.sort_by_key(|(_, past)| std::cmp::Reverse(past.start));
+    last.truncate(3);
+    let my_group = groups.get(&mine.champion_id);
+    players
+        .iter()
+        .filter(|p| p.puuid != mine.puuid && (my_group.is_none() || groups.get(&p.champion_id) != my_group))
+        .filter_map(|p| {
+            last.iter().enumerate().find_map(|(k, (game, me_then))| {
+                let then = p.games.get(*game)?;
+                Some((p.champion_id, (k as u8 + 1, then.team == me_then.team, then.champion)))
+            })
+        })
+        .collect()
 }
 
 /// Rang d'une file dans une réponse de /lol-ranked (liste « queues », ou table « queueMap »).

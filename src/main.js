@@ -1135,6 +1135,21 @@ function groupMark(player, mates) {
   return node;
 }
 
+// Joueur déjà croisé (allié ou adversaire) dans une de tes 3 dernières parties. Dessin fixe (aucune donnée extérieure).
+const HISTORY = `<svg viewBox="0 0 24 24" aria-hidden="true">
+  <path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.6"/><path d="M4 4.2v4.4h4.4"/><path d="M12 7.5v4.5l3 1.8"/>
+</svg>`;
+
+function metMark(player) {
+  const met = player.met;
+  if (!met) return null;
+  const node = el("span", "met");
+  node.innerHTML = HISTORY;
+  const when = ["à ta dernière partie", "à ton avant-dernière partie", "il y a 3 parties"][met.ago - 1] ?? "récemment";
+  node.title = `Déjà croisé ${when} : il jouait ${met.champion} ${met.ally ? "dans ton équipe" : "contre toi"}`;
+  return node;
+}
+
 function faceCell(player, ready, enemy, opponent, mates) {
   const side = enemy ? " enemy" : "";
   if (!player) return el("div", `fcell${side} empty`, [champIcon(0, ""), el("div", "txt", [el("span", "fname", "?")])]);
@@ -1142,7 +1157,11 @@ function faceCell(player, ready, enemy, opponent, mates) {
   return el("div", classes, [
     champIcon(player.championId, player.champion),
     el("div", "txt", [
-      el("div", "fhead", [el("span", "fname", `${upper(player.champion)}${player.me ? " · TOI" : ""}`), groupMark(player, mates)]),
+      el("div", "fhead", [
+        el("span", "fname", `${upper(player.champion)}${player.me ? " · TOI" : ""}`),
+        groupMark(player, mates),
+        metMark(player),
+      ]),
       ready && el("span", "line", `niv. ${player.level} · ${player.kills}/${player.deaths}/${player.assists}`),
       rankLine(player),
     ]),

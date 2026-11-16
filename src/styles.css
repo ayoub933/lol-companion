@@ -2474,37 +2474,73 @@ body:not(.board) .worth .tag {
 .fcell.enemy .fhead {
   flex-direction: row-reverse;
 }
-/* Maillon des joueurs venus ensemble (duo, groupe) : une couleur par groupe, sur une pastille sombre cerclée
-   pour rester lisible sur toutes les cases (bleue pour toi, orange pour ton adversaire). */
+/* Maillon des joueurs venus ensemble (duo, groupe) : pastille ronde, brillante (dégradé et halo), une couleur par
+   groupe. Le liseré sombre la détache aussi des cases bleue (toi) et orange (ton adversaire). */
 .link {
+  --light: #fff4c7;
+  --main: #ffc62e;
+  --dark: #b67c0e;
+  --ink: #2b1a00;
   flex: none;
   display: grid;
   place-items: center;
-  width: 21px;
-  height: 21px;
+  width: 27px;
+  height: 27px;
+  /* Plus haute que le nom (21 px) sans agrandir la case : elle déborde un peu au-dessus et en dessous. */
+  margin: -3px 0;
   border-radius: 50%;
-  background: rgba(10, 10, 14, 0.88);
-  box-shadow: 0 0 0 1.5px currentColor;
-}
-.link svg {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-}
-.link.g1 {
-  color: #ffc93c;
+  color: var(--ink);
+  background: linear-gradient(155deg, var(--light), var(--main) 48%, var(--dark));
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 11px 2px var(--main);
 }
 .link.g2 {
-  color: #c49bff;
+  --light: #f3e6ff;
+  --main: #b88aff;
+  --dark: #7444d0;
+  --ink: #1e0840;
 }
 .link.g3 {
-  color: #4fe0d2;
+  --light: #d8fffa;
+  --main: #3ce2d0;
+  --dark: #10978a;
+  --ink: #03302b;
 }
 .link.g4 {
-  color: #ff8fc8;
+  --light: #ffe2f1;
+  --main: #ff7cc0;
+  --dark: #c43f80;
+  --ink: #3e0925;
+}
+.link svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+/* Joueur déjà croisé dans une de tes 3 dernières parties : pastille carrée argentée, pour ne pas la confondre avec
+   le maillon des groupes. */
+.met {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  margin: -2px 0;
+  border-radius: 7px;
+  color: #16171c;
+  background: linear-gradient(155deg, #ffffff, #d3d7e1 48%, #8a909e);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 9px 1px rgba(226, 232, 248, 0.6);
+}
+.met svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .fcell .line {
   font-size: 12px;

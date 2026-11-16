@@ -165,13 +165,20 @@ Dès l'écran de chargement : les 10 champions avec le rang de chaque joueur (da
 partie : flexible pour une flexible, solo/duo sinon). Les joueurs en mode streamer restent
 anonymes : le client ne donne pas leur compte, l'app n'a donc pas leur rang.
 
-**Duos et groupes**, dans les deux équipes : un maillon de couleur à côté du champion des joueurs venus
-ensemble, de la même couleur pour tout le groupe (or, violet…) ; au survol, avec qui. L'app lit les
-20 dernières parties de chaque joueur (le client les demande à Riot, 2 joueurs par seconde, donc pendant
-l'écran de chargement) : deux joueurs de la même équipe qui en ont joué au moins 2 ensemble, du même côté,
-sont venus ensemble (une seule partie en commun peut être un hasard du matchmaking). Un duo qui n'a encore
-jamais joué ensemble n'est donc pas repéré, et les joueurs en mode streamer ne peuvent pas être vérifiés.
-Le terminal note les parties jouées ensemble (« [groupes] partie … : Jinx + Nami 3, … »).
+**Duos et groupes**, dans les deux équipes : une pastille ronde et brillante avec un maillon à côté du
+champion des joueurs venus ensemble, de la même couleur pour tout le groupe (or, violet…) ; au survol,
+avec qui. L'app lit les 20 dernières parties de chaque joueur (le client les demande à Riot, 2 joueurs par
+seconde, donc pendant l'écran de chargement) : deux joueurs de la même équipe qui en ont joué au moins 2
+ensemble, du même côté, sont venus ensemble (une seule partie en commun peut être un hasard du matchmaking).
+Un duo qui n'a encore jamais joué ensemble n'est donc pas repéré, et les joueurs en mode streamer ne peuvent
+pas être vérifiés.
+
+**Joueurs déjà croisés** : une pastille carrée argentée (une horloge qui recule) à côté des joueurs, alliés
+ou adversaires, qui étaient dans une de tes 3 dernières parties sans être venus avec toi ; au survol, quand
+(dernière, avant-dernière ou 3e partie), le champion qu'il jouait et s'il était avec toi ou contre toi.
+
+Le terminal note les parties lues, celles jouées ensemble et les joueurs croisés
+(« [groupes] partie … : … ; ensemble dans la même équipe : Jinx + Nami 3 ; déjà croisés : … »).
 
 Une fois la partie lancée :
 - deux bandes : les éliminations de chaque équipe et le temps de jeu, puis l'or en objets de chaque
