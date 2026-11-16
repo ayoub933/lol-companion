@@ -515,19 +515,19 @@ function medal(place) {
     <circle cx="20" cy="21" r="7.2" fill="none" stroke="${light}" stroke-opacity=".8" stroke-width=".8"/>
     <text x="20" y="25.7" text-anchor="middle" fill="${ink}">${place}</text>
   </svg>`;
-  node.title = place === 1 ? "MVP : meilleur score carry de la partie" : `${place}e meilleur score carry de la partie`;
+  node.title = place === 1 ? "Meilleur score carry de la partie" : `${place}e meilleur score carry de la partie`;
   return node;
 }
 
 // Score carry d'un joueur (0 à 10) et sa place dans la partie : médaille pour le podium, sinon la place
-// dans un rond ; « MVP » sous le score du meilleur.
-function carryCell(p) {
+// dans un rond. Comme dpm.lol : « MVP » sous le score du meilleur de l'équipe gagnante, « ACE » sous
+// celui du meilleur de l'équipe perdante.
+function carryCell(p, title) {
   const badge = p.place <= 3 ? medal(p.place) : el("span", "medal rank", [el("b", "", String(p.place))]);
   if (p.place > 3) badge.title = `${p.place}e score carry de la partie`;
-  return el("div", "mcarry", [
-    badge,
-    el("div", "mpair", [el("span", "v", decimal(p.score)), p.place === 1 && el("span", "k mvp", "MVP")]),
-  ]);
+  const tag = title && el("span", `k ${title.toLowerCase()}`, title);
+  if (tag) tag.title = title === "MVP" ? "Meilleur score de l'équipe gagnante" : "Meilleur score de l'équipe perdante";
+  return el("div", "mcarry", [badge, el("div", "mpair", [el("span", "v", decimal(p.score)), tag])]);
 }
 
 // ---------- Détail d'une partie (salon) ----------
@@ -624,6 +624,7 @@ function renderMatch(details, game) {
 
 function matchTeam(team, ours, most, duration) {
   const sum = (key) => team.players.reduce((total, p) => total + p[key], 0);
+  const best = Math.min(...team.players.map((p) => p.place));
   const labels = ["JOUEUR", "CARRY", "KDA", "DÉGÂTS", "OR", "CS", "BALISES", "OBJETS"].map((text) => el("span", "", text));
   return el("div", `mteam ${ours ? "us" : "them"}`, [
     el("div", "mteam-head", [
@@ -632,12 +633,12 @@ function matchTeam(team, ours, most, duration) {
       el("span", "tot", `${sum("kills")} / ${sum("deaths")} / ${sum("assists")} · ${kilo(sum("gold"))} d'or`),
     ]),
     el("div", "mrow labels", labels),
-    ...team.players.map((p) => matchRow(p, most, duration)),
+    ...team.players.map((p) => matchRow(p, most, duration, p.place === best ? (team.win ? "MVP" : "ACE") : null)),
   ]);
 }
 
 // Un joueur : champion et niveau, sorts, runes, nom et rang, KDA, dégâts, or, CS, balises, objets.
-function matchRow(p, most, duration) {
+function matchRow(p, most, duration, title) {
   const champion = el("div", "mchamp", [champIcon(p.championId, ""), el("span", "lvl", p.level)]);
   const spells = el("div", "mstack", p.spells.map((id) => smallIcon(iconUrl(`spell-${id}`), "micon")));
   const runes = el("div", "mstack", [
@@ -653,7 +654,7 @@ function matchRow(p, most, duration) {
   const minutes = Math.max(duration / 60, 1);
   return el("div", `mrow${p.me ? " me" : ""}${p.place <= 3 ? ` p${p.place}` : ""}`, [
     el("div", "mcell-group", [champion, spells, runes, who]),
-    carryCell(p),
+    carryCell(p, title),
     el("div", "mpair", [el("span", "v", `${p.kills}/${p.deaths}/${p.assists}`), el("span", "k", `${kda(p.kills, p.deaths, p.assists)} KDA`)]),
     el("div", "mpair", [el("span", "v", whole(p.damage)), el("span", "mbar", [fill])]),
     el("span", "mnum", kilo(p.gold)),

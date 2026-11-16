@@ -248,9 +248,10 @@ nom et rang solo/duo actuel, score carry, KDA, dégâts aux champions (barre à 
 partie), or, CS, balises posées et objets. Pour le refermer : le bouton rouge « FERMER ✕ », Échap, ou un clic
 n'importe où ailleurs dans l'app. Le détail vient du client : il doit être lancé.
 
-Le score carry (0 à 10) classe les 10 joueurs du MVP au dernier : médaille d'or avec une étoile pour le
-MVP, d'argent et de bronze pour les 2e et 3e, et l'icône de leur champion dans un cadre épais de la même
-couleur ; les autres ont leur place dans un rond. Il est calculé par l'app (U.GG et OP.GG ne publient pas
+Le score carry (0 à 10) classe les 10 joueurs : médaille d'or avec une étoile pour le meilleur score,
+d'argent et de bronze pour les 2e et 3e, et l'icône de leur champion dans un cadre épais de la même
+couleur ; les autres ont leur place dans un rond. Comme sur dpm.lol, « MVP » marque le meilleur de
+l'équipe gagnante et « ACE » le meilleur de l'équipe perdante. Il est calculé par l'app (U.GG et OP.GG ne publient pas
 leur formule), selon le rôle de chacun, trouvé équipe par équipe : Châtiment → jungle, objet de support →
 support, puis le couloir annoncé par le client pour le haut, le milieu et le bas (une fois chacun, le dernier
 rôle libre au dernier joueur). Ce couloir vient d'une vieille estimation de Riot qui se trompe parfois (des
