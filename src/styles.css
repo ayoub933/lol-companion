@@ -2464,6 +2464,48 @@ body:not(.board) .worth .tag {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.fhead {
+  max-width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.fcell.enemy .fhead {
+  flex-direction: row-reverse;
+}
+/* Maillon des joueurs venus ensemble (duo, groupe) : une couleur par groupe, sur une pastille sombre cerclée
+   pour rester lisible sur toutes les cases (bleue pour toi, orange pour ton adversaire). */
+.link {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  background: rgba(10, 10, 14, 0.88);
+  box-shadow: 0 0 0 1.5px currentColor;
+}
+.link svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.link.g1 {
+  color: #ffc93c;
+}
+.link.g2 {
+  color: #c49bff;
+}
+.link.g3 {
+  color: #4fe0d2;
+}
+.link.g4 {
+  color: #ff8fc8;
+}
 .fcell .line {
   font-size: 12px;
   color: var(--text-2);

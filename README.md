@@ -165,6 +165,14 @@ Dès l'écran de chargement : les 10 champions avec le rang de chaque joueur (da
 partie : flexible pour une flexible, solo/duo sinon). Les joueurs en mode streamer restent
 anonymes : le client ne donne pas leur compte, l'app n'a donc pas leur rang.
 
+**Duos et groupes**, dans les deux équipes : un maillon de couleur à côté du champion des joueurs venus
+ensemble, de la même couleur pour tout le groupe (or, violet…) ; au survol, avec qui. L'app lit les
+20 dernières parties de chaque joueur (le client les demande à Riot, 2 joueurs par seconde, donc pendant
+l'écran de chargement) : deux joueurs de la même équipe qui en ont joué au moins 2 ensemble, du même côté,
+sont venus ensemble (une seule partie en commun peut être un hasard du matchmaking). Un duo qui n'a encore
+jamais joué ensemble n'est donc pas repéré, et les joueurs en mode streamer ne peuvent pas être vérifiés.
+Le terminal note les parties jouées ensemble (« [groupes] partie … : Jinx + Nami 3, … »).
+
 Une fois la partie lancée :
 - deux bandes : les éliminations de chaque équipe et le temps de jeu, puis l'or en objets de chaque
   équipe (valeur de ses objets au prix de la boutique, l'or en poche ne compte pas) avec l'écart en

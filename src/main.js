@@ -1074,6 +1074,9 @@ function renderFaceoff(game) {
   const laned = (p) => Boolean(LANE_NAMES[p.position]);
   const lanes = allies.some(laned) && enemies.some(laned);
   const myLane = allies.find((p) => p.me)?.position;
+  // Joueurs venus avec chacun (duo, groupe) : leurs champions.
+  const everyone = [...allies, ...enemies];
+  const mates = (p) => (p?.group ? everyone.filter((q) => q !== p && q.group === p.group).map((q) => q.champion) : []);
   const rows = [];
   if (lanes) {
     for (const [lane, label] of LANES) {
@@ -1084,9 +1087,9 @@ function renderFaceoff(game) {
       // La case du milieu prend la couleur du joueur qui a le plus d'or en objets dans ce couloir.
       rows.push(
         el("div", "forow", [
-          faceCell(ally, ready, false, false),
+          faceCell(ally, ready, false, false, mates(ally)),
           el("div", `lane ${gapClass(gap)}`, [el("span", "k", label), el("span", "v", gap == null ? "" : signed(gap))]),
-          faceCell(enemy, ready, true, lane === myLane),
+          faceCell(enemy, ready, true, lane === myLane, mates(enemy)),
         ]),
       );
     }
@@ -1095,7 +1098,12 @@ function renderFaceoff(game) {
   const rest = (team) => (lanes ? team.filter((p) => !laned(p)) : team);
   const [left, right] = [rest(allies), rest(enemies)];
   for (let i = 0; i < Math.max(left.length, right.length); i++) {
-    rows.push(el("div", "forow nolane", [faceCell(left[i], ready, false, false), faceCell(right[i], ready, true, false)]));
+    rows.push(
+      el("div", "forow nolane", [
+        faceCell(left[i], ready, false, false, mates(left[i])),
+        faceCell(right[i], ready, true, false, mates(right[i])),
+      ]),
+    );
   }
   $("faceoff-rows").replaceChildren(...rows);
   $("faceoff-title").textContent = lanes ? "FACE-À-FACE" : "LES ÉQUIPES";
@@ -1113,14 +1121,28 @@ function rankLine(player) {
   return line;
 }
 
-function faceCell(player, ready, enemy, opponent) {
+// Maillon des joueurs venus ensemble (duo, groupe), une couleur par groupe. Dessin fixe (aucune donnée extérieure).
+const LINK = `<svg viewBox="0 0 16 16" aria-hidden="true">
+  <path d="M6.6 9.4l2.8-2.8M7.3 4.6l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7L11 8.3M8.7 11.4l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7L5 7.7"/>
+</svg>`;
+
+function groupMark(player, mates) {
+  if (!player.group || !mates.length) return null;
+  const node = el("span", `link g${((player.group - 1) % 4) + 1}`);
+  node.innerHTML = LINK;
+  const names = mates.length > 1 ? `${mates.slice(0, -1).join(", ")} et ${mates.at(-1)}` : mates[0];
+  node.title = `${mates.length > 1 ? "En groupe" : "En duo"} avec ${names} : au moins 2 parties ensemble parmi leurs 20 dernières`;
+  return node;
+}
+
+function faceCell(player, ready, enemy, opponent, mates) {
   const side = enemy ? " enemy" : "";
   if (!player) return el("div", `fcell${side} empty`, [champIcon(0, ""), el("div", "txt", [el("span", "fname", "?")])]);
   const classes = `fcell${side}${player.me ? " me" : ""}${opponent ? " opp" : ""}`;
   return el("div", classes, [
     champIcon(player.championId, player.champion),
     el("div", "txt", [
-      el("span", "fname", `${upper(player.champion)}${player.me ? " · TOI" : ""}`),
+      el("div", "fhead", [el("span", "fname", `${upper(player.champion)}${player.me ? " · TOI" : ""}`), groupMark(player, mates)]),
       ready && el("span", "line", `niv. ${player.level} · ${player.kills}/${player.deaths}/${player.assists}`),
       rankLine(player),
     ]),

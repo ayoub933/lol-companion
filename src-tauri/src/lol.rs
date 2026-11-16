@@ -608,6 +608,8 @@ pub struct Player {
     pub position: String,
     /// Valeur de ses objets au prix de la boutique ; None tant que les prix ne sont pas lus.
     pub items_value: Option<u64>,
+    /// Joueur venu avec d'autres (duo, groupe) : numéro de son groupe dans la partie (1, 2…).
+    pub group: Option<u8>,
 }
 
 /// La partie en cours : ses joueurs et leurs rangs (connus dès l'écran de chargement),
@@ -638,6 +640,12 @@ struct CurrentGame {
     held_since: HashMap<i64, Instant>,
     /// Objets gardés au moins 30 s : achetés pour de bon, ils ne reviennent plus dans le panneau.
     bought: HashSet<i64>,
+    /// Joueurs dont il reste à lire les dernières parties pour trouver les groupes : (ton équipe ?, champion, puuid).
+    to_check: Vec<(bool, i64, String)>,
+    /// Ceux déjà lus : (ton équipe ?, champion, équipe de chacune de ses dernières parties).
+    checked: Vec<(bool, i64, HashMap<i64, i64>)>,
+    /// Groupe de chaque joueur venu avec d'autres, par champion.
+    groups: HashMap<i64, u8>,
 }
 
 /// Partie finie, en attente de ses stats dans l'historique du client.
@@ -1510,6 +1518,7 @@ impl Tracker {
         if self.game.is_none() {
             self.game = self.start_game(base, password).await;
         }
+        self.check_groups(base, password).await;
         // Prix des objets, pour la valeur des inventaires (lus une fois).
         self.assets.load_items().await;
         let loading = match &self.game {
@@ -1551,6 +1560,7 @@ impl Tracker {
             self.champion_ids.get(&alias).copied().unwrap_or(0)
         };
         let ranks = self.game.as_ref().map(|g| &g.ranks);
+        let groups = self.game.as_ref().map(|g| &g.groups);
         // Joueur absent de ceux que le client donne : il est en mode streamer, son rang est caché.
         let hidden = |id: i64| self.game.as_ref().is_some_and(|g| !g.listed.is_empty() && !g.listed.contains(&id));
         // Inventaire : (objet, nombre).
@@ -1575,6 +1585,7 @@ impl Tracker {
                 rank,
                 position: player["position"].as_str().unwrap_or_default().to_string(),
                 items_value: self.assets.items_value(&inventory(player)),
+                group: groups.and_then(|g| g.get(&id)).copied(),
             };
             if player["team"] == p["team"] {
                 allies.push(entry);
@@ -1744,8 +1755,9 @@ impl Tracker {
                     }
                     None => None,
                 };
-                if champion_id > 0 && puuid.is_some() {
+                if let Some(puuid) = puuid.filter(|_| champion_id > 0) {
                     game.listed.insert(champion_id);
+                    game.to_check.push((allies, champion_id, puuid.to_string()));
                 }
                 if let Some(rank) = rank.as_ref().filter(|_| champion_id > 0) {
                     game.ranks.insert(champion_id, rank.clone());
@@ -1780,6 +1792,51 @@ impl Tracker {
         }
         eprintln!("[partie] {game_id} : {} joueurs, {} rangs lus", game.allies.len() + game.enemies.len(), game.ranks.len());
         Some(game)
+    }
+
+    /// Joueurs venus ensemble (duo, groupe), voir `find_groups`. Le client va chercher les 20 dernières parties de
+    /// chaque joueur chez Riot : 2 joueurs par passage (une par seconde), pour ne pas ralentir la partie.
+    async fn check_groups(&mut self, base: &str, password: &str) {
+        let Some(game) = &self.game else {
+            return;
+        };
+        let game_id = game.game_id;
+        let batch: Vec<(bool, i64, String)> = game.to_check.iter().take(2).cloned().collect();
+        if batch.is_empty() {
+            return;
+        }
+        let mut read = Vec::new();
+        for (ally, champion_id, puuid) in batch {
+            let url = format!("{base}/lol-match-history/v1/products/lol/{puuid}/matches?begIndex=0&endIndex=19");
+            let list = self.get_from_riot(&url, password).await;
+            read.push((ally, champion_id, list.map(|list| sides(&list, &puuid, game_id)).unwrap_or_default()));
+        }
+        let Some(game) = &mut self.game else {
+            return;
+        };
+        game.to_check.drain(..read.len());
+        game.checked.extend(read);
+        if !game.to_check.is_empty() {
+            return;
+        }
+        game.groups = find_groups(&game.checked);
+        for player in game.allies.iter_mut().chain(game.enemies.iter_mut()) {
+            player.group = game.groups.get(&player.champion_id).copied();
+        }
+        // Pour vérifier sur une vraie partie : parties lues par joueur, et parties jouées ensemble.
+        let name = |id: i64| game.allies.iter().chain(&game.enemies).find(|p| p.champion_id == id).map_or("?", |p| p.champion.as_str());
+        let read: Vec<String> = game.checked.iter().map(|(_, id, games)| format!("{} {}", name(*id), games.len())).collect();
+        let mut pairs = Vec::new();
+        for (i, a) in game.checked.iter().enumerate() {
+            for b in &game.checked[i + 1..] {
+                let n = together(&a.2, &b.2);
+                if a.0 == b.0 && n > 0 {
+                    pairs.push(format!("{} + {} {n}", name(a.1), name(b.1)));
+                }
+            }
+        }
+        let pairs = if pairs.is_empty() { "aucune".to_string() } else { pairs.join(", ") };
+        eprintln!("[groupes] partie {game_id} : parties lues {} ; ensemble dans la même équipe : {pairs}", read.join(", "));
     }
 
     /// Ton rang (solo/duo et flexible) et tes 20 dernières parties, d'après le client.
@@ -1990,6 +2047,15 @@ impl Tracker {
         self.send(Method::GET, url, password, None).await.ok()
     }
 
+    /// Comme `get`, pour ce que le client va chercher chez Riot : ça peut prendre plus que les 2 secondes habituelles.
+    async fn get_from_riot(&self, url: &str, password: &str) -> Option<Value> {
+        let resp = self.http.get(url).basic_auth("riot", Some(password)).timeout(Duration::from_secs(5)).send().await.ok()?;
+        if !resp.status().is_success() {
+            return None;
+        }
+        resp.json().await.ok()
+    }
+
     /// Le client écrit un fichier « lockfile » à chaque démarrage :
     /// nom:pid:port:mot_de_passe:protocole
     fn refresh_lockfile(&mut self) {
@@ -2122,6 +2188,66 @@ fn spell_slots(wanted: [i64; 2], current: [i64; 2], flash_key: &str) -> [i64; 2]
     } else {
         wanted
     }
+}
+
+/// Équipe (100 ou 200) d'un joueur dans chacune de ses dernières parties, sans la partie en cours, d'après la liste
+/// du client (qui ne met en général que lui dans chaque partie).
+fn sides(list: &Value, puuid: &str, current: i64) -> HashMap<i64, i64> {
+    let games = list["games"]["games"].as_array().into_iter().flatten();
+    games
+        .filter_map(|g| {
+            let game_id = g["gameId"].as_i64().filter(|id| *id != current)?;
+            let participants = g["participants"].as_array()?;
+            let mut identities = g["participantIdentities"].as_array().into_iter().flatten();
+            let number = identities.find(|i| i["player"]["puuid"] == puuid).map(|i| &i["participantId"]);
+            let p = match number {
+                Some(number) => participants.iter().find(|p| &p["participantId"] == number)?,
+                None if participants.len() == 1 => &participants[0],
+                None => return None,
+            };
+            // Sans numéro d'équipe, le résultat les sépare aussi : gagnants d'un côté, perdants de l'autre.
+            let team = p["teamId"].as_i64().or_else(|| p["stats"]["win"].as_bool().map(|win| if win { 100 } else { 200 }))?;
+            Some((game_id, team))
+        })
+        .collect()
+}
+
+/// Parties jouées ensemble dans la même équipe, d'après l'équipe de chacun dans ses dernières parties.
+fn together(a: &HashMap<i64, i64>, b: &HashMap<i64, i64>) -> usize {
+    a.iter().filter(|(game, team)| b.get(game) == Some(team)).count()
+}
+
+/// Joueurs venus ensemble : deux joueurs de la même équipe qui ont joué au moins 2 de leurs 20 dernières parties
+/// ensemble, du même côté (une seule peut être un hasard du matchmaking), et ceux liés à eux (groupe de 3 et plus).
+/// Numéro de groupe de chacun, par champion : 1, 2… en commençant par ton équipe.
+fn find_groups(players: &[(bool, i64, HashMap<i64, i64>)]) -> HashMap<i64, u8> {
+    // Chacun part dans son propre groupe ; deux joueurs liés mettent leurs groupes en commun.
+    let mut label: Vec<usize> = (0..players.len()).collect();
+    for (i, a) in players.iter().enumerate() {
+        for (j, b) in players.iter().enumerate().skip(i + 1) {
+            if a.0 == b.0 && together(&a.2, &b.2) >= 2 {
+                let (from, to) = (label[j], label[i]);
+                label.iter_mut().filter(|l| **l == from).for_each(|l| *l = to);
+            }
+        }
+    }
+    let mut numbers: Vec<usize> = Vec::new();
+    let mut groups = HashMap::new();
+    let order = (0..players.len()).filter(|i| players[*i].0).chain((0..players.len()).filter(|i| !players[*i].0));
+    for i in order {
+        if label.iter().filter(|l| **l == label[i]).count() < 2 {
+            continue;
+        }
+        let number = match numbers.iter().position(|l| *l == label[i]) {
+            Some(k) => k + 1,
+            None => {
+                numbers.push(label[i]);
+                numbers.len()
+            }
+        };
+        groups.insert(players[i].1, number as u8);
+    }
+    groups
 }
 
 /// Rang d'une file dans une réponse de /lol-ranked (liste « queues », ou table « queueMap »).
