@@ -646,6 +646,10 @@ pub struct Player {
     pub group: Option<u8>,
     /// Joueur déjà croisé dans une de tes 3 dernières parties.
     pub met: Option<Met>,
+    /// Riot ID (« Nom#TAG ») et compte, pour ouvrir son profil d'un clic ; vides si le client le cache (mode
+    /// streamer) ou ne les donne pas.
+    pub riot_id: String,
+    pub puuid: String,
 }
 
 /// Joueur déjà croisé dans une de tes 3 dernières parties, sans être venu avec toi.
@@ -713,6 +717,8 @@ struct CurrentGame {
     groups: HashMap<i64, u8>,
     /// Joueurs déjà croisés dans tes 3 dernières parties, par champion.
     met: HashMap<i64, Met>,
+    /// Compte de chaque joueur que le client donne, par champion.
+    puuids: HashMap<i64, String>,
 }
 
 /// Partie finie, en attente de ses stats dans l'historique du client.
@@ -1629,6 +1635,7 @@ impl Tracker {
         let ranks = self.game.as_ref().map(|g| &g.ranks);
         let groups = self.game.as_ref().map(|g| &g.groups);
         let met = self.game.as_ref().map(|g| &g.met);
+        let puuids = self.game.as_ref().map(|g| &g.puuids);
         // Joueur absent de ceux que le client donne : il est en mode streamer, son rang est caché.
         let hidden = |id: i64| self.game.as_ref().is_some_and(|g| !g.listed.is_empty() && !g.listed.contains(&id));
         // Inventaire : (objet, nombre).
@@ -1655,6 +1662,8 @@ impl Tracker {
                 items_value: self.assets.items_value(&inventory(player)),
                 group: groups.and_then(|g| g.get(&id)).copied(),
                 met: met.and_then(|m| m.get(&id)).cloned(),
+                riot_id: if hidden(id) { String::new() } else { player["riotId"].as_str().unwrap_or_default().to_string() },
+                puuid: puuids.and_then(|m| m.get(&id)).cloned().unwrap_or_default(),
             };
             if player["team"] == p["team"] {
                 allies.push(entry);
@@ -1826,6 +1835,7 @@ impl Tracker {
                 };
                 if let Some(puuid) = puuid.filter(|_| champion_id > 0) {
                     game.listed.insert(champion_id);
+                    game.puuids.insert(champion_id, puuid.to_string());
                     let puuid = puuid.to_string();
                     game.to_check.push(Recent { ally: allies, champion_id, puuid, ..Default::default() });
                 }
@@ -1841,6 +1851,8 @@ impl Tracker {
                 }
                 let lane = p["selectedPosition"].as_str().unwrap_or_default();
                 let order = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"].iter().position(|l| *l == lane).unwrap_or(5);
+                let text = |key: &str| p[key].as_str().unwrap_or_default();
+                let riot_id = if text("gameName").is_empty() { String::new() } else { format!("{}#{}", text("gameName"), text("tagLine")) };
                 let player = Player {
                     champion,
                     champion_id,
@@ -1848,6 +1860,8 @@ impl Tracker {
                     rank_hidden: puuid.is_none(),
                     rank,
                     position: lane.to_string(),
+                    riot_id,
+                    puuid: puuid.unwrap_or_default().to_string(),
                     ..Default::default()
                 };
                 players.push((order, player));

@@ -41,16 +41,31 @@ impl Search {
         Self { opgg: tokio::sync::Mutex::new(opgg::Client::new()), games: Mutex::default(), details: Mutex::default() }
     }
 
-    pub async fn find(&self, assets: &lol::Assets, riot_id: &str, region: &str) -> Result<Searched, String> {
+    /// `region` vide : celle de ton client. `puuid` : son compte quand il est connu (un joueur d'une de tes parties),
+    /// lu directement dans le client.
+    pub async fn find(&self, assets: &lol::Assets, riot_id: &str, region: &str, puuid: Option<&str>) -> Result<Searched, String> {
+        let client_region = assets.client_region().await;
+        let region = match region.trim() {
+            "" => client_region.clone().ok_or("Région inconnue : choisis-la à droite de la barre de recherche.")?,
+            region => region.to_uppercase(),
+        };
+        let in_client = client_region.as_deref() == Some(region.as_str());
+        let riot_id = riot_id.trim();
+        let by_account = match puuid.filter(|p| in_client && !p.is_empty()) {
+            Some(puuid) => from_client(assets, Who::Account(puuid), riot_id, &region).await,
+            None => None,
+        };
+        if let Some(found) = by_account {
+            eprintln!("[recherche] {} ({region}) : lu dans le client, {} parties", found.riot_id, found.profile.matches.len());
+            return Ok(found);
+        }
         let (name, tag) = riot_id
-            .trim()
             .rsplit_once('#')
             .map(|(name, tag)| (name.trim(), tag.trim()))
             .filter(|(name, tag)| !name.is_empty() && !tag.is_empty())
             .ok_or("Écris le Riot ID en entier : Nom#TAG")?;
-        let region = region.trim().to_uppercase();
-        if assets.client_region().await.as_deref() == Some(region.as_str()) {
-            if let Some(found) = from_client(assets, name, tag, &region).await {
+        if in_client {
+            if let Some(found) = from_client(assets, Who::Name(name, tag), riot_id, &region).await {
                 eprintln!("[recherche] {name}#{tag} ({region}) : lu dans le client, {} parties", found.profile.matches.len());
                 return Ok(found);
             }
@@ -85,14 +100,35 @@ impl Search {
     }
 }
 
-/// Le joueur dans le client (sa région seulement) ; None s'il est introuvable ou si le client est fermé.
-async fn from_client(assets: &lol::Assets, name: &str, tag: &str, region: &str) -> Option<Searched> {
+/// Qui chercher dans le client : son compte s'il est connu, sinon son Riot ID.
+#[derive(Clone, Copy)]
+enum Who<'a> {
+    Account(&'a str),
+    Name(&'a str, &'a str),
+}
+
+/// Le joueur dans le client (sa région seulement) ; None s'il est introuvable, si le client est fermé ou n'a rien
+/// donné. `asked` : le Riot ID demandé, gardé si le client ne le redonne pas.
+async fn from_client(assets: &lol::Assets, who: Who<'_>, asked: &str, region: &str) -> Option<Searched> {
     // Le client va chercher ce joueur, son rang et ses parties chez Riot.
-    let summoner = assets.client_json(&format!("/lol-summoner/v1/summoners?name={}", encode(&format!("{name}#{tag}"))), true).await?;
-    let puuid = summoner["puuid"].as_str().filter(|p| !p.is_empty())?.to_string();
+    let (summoner, puuid) = match who {
+        Who::Account(puuid) => {
+            let summoner = assets.client_json(&format!("/lol-summoner/v2/summoners/puuid/{puuid}"), true).await;
+            (summoner.unwrap_or(Value::Null), puuid.to_string())
+        }
+        Who::Name(name, tag) => {
+            let path = format!("/lol-summoner/v1/summoners?name={}", encode(&format!("{name}#{tag}")));
+            let summoner = assets.client_json(&path, true).await?;
+            let puuid = summoner["puuid"].as_str().filter(|p| !p.is_empty())?.to_string();
+            (summoner, puuid)
+        }
+    };
     let ranked = assets.client_json(&format!("/lol-ranked/v1/ranked-stats/{puuid}"), true).await;
     let path = format!("/lol-match-history/v1/products/lol/{puuid}/matches?begIndex=0&endIndex=19");
     let list = assets.client_json(&path, true).await;
+    if ranked.is_none() && list.is_none() {
+        return None;
+    }
     let games = list.as_ref().and_then(|l| l["games"]["games"].as_array()).cloned().unwrap_or_default();
     let summoner_id = summoner["summonerId"].as_u64();
     let records = games.iter().filter_map(|g| history::record_from(g, Some(&puuid), summoner_id, 0)).collect();
@@ -108,7 +144,8 @@ async fn from_client(assets: &lol::Assets, name: &str, tag: &str, region: &str) 
     let text = |key: &str| summoner[key].as_str().unwrap_or_default().to_string();
     let riot_id = match (text("gameName"), text("tagLine")) {
         (game_name, tag_line) if !game_name.is_empty() => format!("{game_name}#{tag_line}"),
-        _ => format!("{name}#{tag}"),
+        _ if !asked.is_empty() => asked.to_string(),
+        _ => "?".to_string(),
     };
     let source = "client".to_string();
     Some(Searched { riot_id, level: summoner["summonerLevel"].as_u64(), region: region.to_string(), source, profile })

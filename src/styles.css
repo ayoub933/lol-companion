@@ -531,6 +531,21 @@ span.icon.slot {
 .search-msg.error {
   color: var(--defeat);
 }
+/* Joueur dont le profil s'ouvre d'un clic (détail d'une partie, joueurs de la partie en cours). */
+.profile-link {
+  cursor: pointer;
+}
+.mwho.profile-link:hover .mname {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.fcell.profile-link:hover {
+  filter: brightness(1.18);
+}
+.fcell.profile-link:hover .fname {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .logo {
   padding: 5px 16px 4px 12px;
   background: var(--accent);

@@ -71,15 +71,17 @@ async fn match_details(
     assets.match_details(game_id, champion_id).await
 }
 
-/// Salon d'un autre joueur, cherché par son Riot ID (Nom#TAG) et sa région.
+/// Salon d'un autre joueur, cherché par son Riot ID (Nom#TAG) et sa région (vide : celle de ton client), ou par
+/// son compte (un joueur d'une de tes parties).
 #[tauri::command]
 async fn search_player(
     assets: tauri::State<'_, lol::Assets>,
     search: tauri::State<'_, search::Search>,
     riot_id: String,
     region: String,
+    puuid: Option<String>,
 ) -> Result<search::Searched, String> {
-    search.find(&assets, &riot_id, &region).await
+    search.find(&assets, &riot_id, &region, puuid.as_deref()).await
 }
 
 /// Une partie d'un joueur cherché, lue sur OP.GG, en détail.

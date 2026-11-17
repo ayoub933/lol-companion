@@ -656,6 +656,8 @@ function matchRow(p, most, duration, title) {
   const you = p.me && !viewing;
   const who = el("div", "mwho", [el("span", "mname", you ? [p.name || "?", el("small", "", " · TOI")] : p.name || "?"), rank]);
   who.title = p.tag ? `${p.name}#${p.tag}` : p.name;
+  // Ses parties sont dans la région de ton client, ou dans celle du joueur cherché.
+  if (!p.me) profileLink(who, p.tag ? `${p.name}#${p.tag}` : p.name, p.puuid, viewing?.region ?? "");
   const fill = el("span");
   fill.style.width = `${(p.damage / most) * 100}%`;
   const minutes = Math.max(duration / 60, 1);
@@ -1161,7 +1163,7 @@ function faceCell(player, ready, enemy, opponent, mates) {
   const side = enemy ? " enemy" : "";
   if (!player) return el("div", `fcell${side} empty`, [champIcon(0, ""), el("div", "txt", [el("span", "fname", "?")])]);
   const classes = `fcell${side}${player.me ? " me" : ""}${opponent ? " opp" : ""}`;
-  return el("div", classes, [
+  const cell = el("div", classes, [
     champIcon(player.championId, player.champion),
     el("div", "txt", [
       el("div", "fhead", [
@@ -1173,6 +1175,8 @@ function faceCell(player, ready, enemy, opponent, mates) {
       rankLine(player),
     ]),
   ]);
+  // Un clic : son profil (joueurs de ta région ; pas ceux en mode streamer).
+  return player.me ? cell : profileLink(cell, player.riotId, player.puuid, "");
 }
 
 // ---------- Ensemble ----------
@@ -1210,7 +1214,7 @@ function setupSearch() {
   });
   $("search").addEventListener("submit", (event) => {
     event.preventDefault();
-    searchPlayer();
+    searchPlayer($("search-input").value.trim(), $("search-region").value);
   });
   $("search-input").addEventListener("input", () => searchMessage(""));
   $("search-input").addEventListener("keydown", (event) => {
@@ -1221,18 +1225,21 @@ function setupSearch() {
   $("search-back").addEventListener("click", () => leaveSearch(true));
 }
 
-async function searchPlayer() {
-  const riotId = $("search-input").value.trim();
-  if (!riotId) return;
-  if (!riotId.includes("#")) return searchMessage("Ajoute son tag : Pseudo#TAG (ex. Faker#KR1)", true);
-  const region = $("search-region").value;
+// `region` vide : celle de ton client ; `puuid` : son compte, quand il est connu (joueur d'une de tes parties).
+async function searchPlayer(riotId, region, puuid = "") {
+  if (!riotId && !puuid) return;
+  if (!puuid && !riotId.includes("#")) return searchMessage("Ajoute son tag : Pseudo#TAG (ex. Faker#KR1)", true);
   const turn = ++searchTurn;
+  // Depuis le profil d'un joueur cherché, le retour mène toujours à l'écran de départ.
+  const from = viewing?.from ?? screenOf(lastState);
   $("search").classList.add("busy");
-  searchMessage(`Recherche de ${riotId} en ${region}…`);
+  searchMessage(`Recherche de ${riotId || "ce joueur"}${region ? ` en ${region}` : ""}…`);
   try {
-    const found = await invoke("search_player", { riotId, region });
+    const found = await invoke("search_player", { riotId, region, puuid: puuid || null });
     if (turn !== searchTurn) return;
-    viewing = { ...found, from: screenOf(lastState) };
+    viewing = { ...found, from };
+    $("search-input").value = found.riotId;
+    if (REGIONS.includes(found.region)) $("search-region").value = found.region;
     searchMessage("");
     closeMatch();
     if (lastState) render(lastState);
@@ -1252,6 +1259,19 @@ function leaveSearch(redraw) {
   searchMessage("");
   if (openGame) closeMatch();
   if (redraw && lastState) render(lastState);
+}
+
+// Profil d'un joueur d'un clic (détail d'une partie, joueurs de la partie en cours).
+function profileLink(node, riotId, puuid, region) {
+  if (!riotId && !puuid) return node;
+  node.classList.add("profile-link");
+  node.title = `Voir le profil de ${riotId || "ce joueur"}`;
+  node.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (openGame) closeMatch();
+    searchPlayer(riotId, region, puuid);
+  });
+  return node;
 }
 
 function searchMessage(text, error = false) {

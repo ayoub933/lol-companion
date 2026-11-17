@@ -222,8 +222,7 @@ pub struct MatchTeam {
 #[derive(Serialize, Clone, Default, PartialEq, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct MatchPlayer {
-    /// Pour lire son rang ; pas envoyé à l'interface.
-    #[serde(skip)]
+    /// Pour lire son rang, et ouvrir son profil d'un clic ; vide sur OP.GG.
     pub puuid: String,
     /// Riot ID : nom, et tag sans le « # ».
     pub name: String,

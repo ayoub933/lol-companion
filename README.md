@@ -313,6 +313,10 @@ parties, détail d'une partie d'un clic). Le bouton à gauche de la barre (« Mo
 ou « La partie ») ou Échap dans la barre te ramènent à cet écran ; un nouvel écran (sélection qui commence,
 partie qui démarre ou se termine) aussi.
 
+Un clic sur un joueur ouvre aussi son profil : sur son nom dans le détail d'une partie (y compris celles
+d'un joueur cherché), ou sur sa case dans l'écran de la partie en cours (sauf les joueurs en mode streamer).
+Pour les joueurs de tes parties, l'app le lit directement par son compte dans le client.
+
 - Dans la région de ton client : l'app le lit dans le client, comme ton salon (avec le score carry).
 - Ailleurs, ou si le client ne le trouve pas (ou est fermé) : sur OP.GG. Le détail d'une partie donne
   alors la note OP.GG (sur 10, ×10) et sa place à la place du score carry ; pas de score de vision.
