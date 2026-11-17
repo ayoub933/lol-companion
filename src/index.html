@@ -14,6 +14,18 @@
         <span class="logo">LOLC</span>
         <span class="brand-name">LOL COMPANION</span>
       </div>
+      <!-- Recherche d'un joueur : son salon à la place du tien (main.js, searchPlayer). -->
+      <div class="search-zone">
+        <button type="button" class="search-back" id="search-back" title="Revenir à ton profil" hidden>
+          <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M7.5 2.5L4 6l3.5 3.5" /></svg>MON PROFIL
+        </button>
+        <form class="search" id="search" role="search" autocomplete="off">
+          <svg class="search-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.6" /><path d="M10.4 10.4L14 14" /></svg>
+          <input id="search-input" type="text" spellcheck="false" placeholder="Rechercher un joueur : Pseudo#TAG puis Entrée" aria-label="Rechercher un joueur (Pseudo#TAG)" />
+          <select id="search-region" aria-label="Région du joueur"></select>
+        </form>
+        <span class="search-msg" id="search-msg" role="status" hidden></span>
+      </div>
       <div class="top-right">
         <span id="status" class="status off"><span class="dot" aria-hidden="true"></span><span id="status-text">CLIENT NON DÉTECTÉ</span></span>
         <button id="settings-button" class="icon-button" title="Réglages" aria-label="Réglages">

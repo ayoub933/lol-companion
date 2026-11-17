@@ -223,7 +223,7 @@ function renderPlayer(state, show) {
   const title = name ? upper(name) : "CONNEXION…";
   $("riot-name").textContent = title;
   $("riot-name").className = `name-box ${title.length > 12 ? "long" : title.length > 9 ? "mid" : ""}`;
-  const line = [tag && `#${upper(tag)}`, state.summonerLevel != null && `NIVEAU ${state.summonerLevel}`];
+  const line = [tag && `#${upper(tag)}`, state.searched?.region, state.summonerLevel != null && `NIVEAU ${state.summonerLevel}`];
   $("riot-tag").textContent = line.filter(Boolean).join(" · ");
   $("riot-tag").hidden = !$("riot-tag").textContent;
   setArt($("player-art"), heroSkin(state));
@@ -345,6 +345,7 @@ function renderHistory(state, show) {
   const wins = shown.filter((g) => g.win).length;
   $("history-aside").replaceChildren(
     ...(shown.length ? [`${shown.length > 1 ? `${shown.length} dernières` : "dernière"} · `, ...record(wins, shown.length - wins)] : []),
+    ...(state.searched?.source === "opgg" ? [" · OP.GG"] : []),
   );
 }
 
@@ -390,7 +391,7 @@ function renderFeatured(last, recording) {
       [`CS · ${decimal(last.cs / Math.max(minutes, 1))}/min`, String(last.cs)],
       ["Or", whole(last.gold)],
       ["Dégâts", whole(last.damage)],
-      ["Vision", String(last.vision)],
+      ["Vision", viewing?.source === "opgg" ? "—" : String(last.vision)],
     ].map(cell),
   );
   // Pendant la récupération de la partie qui vient de finir, la précédente reste affichée.
@@ -575,9 +576,13 @@ function openMatch(game) {
   const date = new Date(game.date).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
   $("match-meta").textContent = [queueName(game), clock(game.duration), ago(ended(game)), date].join(" · ");
   $("match-teams").replaceChildren();
-  matchStatus("Lecture de la partie dans le client…");
+  const opgg = viewing?.source === "opgg";
+  matchStatus(opgg ? "Lecture de la partie sur OP.GG…" : "Lecture de la partie dans le client…");
   markOpenGame();
-  invoke("match_details", { gameId: game.gameId, championId: game.championId })
+  const request = opgg
+    ? invoke("searched_match_details", { gameId: game.gameId })
+    : invoke("match_details", { gameId: game.gameId, championId: game.championId });
+  request
     .then((details) => openGame === game && renderMatch(details, game))
     .catch((error) => openGame === game && matchStatus(String(error)));
 }
@@ -625,10 +630,11 @@ function renderMatch(details, game) {
 function matchTeam(team, ours, most, duration) {
   const sum = (key) => team.players.reduce((total, p) => total + p[key], 0);
   const best = Math.min(...team.players.map((p) => p.place));
-  const labels = ["JOUEUR", "CARRY", "KDA", "DÉGÂTS", "OR", "CS", "BALISES", "OBJETS"].map((text) => el("span", "", text));
+  const score = viewing?.source === "opgg" ? "OP.GG" : "CARRY";
+  const labels = ["JOUEUR", score, "KDA", "DÉGÂTS", "OR", "CS", "BALISES", "OBJETS"].map((text) => el("span", "", text));
   return el("div", `mteam ${ours ? "us" : "them"}`, [
     el("div", "mteam-head", [
-      el("span", "side", ours ? "TON ÉQUIPE" : "EN FACE"),
+      el("span", "side", ours ? (viewing ? "SON ÉQUIPE" : "TON ÉQUIPE") : "EN FACE"),
       el("span", `res ${team.win ? "win" : "loss"}`, team.win ? "VICTOIRE" : "DÉFAITE"),
       el("span", "tot", `${sum("kills")} / ${sum("deaths")} / ${sum("assists")} · ${kilo(sum("gold"))} d'or`),
     ]),
@@ -647,7 +653,8 @@ function matchRow(p, most, duration, title) {
   ]);
   const rank = el("span", "mrank");
   if (p.rank) setRank(rank, p.rank, "small");
-  const who = el("div", "mwho", [el("span", "mname", p.me ? [p.name || "?", el("small", "", " · TOI")] : p.name || "?"), rank]);
+  const you = p.me && !viewing;
+  const who = el("div", "mwho", [el("span", "mname", you ? [p.name || "?", el("small", "", " · TOI")] : p.name || "?"), rank]);
   who.title = p.tag ? `${p.name}#${p.tag}` : p.name;
   const fill = el("span");
   fill.style.width = `${(p.damage / most) * 100}%`;
@@ -1170,23 +1177,109 @@ function faceCell(player, ready, enemy, opponent, mates) {
 
 // ---------- Ensemble ----------
 
+// ---------- Recherche d'un joueur ----------
+
+// Salon du joueur cherché (search_player) à la place du tien ; null = le tien.
+let viewing = null;
+let lastState = null;
+// Numéro de la dernière recherche : une réponse arrivée après une autre recherche (ou un retour) est ignorée.
+let searchTurn = 0;
+const REGIONS = ["EUW", "EUNE", "NA", "KR", "BR", "LAN", "LAS", "OCE", "TR", "RU", "JP", "ME", "SEA", "TW", "VN"];
+
+function setupSearch() {
+  const region = $("search-region");
+  region.replaceChildren(...REGIONS.map((code) => el("option", "", code)));
+  try {
+    region.value = localStorage.getItem("search-region") || "EUW";
+  } catch {
+    region.value = "EUW";
+  }
+  region.addEventListener("change", () => {
+    try {
+      localStorage.setItem("search-region", region.value);
+    } catch {
+      // Pas de mémoire du navigateur : la région revient à EUW au prochain lancement.
+    }
+  });
+  $("search").addEventListener("submit", (event) => {
+    event.preventDefault();
+    searchPlayer();
+  });
+  $("search-input").addEventListener("input", () => searchMessage(""));
+  $("search-input").addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.target.value = "";
+    leaveSearch(true);
+  });
+  $("search-back").addEventListener("click", () => leaveSearch(true));
+}
+
+async function searchPlayer() {
+  const riotId = $("search-input").value.trim();
+  if (!riotId) return;
+  if (!riotId.includes("#")) return searchMessage("Ajoute son tag : Pseudo#TAG (ex. Faker#KR1)", true);
+  const region = $("search-region").value;
+  const turn = ++searchTurn;
+  $("search").classList.add("busy");
+  searchMessage(`Recherche de ${riotId} en ${region}…`);
+  try {
+    const found = await invoke("search_player", { riotId, region });
+    if (turn !== searchTurn) return;
+    viewing = found;
+    searchMessage("");
+    closeMatch();
+    if (lastState) render(lastState);
+  } catch (error) {
+    if (turn === searchTurn) searchMessage(String(error), true);
+  } finally {
+    if (turn === searchTurn) $("search").classList.remove("busy");
+  }
+}
+
+// Retour à ton salon ; `redraw` : tout de suite (sinon, le rendu en cours s'en charge).
+function leaveSearch(redraw) {
+  searchTurn++;
+  viewing = null;
+  $("search-input").value = "";
+  $("search").classList.remove("busy");
+  searchMessage("");
+  if (openGame) closeMatch();
+  if (redraw && lastState) render(lastState);
+}
+
+function searchMessage(text, error = false) {
+  $("search-msg").hidden = !text;
+  $("search-msg").textContent = text;
+  $("search-msg").classList.toggle("error", error);
+}
+
 function render(state) {
+  lastState = state;
   const found = state.clientFound;
   $("status-text").textContent = !found ? "CLIENT NON DÉTECTÉ" : (PHASES[state.phase] ?? upper(state.phase ?? "CLIENT CONNECTÉ"));
   $("status").className = `status ${!found ? "off" : state.game ? "game" : "on"}`;
-  $("hint").hidden = found;
+  // Recherche au salon seulement : une sélection ou une partie referme le joueur cherché.
+  const free = !state.runes && !state.game;
+  if (!free && viewing) leaveSearch(false);
+  $("search-input").disabled = !free;
+  $("search-input").placeholder = free ? "Rechercher un joueur : Pseudo#TAG puis Entrée" : "Recherche disponible au salon";
+  $("search-back").hidden = !viewing;
+  document.body.classList.toggle("searching", Boolean(viewing));
+  $("hint").hidden = found || Boolean(viewing);
 
   $("update").hidden = !state.update;
   if (state.update && !$("update-button").disabled) {
     $("update-text").textContent = `Nouvelle version ${state.update} disponible`;
   }
 
-  // Salon : seulement hors sélection et hors partie (la place y sert à autre chose).
-  const lobby = found && !state.runes && !state.game;
+  // Salon : seulement hors sélection et hors partie (la place y sert à autre chose). Celui d'un joueur cherché
+  // s'affiche aussi client fermé (OP.GG), sans tes stats ni tes duels.
+  const lobby = free && (found || Boolean(viewing));
   if (!lobby && openGame) closeMatch();
-  renderPlayer(state, lobby);
-  renderHistory(state, lobby);
-  renderStats(state, lobby);
+  const shown = viewing ? { riotId: viewing.riotId, summonerLevel: viewing.level, profile: viewing.profile, searched: viewing } : state;
+  renderPlayer(shown, lobby);
+  renderHistory(shown, lobby);
+  renderStats(state, lobby && !viewing);
   renderSelection(state.runes);
   renderGame(state.game);
   layout();
@@ -1270,6 +1363,7 @@ async function toggleSettings() {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
+  setupSearch();
   layout();
   window.addEventListener("resize", layout);
   $("settings-button").addEventListener("click", toggleSettings);

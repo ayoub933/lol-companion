@@ -229,6 +229,8 @@ pub struct Assets {
     spell_paths: Arc<Mutex<HashMap<i64, String>>>,
     /// Parties déjà ouvertes en détail : (partie, ton champion) → les deux équipes.
     matches: Arc<Mutex<HashMap<(i64, i64), history::MatchDetails>>>,
+    /// Nom de chaque champion d'après le client, lus une fois (salon d'un joueur cherché).
+    champion_names: Arc<Mutex<HashMap<i64, String>>>,
     /// Icônes des runes et emblèmes des rangs déjà lus, par chemin.
     images: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     /// Requêtes en cours vers le client : 6 au plus (voir client_file).
@@ -281,6 +283,7 @@ impl Assets {
             perk_paths: Arc::default(),
             spell_paths: Arc::default(),
             matches: Arc::default(),
+            champion_names: Arc::default(),
             images: Arc::default(),
             gate: Arc::new(tokio::sync::Semaphore::new(6)),
             loading: Arc::default(),
@@ -522,6 +525,37 @@ impl Assets {
             return None;
         }
         Some(resp.bytes().await.ok()?.to_vec())
+    }
+
+    /// Réponse JSON du client. `from_riot` : ce que le client va chercher chez Riot (10 s au plus, au lieu de 2).
+    pub async fn client_json(&self, path: &str, from_riot: bool) -> Option<Value> {
+        let (base, password) = self.auth.lock().unwrap().clone()?;
+        let timeout = Duration::from_secs(if from_riot { 10 } else { 2 });
+        let resp = self.http.get(format!("{base}{path}")).basic_auth("riot", Some(password)).timeout(timeout).send().await.ok()?;
+        if !resp.status().is_success() {
+            return None;
+        }
+        resp.json().await.ok()
+    }
+
+    /// Région du client (« EUW », « NA »…) ; None si le client est fermé.
+    pub async fn client_region(&self) -> Option<String> {
+        let locale = self.client_json("/riotclient/region-locale", false).await?;
+        locale["region"].as_str().filter(|r| !r.is_empty()).map(str::to_uppercase)
+    }
+
+    /// Nom d'un champion d'après le client (la liste est lue une fois) ; son numéro s'il est inconnu.
+    pub async fn champion_name(&self, id: i64) -> String {
+        if self.champion_names.lock().unwrap().is_empty() {
+            let _once = self.loading.lock().await;
+            if self.champion_names.lock().unwrap().is_empty() {
+                let list = self.client_json("/lol-game-data/assets/v1/champion-summary.json", false).await;
+                let names = list.as_ref().and_then(Value::as_array).into_iter().flatten();
+                let names = names.filter_map(|c| Some((c["id"].as_i64()?, c["name"].as_str()?.to_string())));
+                self.champion_names.lock().unwrap().extend(names);
+            }
+        }
+        self.champion_names.lock().unwrap().get(&id).cloned().unwrap_or_else(|| id.to_string())
     }
 }
 
@@ -1910,44 +1944,15 @@ impl Tracker {
         if ranked.is_none() && matches.is_none() {
             return None;
         }
-        let mut profile = Profile {
-            solo: ranked.as_ref().map(|r| rank_in(r, "RANKED_SOLO_5x5")),
-            flex: ranked.as_ref().map(|r| rank_in(r, "RANKED_FLEX_SR")),
-            ..Default::default()
-        };
         let games = matches.as_ref().and_then(|m| m["games"]["games"].as_array()).cloned().unwrap_or_default();
-        let mut counts: Vec<(i64, u64, u64)> = Vec::new();
-        let mut records = Vec::new();
-        for game in &games {
-            let Some(record) = history::record_from(game, self.puuid.as_deref(), self.summoner_id, 0) else {
-                continue;
-            };
-            if record.duration < REMAKE_SECONDS {
-                continue;
-            }
-            profile.recent_games += 1;
-            profile.recent_wins += u64::from(record.win);
-            match counts.iter_mut().find(|(id, _, _)| *id == record.champion_id) {
-                Some((_, played, won)) => {
-                    *played += 1;
-                    *won += u64::from(record.win);
-                }
-                None => counts.push((record.champion_id, 1, u64::from(record.win))),
-            }
-            records.push(record);
+        let records = games.iter().filter_map(|g| history::record_from(g, self.puuid.as_deref(), self.summoner_id, 0)).collect();
+        let solo = ranked.as_ref().map(|r| rank_in(r, "RANKED_SOLO_5x5"));
+        let flex = ranked.as_ref().map(|r| rank_in(r, "RANKED_FLEX_SR"));
+        let mut profile = summarize(solo, flex, records);
+        for champion in &mut profile.recent_champions {
+            champion.name = self.champ(base, password, champion.champion_id).await.name;
         }
-        // De la plus récente à la plus ancienne.
-        records.sort_by_key(|r| std::cmp::Reverse(r.date));
-        profile.recent_results = records.iter().map(|r| r.win).collect();
-        profile.last_champion_id = records.first().map_or(0, |r| r.champion_id);
-        // Les plus joués d'abord (à égalité, dans l'ordre de la liste du client).
-        counts.sort_by_key(|(_, games, _)| std::cmp::Reverse(*games));
-        for (champion_id, games, wins) in counts.into_iter().take(3) {
-            let name = self.champ(base, password, champion_id).await.name;
-            profile.recent_champions.push(RecentChampion { champion_id, name, games, wins });
-        }
-        records.truncate(MATCHES_SHOWN);
-        for mut record in records {
+        for record in &mut profile.matches {
             record.champion = self.champ(base, password, record.champion_id).await.name;
             // Partie suivie par l'app : on connaît aussi ton adversaire direct, ton poste et ton skin.
             if let Some(known) = self.history.get(record.game_id, &record.puuid) {
@@ -1957,7 +1962,6 @@ impl Tracker {
                 record.lp_change = known.lp_change;
                 record.skin_id = known.skin_id;
             }
-            profile.matches.push(record);
         }
         Some(profile)
     }
@@ -2336,9 +2340,47 @@ fn find_met(players: &[Recent], me: &str, groups: &HashMap<i64, u8>) -> HashMap<
         .collect()
 }
 
+/// Salon d'un joueur d'après ses rangs et ses 20 dernières parties (sans les parties annulées) : bilan, forme,
+/// 3 champions les plus joués (à égalité, dans l'ordre de la liste) et les 10 dernières parties, de la plus
+/// récente à la plus ancienne. Les noms des champions restent à remplir.
+pub fn summarize(solo: Option<Rank>, flex: Option<Rank>, records: Vec<history::GameRecord>) -> Profile {
+    let mut records: Vec<history::GameRecord> = records.into_iter().filter(|r| r.duration >= REMAKE_SECONDS).collect();
+    let mut counts: Vec<(i64, u64, u64)> = Vec::new();
+    for record in &records {
+        match counts.iter_mut().find(|(id, _, _)| *id == record.champion_id) {
+            Some((_, played, won)) => {
+                *played += 1;
+                *won += u64::from(record.win);
+            }
+            None => counts.push((record.champion_id, 1, u64::from(record.win))),
+        }
+    }
+    counts.sort_by_key(|(_, games, _)| std::cmp::Reverse(*games));
+    records.sort_by_key(|r| std::cmp::Reverse(r.date));
+    let recent_champions = counts
+        .into_iter()
+        .take(3)
+        .map(|(champion_id, games, wins)| {
+            // Nom déjà connu (OP.GG le donne avec chaque partie).
+            let name = records.iter().find(|r| r.champion_id == champion_id).map(|r| r.champion.clone()).unwrap_or_default();
+            RecentChampion { champion_id, name, games, wins }
+        })
+        .collect();
+    Profile {
+        solo,
+        flex,
+        recent_games: records.len() as u64,
+        recent_wins: records.iter().filter(|r| r.win).count() as u64,
+        recent_results: records.iter().map(|r| r.win).collect(),
+        last_champion_id: records.first().map_or(0, |r| r.champion_id),
+        recent_champions,
+        matches: records.into_iter().take(MATCHES_SHOWN).collect(),
+    }
+}
+
 /// Rang d'une file dans une réponse de /lol-ranked (liste « queues », ou table « queueMap »).
 /// Pas d'entrée pour cette file, ou tier « NONE » : non classé.
-fn rank_in(stats: &Value, queue: &str) -> Rank {
+pub fn rank_in(stats: &Value, queue: &str) -> Rank {
     let entry = stats["queues"]
         .as_array()
         .and_then(|queues| queues.iter().find(|q| q["queueType"] == queue))

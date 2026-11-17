@@ -29,6 +29,28 @@ const FIELDS: [&str; 11] = [
     "data.skills.{order[],pick_rate,play,win}",
     "data.skill_masteries.{ids[],pick_rate,play,win}",
 ];
+/// Champs demandés pour le salon d'un joueur cherché (recopiés de la liste fermée donnée par leurs outils) :
+/// son profil, ses dernières parties (lui seul dans chaque partie) et le détail d'une partie (les 10 joueurs).
+const PROFILE_FIELDS: [&str; 3] = [
+    "data.summoner.{game_name,tagline,level}",
+    "data.summoner.league_stats[].{game_type,win,lose}",
+    "data.summoner.league_stats[].tier_info.{tier,division,lp}",
+];
+const MATCH_FIELDS: [&str; 4] = [
+    "data.game_history[].{id,created_at,game_length_second,game_map,game_type}",
+    "data.game_history[].participants[].{champion_id,champion_name,position}",
+    "data.game_history[].participants[].summoner.{game_name,tagline}",
+    "data.game_history[].participants[].stats.{kill,death,assist,minion_kill,neutral_minion_kill,gold_earned,total_damage_dealt_to_champions,result}",
+];
+const DETAIL_FIELDS: [&str; 7] = [
+    "data.game_detail.{id,created_at,game_length_second,game_map,game_type}",
+    "data.game_detail.teams[].{key}",
+    "data.game_detail.teams[].game_stat.{is_win}",
+    "data.game_detail.teams[].participants[].{champion_id,champion_name,position,team_key,items[],spells[],is_target}",
+    "data.game_detail.teams[].participants[].summoner.{game_name,tagline}",
+    "data.game_detail.teams[].participants[].rune.{primary_rune_id,secondary_page_id}",
+    "data.game_detail.teams[].participants[].stats.{kill,death,assist,champion_level,minion_kill,neutral_minion_kill,gold_earned,total_damage_dealt_to_champions,ward_place,op_score,op_score_rank,result}",
+];
 /// Champs demandés pour savoir à quels postes un champion est joué.
 const POSITION_FIELDS: [&str; 3] = [
     "data.summary.{id,is_rip,is_rotation,roles}",
@@ -319,6 +341,36 @@ impl Client {
         to_json_doc(&text).ok_or_else(|| UNREADABLE.to_string())
     }
 
+    /// Profil d'un joueur (niveau, rangs), ou l'erreur d'OP.GG (« Summoner not found »…).
+    pub async fn summoner_profile(&mut self, name: &str, tag: &str, region: &str) -> Result<Value, String> {
+        let args = json!({
+            "game_name": name, "tag_line": tag, "region": region, "lang": LANG, "client_app": APP,
+            "desired_output_fields": PROFILE_FIELDS,
+        });
+        let text = self.tool_text("lol_get_summoner_profile", args).await?;
+        to_json_doc(&text).ok_or_else(|| UNREADABLE.to_string())
+    }
+
+    /// Ses 20 dernières parties.
+    pub async fn summoner_matches(&mut self, name: &str, tag: &str, region: &str) -> Result<Value, String> {
+        let args = json!({
+            "game_name": name, "tag_line": tag, "region": region, "limit": 20, "lang": LANG, "client_app": APP,
+            "desired_output_fields": MATCH_FIELDS,
+        });
+        let text = self.tool_text("lol_list_summoner_matches", args).await?;
+        to_json_doc(&text).ok_or_else(|| UNREADABLE.to_string())
+    }
+
+    /// Une de ses parties en détail ; `riot_id` (Nom#TAG) : le joueur cherché, qu'OP.GG marque « is_target ».
+    pub async fn game_detail(&mut self, region: &str, id: &str, created_at: &str, riot_id: &str) -> Result<Value, String> {
+        let args = json!({
+            "region": region, "game_id": id, "created_at": created_at, "focus_riot_id": riot_id,
+            "lang": LANG, "client_app": APP, "desired_output_fields": DETAIL_FIELDS,
+        });
+        let text = self.tool_text("lol_get_summoner_game_detail", args).await?;
+        to_json_doc(&text).ok_or_else(|| UNREADABLE.to_string())
+    }
+
     /// Texte renvoyé par un outil OP.GG, ou son message d'erreur.
     async fn tool_text(&mut self, tool: &str, args: Value) -> Result<String, String> {
         let result = self.call_tool(tool, args).await?;
@@ -559,7 +611,7 @@ fn help_from(doc: &Value) -> Help {
     Help { counters: picks(&d["weak_counters"], "champion_id", "champion_name", "counter_win_rate"), synergies }
 }
 
-fn to_json_doc(text: &str) -> Option<Value> {
+pub(crate) fn to_json_doc(text: &str) -> Option<Value> {
     let trimmed = text.trim();
     // Si un jour OP.GG renvoie du vrai JSON, on le lit directement.
     if trimmed.starts_with('{') {

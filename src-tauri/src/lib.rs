@@ -2,6 +2,7 @@ mod history;
 mod lol;
 mod opgg;
 mod overlay;
+mod search;
 mod settings;
 
 use overlay::Overlay;
@@ -68,6 +69,26 @@ async fn match_details(
     champion_id: i64,
 ) -> Result<history::MatchDetails, String> {
     assets.match_details(game_id, champion_id).await
+}
+
+/// Salon d'un autre joueur, cherché par son Riot ID (Nom#TAG) et sa région.
+#[tauri::command]
+async fn search_player(
+    assets: tauri::State<'_, lol::Assets>,
+    search: tauri::State<'_, search::Search>,
+    riot_id: String,
+    region: String,
+) -> Result<search::Searched, String> {
+    search.find(&assets, &riot_id, &region).await
+}
+
+/// Une partie d'un joueur cherché, lue sur OP.GG, en détail.
+#[tauri::command]
+async fn searched_match_details(
+    search: tauri::State<'_, search::Search>,
+    game_id: i64,
+) -> Result<history::MatchDetails, String> {
+    search.match_details(game_id).await
 }
 
 /// Télécharge et installe la nouvelle version, puis relance l'app
@@ -158,13 +179,16 @@ pub fn run() {
         .manage(Opponent(Mutex::new(None)))
         .manage(PendingUpdate(Mutex::new(None)))
         .manage(assets.clone())
+        .manage(search::Search::new())
         .invoke_handler(tauri::generate_handler![
             get_state,
             set_opponent,
             get_settings,
             set_settings,
             install_update,
-            match_details
+            match_details,
+            search_player,
+            searched_match_details
         ])
         // Images lues dans le client : lcu://localhost/<numéro du champion>, lcu://localhost/item-<numéro de l'objet>,
         // lcu://localhost/splash-<numéro du skin> (illustration), lcu://localhost/perk-<numéro de la rune ou de la voie>,

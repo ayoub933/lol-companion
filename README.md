@@ -305,6 +305,18 @@ Fichiers, dans `%APPDATA%\com.perso.lol-companion\` :
 - `derniere-partie.json` : la dernière partie complète, telle que le client l'a donnée ;
 - `reglages.json` : tes réglages.
 
+## Rechercher un joueur
+
+La barre au milieu en haut : son Riot ID (`Pseudo#TAG`), sa région, puis Entrée. Le salon montre alors
+le sien à la place du tien (rang, forme, champions du moment, 10 dernières parties, détail d'une partie
+d'un clic) ; « Mon profil », Échap dans la barre, ou une sélection qui commence, te ramènent au tien.
+
+- Dans la région de ton client : l'app le lit dans le client, comme ton salon (avec le score carry).
+- Ailleurs, ou si le client ne le trouve pas (ou est fermé) : sur OP.GG. Le détail d'une partie donne
+  alors la note OP.GG (sur 10, ×10) et sa place à la place du score carry ; pas de score de vision.
+
+Ses LP gagnés ou perdus par partie ne sont pas connus : l'app ne les voit que pour tes parties.
+
 ## Zone de notification
 
 L'app a une icône près de l'horloge : clic gauche pour afficher la fenêtre, clic droit pour
@@ -320,6 +332,7 @@ Quand une partie est trouvée, une notification Windows le signale. L'app n'acce
 - `src-tauri/src/lol.rs` : lecture du lockfile, appels au client (LCU) et à la partie (port 2999),
   imports, aide au choix, rangs, enregistrement des parties.
 - `src-tauri/src/opgg.rs` : appel au service d'OP.GG et lecture de sa réponse.
+- `src-tauri/src/search.rs` : recherche d'un joueur (client ou OP.GG) pour afficher son salon.
 - `src-tauri/src/history.rs` : fichier d'historique et stats.
 - `src-tauri/src/settings.rs` : réglages.
 - `src-tauri/src/lib.rs` : fenêtre, icône près de l'horloge, mises à jour, boucle qui prévient
