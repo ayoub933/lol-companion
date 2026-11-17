@@ -278,7 +278,7 @@ function renderFigures(profile) {
   }
 }
 
-// Une barre par partie, de la plus récente à la plus ancienne : pleine = victoire, creuse = défaite.
+// Une barre par partie, de la plus ancienne (à gauche) à la plus récente (à droite) : pleine = victoire, creuse = défaite.
 function renderForm(profile) {
   const results = profile?.recentResults ?? [];
   for (const id of ["form-strip", "form-legend"]) $(id).hidden = !results.length;
@@ -289,9 +289,10 @@ function renderForm(profile) {
   $("form-aside").textContent = `${count} dernière${count > 1 ? "s" : ""} · ${number((wins / count) * 100, 0)} %`;
   $("form-strip").setAttribute(
     "aria-label",
-    `Tes ${count} dernières parties, de la plus récente à la plus ancienne : ${plural(wins, "victoire")} et ${plural(count - wins, "défaite")}`,
+    `Tes ${count} dernières parties, de la plus ancienne à la plus récente : ${plural(wins, "victoire")} et ${plural(count - wins, "défaite")}`,
   );
-  $("form-strip").replaceChildren(...results.map((win) => el("span", win ? "w" : "l")));
+  // Le profil les donne de la plus récente à la plus ancienne.
+  $("form-strip").replaceChildren(...[...results].reverse().map((win) => el("span", win ? "w" : "l")));
 }
 
 function renderMoment(profile) {

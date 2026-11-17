@@ -243,7 +243,7 @@ Les parties annulées (moins de 5 minutes) ne sont pas comptées.
 
 Au salon : l'illustration du skin de ta dernière partie (celle de base si l'app ne le connaît pas),
 ton rang (solo/duo et flexible), tes 20 dernières parties d'après le client avec ta forme du moment
-(victoire ou défaite, de la plus récente à la plus ancienne), tes champions du moment, l'historique
+(victoire ou défaite, de la plus ancienne à gauche à la plus récente à droite), tes champions du moment, l'historique
 de tes 10 dernières parties (la plus récente en grand avec toutes ses stats, puis une ligne par
 partie : résultat, file, KDA, CS, durée, quand ; victoire en vert-bleu, défaite en rouge-rose ;
 adversaire et poste pour les parties suivies par l'app), et tes stats par champion (KDA, CS par
