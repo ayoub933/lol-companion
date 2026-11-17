@@ -307,9 +307,11 @@ Fichiers, dans `%APPDATA%\com.perso.lol-companion\` :
 
 ## Rechercher un joueur
 
-La barre au milieu en haut : son Riot ID (`Pseudo#TAG`), sa région, puis Entrée. Le salon montre alors
-le sien à la place du tien (rang, forme, champions du moment, 10 dernières parties, détail d'une partie
-d'un clic) ; « Mon profil », Échap dans la barre, ou une sélection qui commence, te ramènent au tien.
+La barre au milieu en haut, sur tous les écrans : son Riot ID (`Pseudo#TAG`), sa région, puis Entrée.
+Son salon s'affiche alors à la place de l'écran du moment (rang, forme, champions du moment, 10 dernières
+parties, détail d'une partie d'un clic). Le bouton à gauche de la barre (« Mon profil », « La sélection »
+ou « La partie ») ou Échap dans la barre te ramènent à cet écran ; un nouvel écran (sélection qui commence,
+partie qui démarre ou se termine) aussi.
 
 - Dans la région de ton client : l'app le lit dans le client, comme ton salon (avec le score carry).
 - Ailleurs, ou si le client ne le trouve pas (ou est fermé) : sur OP.GG. Le détail d'une partie donne

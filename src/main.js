@@ -1185,6 +1185,13 @@ let lastState = null;
 // Numéro de la dernière recherche : une réponse arrivée après une autre recherche (ou un retour) est ignorée.
 let searchTurn = 0;
 const REGIONS = ["EUW", "EUNE", "NA", "KR", "BR", "LAN", "LAS", "OCE", "TR", "RU", "JP", "ME", "SEA", "TW", "VN"];
+// Écran du moment : salon, sélection des champions ou partie. La recherche ramène à celui d'où elle a été faite.
+const screenOf = (state) => (state?.game ? "game" : state?.runes ? "selection" : "lobby");
+const BACK = {
+  lobby: ["MON PROFIL", "Revenir à ton profil"],
+  selection: ["LA SÉLECTION", "Revenir à la sélection des champions"],
+  game: ["LA PARTIE", "Revenir à la partie"],
+};
 
 function setupSearch() {
   const region = $("search-region");
@@ -1225,7 +1232,7 @@ async function searchPlayer() {
   try {
     const found = await invoke("search_player", { riotId, region });
     if (turn !== searchTurn) return;
-    viewing = found;
+    viewing = { ...found, from: screenOf(lastState) };
     searchMessage("");
     closeMatch();
     if (lastState) render(lastState);
@@ -1258,12 +1265,14 @@ function render(state) {
   const found = state.clientFound;
   $("status-text").textContent = !found ? "CLIENT NON DÉTECTÉ" : (PHASES[state.phase] ?? upper(state.phase ?? "CLIENT CONNECTÉ"));
   $("status").className = `status ${!found ? "off" : state.game ? "game" : "on"}`;
-  // Recherche au salon seulement : une sélection ou une partie referme le joueur cherché.
-  const free = !state.runes && !state.game;
-  if (!free && viewing) leaveSearch(false);
-  $("search-input").disabled = !free;
-  $("search-input").placeholder = free ? "Rechercher un joueur : Pseudo#TAG puis Entrée" : "Recherche disponible au salon";
+  // Joueur cherché : à la place de l'écran du moment, quel qu'il soit. Un nouvel écran (sélection qui commence,
+  // partie qui démarre ou se termine) le referme.
+  const screen = screenOf(state);
+  if (viewing && viewing.from !== screen) leaveSearch(false);
+  const [back, title] = BACK[screen];
   $("search-back").hidden = !viewing;
+  $("search-back-text").textContent = back;
+  $("search-back").title = title;
   document.body.classList.toggle("searching", Boolean(viewing));
   $("hint").hidden = found || Boolean(viewing);
 
@@ -1273,15 +1282,15 @@ function render(state) {
   }
 
   // Salon : seulement hors sélection et hors partie (la place y sert à autre chose). Celui d'un joueur cherché
-  // s'affiche aussi client fermé (OP.GG), sans tes stats ni tes duels.
-  const lobby = free && (found || Boolean(viewing));
+  // s'affiche sur tous les écrans, même client fermé (OP.GG), sans tes stats ni tes duels.
+  const lobby = Boolean(viewing) || (found && screen === "lobby");
   if (!lobby && openGame) closeMatch();
   const shown = viewing ? { riotId: viewing.riotId, summonerLevel: viewing.level, profile: viewing.profile, searched: viewing } : state;
   renderPlayer(shown, lobby);
   renderHistory(shown, lobby);
   renderStats(state, lobby && !viewing);
-  renderSelection(state.runes);
-  renderGame(state.game);
+  renderSelection(viewing ? null : state.runes);
+  renderGame(viewing ? null : state.game);
   layout();
 }
 

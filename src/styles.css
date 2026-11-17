@@ -454,9 +454,6 @@ span.icon.slot {
 .search input::placeholder {
   color: var(--faint);
 }
-.search input:disabled {
-  cursor: not-allowed;
-}
 .search select {
   flex: none;
   height: 20px;
