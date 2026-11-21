@@ -830,6 +830,39 @@ function renderPicks(runes) {
   }
   if (!rows.length) rows.push(el("div", "note", "Choix cachés dans ce mode"));
   $("pick-enemies").replaceChildren(...rows);
+  renderDamage(runes);
+}
+
+// Dégâts des deux équipes : barre physique (ambre) / magique (violet), tanks, et un conseil quand une équipe n'a
+// presque qu'un type de dégâts. Les tiens survolés comptent : on voit l'effet d'un choix avant de le verrouiller.
+function renderDamage(runes) {
+  const { allyDamage: ours, enemyDamage: theirs } = runes;
+  const box = $("picks-damage");
+  box.hidden = !ours?.champions && !theirs?.champions;
+  if (box.hidden) return;
+  const side = (team, title, advice) => {
+    if (!team.champions) return el("div", "dmg empty", [el("span", "kicker", title), el("span", "muted small", "…")]);
+    const total = team.physical + team.magic || 1;
+    const ad = el("span", "ad");
+    ad.style.width = `${(team.physical / total) * 100}%`;
+    const tanks = team.tanks ? ` · ${team.tanks} tank${team.tanks > 1 ? "s" : ""}` : "";
+    return el("div", "dmg", [
+      el("span", "kicker", title),
+      el("span", "dbar", [ad]),
+      el("span", "dtext", `${number(team.physical)} AD · ${number(team.magic)} AP${tanks}`),
+      advice && el("span", "dtip", advice),
+    ]);
+  };
+  // Ton équipe : il manque un type de dégâts (dès 3 champions). En face : presque que de l'AD ou de l'AP.
+  const ourAdvice =
+    ours.champions >= 3 && ours.magic <= 1
+      ? "peu de dégâts magiques : un champion AP aiderait"
+      : ours.champions >= 3 && ours.physical <= 1
+        ? "peu de dégâts physiques : un champion AD aiderait"
+        : "";
+  const theirAdvice =
+    theirs.physical >= 3.5 ? "presque que de l'AD : l'armure sera rentable" : theirs.magic >= 3.5 ? "presque que de l'AP : la résistance magique sera rentable" : "";
+  box.replaceChildren(side(ours, "TON ÉQUIPE", ourAdvice), side(theirs, "EN FACE", theirAdvice));
 }
 
 // Avant de verrouiller : les 10 champions qui battent le mieux ton adversaire (podium or, argent, bronze
@@ -1175,6 +1208,16 @@ function buildBlocks(panel, build) {
   }
   if (build.enemyNote) foot.push(el("span", "gb-enemy", `En face : ${build.enemyNote}`));
   if (foot.length) blocks.push(el("div", "gb-foot", foot));
+  // Le conseil d'OP.GG contre ton adversaire de couloir (en anglais : OP.GG ne le traduit pas), sur 2 lignes au
+  // plus ; en entier au survol.
+  const tip = build.tip;
+  if (tip?.text) {
+    const style = PLAY_STYLES[tip.playStyle] ?? "";
+    const title = `ASTUCE CONTRE ${upper(tip.versus)}${style ? ` · ${upper(style)}` : ""}`;
+    const block = el("div", "gb-tip", [el("span", "gb-k", title), el("p", "", `« ${tip.text} »`)]);
+    block.title = tip.text;
+    blocks.push(block);
+  }
   return blocks;
 }
 

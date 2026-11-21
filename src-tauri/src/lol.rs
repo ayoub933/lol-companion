@@ -215,6 +215,41 @@ pub struct RuneImport {
     /// Champions de mêlée et à distance déjà choisis en face (ce qui donne les orbes rouges ou bleues).
     pub enemy_melee: usize,
     pub enemy_ranged: usize,
+    /// Dégâts de ton équipe (champions choisis ou survolés) et de celle d'en face.
+    pub ally_damage: TeamDamage,
+    pub enemy_damage: TeamDamage,
+}
+
+/// Dégâts d'une équipe en sélection, d'après la fiche de chaque champion dans le client : physiques ou magiques (un
+/// champion aux dégâts mixtes compte pour moitié de chaque côté), et ses tanks.
+#[derive(Serialize, Clone, Default, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamDamage {
+    pub physical: f64,
+    pub magic: f64,
+    pub tanks: u32,
+    /// Champions comptés.
+    pub champions: u32,
+}
+
+impl TeamDamage {
+    fn of<'a>(champs: impl IntoIterator<Item = &'a opgg::Champ>) -> Self {
+        let mut team = Self::default();
+        for champ in champs {
+            match champ.damage.as_str() {
+                "kPhysical" => team.physical += 1.0,
+                "kMagic" => team.magic += 1.0,
+                "kMixed" => {
+                    team.physical += 0.5;
+                    team.magic += 0.5;
+                }
+                _ => {}
+            }
+            team.tanks += u32::from(champ.roles.iter().any(|r| r == "tank"));
+            team.champions += 1;
+        }
+        team
+    }
 }
 
 /// Avant de verrouiller : les champions qui battent ton adversaire direct,
@@ -839,6 +874,18 @@ pub struct GameBuild {
     pub skills: Vec<String>,
     /// Ce que l'app voit en face, ex. « 4 AD · 1 AP · 2 tanks · soins : Soraka ».
     pub enemy_note: String,
+    /// Conseil d'OP.GG contre ton adversaire de couloir (vide sans duel).
+    pub tip: DuelTip,
+}
+
+/// Conseil d'OP.GG pour un duel : style de jeu ("defensive", "aggressive", "even") et astuce (en anglais : OP.GG ne
+/// la traduit pas).
+#[derive(Serialize, Clone, Default, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct DuelTip {
+    pub versus: String,
+    pub play_style: String,
+    pub text: String,
 }
 
 /// Le prochain achat : les objets de départ, ou un objet avec ce qu'il coûte encore et ses composants.
@@ -1018,6 +1065,8 @@ struct CurrentGame {
     build_for: Option<(i64, String, Option<i64>, Option<Form>)>,
     /// Adversaire du duel dont vient ce build ; vide : build de ton champion à ton poste.
     build_versus: String,
+    /// Conseil d'OP.GG contre ton adversaire de couloir.
+    tip: DuelTip,
     /// Forme de Kayn retenue en sélection (son build en partie suit).
     form: Option<Form>,
     /// Depuis quand chaque objet de ton inventaire y est.
@@ -1363,6 +1412,13 @@ impl Tracker {
         result.form = form.map_or("", Form::name).to_string();
         result.form_manual = forms && picked_form.is_some();
         (result.enemy_melee, result.enemy_ranged) = (melee, ranged);
+        // Dégâts des deux équipes (les tiens survolés compris : on voit l'effet d'un choix avant de le verrouiller).
+        let mut ally_champs = Vec::new();
+        for ally in allies.iter().filter(|a| a.champion_id > 0) {
+            ally_champs.push(self.champ(base, password, ally.champion_id).await);
+        }
+        result.ally_damage = TeamDamage::of(&ally_champs);
+        result.enemy_damage = TeamDamage::of(&enemies);
         result.laning = laning;
         result.skin_id = my_cell(&session).and_then(|p| p["selectedSkinId"].as_i64()).unwrap_or(0);
         result.allies = allies;
@@ -2203,6 +2259,7 @@ impl Tracker {
                     next: next_buy(&rows, &inventory, &self.assets, english),
                     skills: build.skill_max.clone(),
                     enemy_note: needs.note.clone(),
+                    tip: game.tip.clone(),
                 };
                 (rows, Some(details))
             }
@@ -2314,14 +2371,20 @@ impl Tracker {
         let me = self.champ(base, password, key.0).await;
         let mut build = None;
         let mut versus = String::new();
+        let mut tip = DuelTip::default();
         if let Some(id) = key.2 {
             let opponent = self.champ(base, password, id).await;
             match self.matchup(&me, &opponent, &key.1, key.3).await {
-                Ok(m) if m.analysis.runes.games >= MIN_MATCHUP_GAMES => {
-                    build = Some(m.analysis.build);
-                    versus = opponent.name;
+                Ok(m) => {
+                    // Le conseil vaut même quand le duel a trop peu de parties pour ses objets.
+                    tip = DuelTip { versus: opponent.name.clone(), play_style: m.play_style, text: m.tip };
+                    if m.analysis.runes.games >= MIN_MATCHUP_GAMES {
+                        build = Some(m.analysis.build);
+                        versus = opponent.name;
+                    } else {
+                        eprintln!("[panneau] {} vs {} : trop peu de parties, objets généraux", me.name, opponent.name);
+                    }
                 }
-                Ok(_) => eprintln!("[panneau] {} vs {} : trop peu de parties, objets généraux", me.name, opponent.name),
                 Err(e) => eprintln!("[panneau] duel introuvable ({e}), objets généraux"),
             }
         }
@@ -2360,6 +2423,7 @@ impl Tracker {
             game.build_for = Some(key);
             game.build = build.clone();
             game.build_versus = versus;
+            game.tip = tip;
         }
         build
     }

@@ -118,6 +118,13 @@ Les deux équipes s'affichent en colonnes : la tienne à gauche, dans l'ordre de
 (un champion seulement survolé est atténué, le tien est en bleu), les adversaires à droite, chacun en face
 de l'allié du même poste (dans les parties avec postes).
 
+Sous les colonnes, les dégâts de chaque équipe d'après la fiche de chaque champion dans le client : une barre
+physiques (ambre) / magiques (violet), « 2 AD · 2 AP · 1 tank » (un champion aux dégâts mixtes compte pour moitié
+de chaque côté). Tes alliés seulement survolés comptent : tu vois l'effet d'un choix avant de le verrouiller.
+Un conseil s'ajoute quand une équipe n'a presque qu'un type de dégâts : pour la tienne, dès 3 champions, « peu de
+dégâts magiques : un champion AP aiderait » (ou physiques) ; en face, « presque que de l'AD : l'armure sera
+rentable » (3,5 champions sur 5 au moins, ou de l'AP : la résistance magique).
+
 Le client ne donne pas les postes adverses : l'app les devine d'après OP.GG, avec la part des parties de
 chaque champion à chaque poste. Elle prend la répartition la plus probable de toute l'équipe, deux
 adversaires jamais au même poste (Elise jungle 78 % et Amumu jungle 70 % / support 26 % : Elise en jungle,
@@ -246,7 +253,7 @@ Une fois la partie lancée :
   grand au milieu, sur une case bleue si ton équipe est devant, orange si c'est l'équipe d'en face
   (grise à moins de 100 pièces d'écart) ;
 - ta carte : ton skin, KDA, CS, or en poche ;
-- en dessous, « TON BUILD » (la moitié de la colonne), le même build que le panneau sur le jeu mais en détail
+- en dessous, « TON BUILD » (un peu plus de la moitié de la colonne), le même build que le panneau sur le jeu mais en détail
   (au survol d'une icône : nom et prix) :
   - prochain achat : l'objet, son prix, ce qu'il te manque avec ton or en poche (ses composants que tu as
     déjà sont déduits, comme dans la boutique) et ses composants, ceux que tu as cochés ;
@@ -255,6 +262,8 @@ Une fois la partie lancée :
   - ensuite : les choix suivants avec leur % de victoires sur OP.GG ; contre eux : les objets contre l'équipe
     d'en face, avec la raison ;
   - la montée des compétences, et ce que l'app voit en face (« 4 AD · 1 AP · 3 tanks · soins : Dr. Mundo ») ;
+  - l'astuce d'OP.GG contre ton adversaire de couloir de la partie, avec le style de jeu conseillé (« joue
+    prudemment »), sur 2 lignes (en entier au survol ; en anglais, OP.GG ne la traduit pas) ;
 - le face-à-face, couloir par couloir : niveau, KDA et rang de chacun, et au milieu l'écart d'or
   du couloir, sur une case aux mêmes couleurs. Sans postes (ARAM...), les deux équipes côte à côte.
   « Rang masqué » : joueur en mode streamer.

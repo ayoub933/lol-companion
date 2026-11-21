@@ -2243,6 +2243,39 @@ body.board #help.grow .podium {
 .runes h2 {
   margin-bottom: 6px;
 }
+/* Sélection : dégâts des deux équipes, sous les colonnes. Barre ambre (physiques) / violette (magiques). */
+.damage {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+  font-weight: 500;
+  font-size: 12px;
+  line-height: 1.3;
+}
+.dmg {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dbar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  background: #a98bff;
+  overflow: hidden;
+}
+.dbar .ad {
+  background: #f0a35e;
+}
+.dtext {
+  color: var(--text-2);
+}
+.dtip {
+  color: var(--accent-light);
+}
+
 /* Kayn : sa forme, rouge (Rhaast) ou bleue (l'assassin), qui décide de ses runes et de son build. */
 .forms {
   display: flex;
@@ -2574,9 +2607,9 @@ body.board .me-hero {
 .card.me .cells {
   margin: 0 12px;
 }
-/* En partie : ta carte et ton build se partagent la colonne (moitié chacun). */
+/* En partie : ta carte et ton build se partagent la colonne (un peu moins de la moitié pour ta carte). */
 body.board[data-view="game"] #me-card:not([hidden]) {
-  flex: 1 1 0;
+  flex: 0.85 1 0;
   min-height: 0;
 }
 
@@ -2584,7 +2617,7 @@ body.board[data-view="game"] #me-card:not([hidden]) {
 .gb {
   display: flex;
   flex-direction: column;
-  gap: 11px;
+  gap: 9px;
   font-weight: 500;
   font-size: 13px;
   line-height: 1.3;
@@ -2779,6 +2812,22 @@ body.board[data-view="game"] #me-card:not([hidden]) {
   width: 22px;
   height: 22px;
   font-size: 13px;
+}
+/* Conseil d'OP.GG contre ton adversaire : 2 lignes au plus (en entier au survol). */
+.gb-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.gb-tip p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* Face-à-face : en tableau de bord, les cinq couloirs se partagent la hauteur du bloc. */
