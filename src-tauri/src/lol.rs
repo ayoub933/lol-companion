@@ -1819,7 +1819,8 @@ impl Tracker {
             alias: info["alias"].as_str().unwrap_or_default().to_string(),
             damage: info["tacticalInfo"]["damageType"].as_str().unwrap_or_default().to_string(),
             roles: info["roles"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect(),
-            ranged: info["tacticalInfo"]["attackType"] == "kRanged",
+            // "melee" ou "ranged" (vérifié sur les fichiers du client repris par CommunityDragon).
+            ranged: info["tacticalInfo"]["attackType"] == "ranged",
         };
         self.champs.insert(id, champ.clone());
         champ
@@ -3209,22 +3210,24 @@ fn assign_roles(ids: &[i64], roles: &HashMap<i64, Vec<(String, f64)>>, fixed: Op
 /// Kayn : ce qui va avec sa forme dans un duel OP.GG. Runes : voie principale Précision (Conquérant) pour le rouge,
 /// une autre (Moisson noire, Grêle de lames…) pour le bleu. Combinaison d'objets principaux : rouge si elle compte
 /// plus d'objets de combattant (santé ou armure) que d'objets de létalité (sans santé ni armure), bleue s'il y en a
-/// moins. Autre objet : il va s'il apparaît dans des combinaisons de sa forme ; sinon, s'il n'apparaît pas dans
-/// celles de l'autre et n'est pas un objet de l'autre forme (combattant pour le bleu, létalité seule pour le rouge).
+/// moins. Autre objet : s'il apparaît dans des combinaisons, il va si les parties de celles de sa forme font au
+/// moins le quart de celles de l'autre (Cyclosabre voltaïque va aux deux, Danse de la mort au rouge seulement) ;
+/// sinon, s'il n'est pas un objet de l'autre forme (combattant pour le bleu, létalité seule pour le rouge).
 struct KaynStyle {
     form: Form,
     /// Pour chaque objet du duel : +1 combattant, −1 létalité seule, 0 ni l'un ni l'autre.
     sides: HashMap<i64, i32>,
-    /// Objets des combinaisons de sa forme, et de celles de l'autre.
-    mine: HashSet<i64>,
-    theirs: HashSet<i64>,
+    /// Parties des combinaisons de sa forme, et de celles de l'autre, où se trouve chaque objet.
+    mine: HashMap<i64, u64>,
+    theirs: HashMap<i64, u64>,
 }
 
 impl KaynStyle {
     fn new(form: Form, doc: &Value, assets: &Assets) -> Self {
         let ids = |e: &Value| -> Vec<i64> { e["ids"].as_array().into_iter().flatten().filter_map(Value::as_i64).collect() };
         let d = &doc["data"];
-        let combos: Vec<Vec<i64>> = d["core_items"].as_array().into_iter().flatten().map(ids).collect();
+        let entries: Vec<&Value> = d["core_items"].as_array().into_iter().flatten().collect();
+        let combos: Vec<Vec<i64>> = entries.iter().map(|e| ids(e)).collect();
         let singles = d["single_items"].as_array().into_iter().flatten().flat_map(|s| s["items"].as_array().into_iter().flatten());
         let all: Vec<i64> = combos.iter().flatten().copied().chain(singles.flat_map(ids)).collect();
         let side = |id: i64| match (assets.has_tag(id, "Health") || assets.has_tag(id, "Armor"), assets.has_tag(id, "ArmorPenetration")) {
@@ -3233,12 +3236,16 @@ impl KaynStyle {
             (false, false) => 0,
         };
         let sides: HashMap<i64, i32> = all.into_iter().map(|id| (id, side(id))).collect();
-        let (mut mine, mut theirs) = (HashSet::new(), HashSet::new());
-        for combo in &combos {
-            match combo_form(combo, &sides) {
-                Some(f) if f == form => mine.extend(combo.iter().copied()),
-                Some(_) => theirs.extend(combo.iter().copied()),
-                None => {}
+        let (mut mine, mut theirs) = (HashMap::new(), HashMap::new());
+        for (entry, combo) in entries.iter().zip(&combos) {
+            let plays = entry["play"].as_u64().unwrap_or(0);
+            let counts = match combo_form(combo, &sides) {
+                Some(f) if f == form => &mut mine,
+                Some(_) => &mut theirs,
+                None => continue,
+            };
+            for id in combo {
+                *counts.entry(*id).or_insert(0) += plays;
             }
         }
         Self { form, sides, mine, theirs }
@@ -3253,8 +3260,9 @@ impl KaynStyle {
     }
 
     fn item(&self, id: i64) -> bool {
-        if self.mine.contains(&id) || self.theirs.contains(&id) {
-            return self.mine.contains(&id);
+        let (mine, theirs) = (self.mine.get(&id).copied().unwrap_or(0), self.theirs.get(&id).copied().unwrap_or(0));
+        if mine + theirs > 0 {
+            return mine * 4 >= theirs;
         }
         let side = self.sides.get(&id).copied().unwrap_or(0);
         match self.form {

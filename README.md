@@ -170,7 +170,8 @@ joués pour ce champion et ton poste, puis :
   et le conseil d'OP.GG (en anglais, OP.GG ne le traduit pas). Moins de 50 parties pour la page de
   runes du duel : les runes générales restent.
 - Objets du duel (départ, objets principaux, bottes) : le meilleur % de victoires parmi les choix
-  joués au moins 100 fois (en dessous, un % élevé peut être du hasard), sinon le plus joué.
+  joués au moins 100 fois (en dessous, un % élevé peut être du hasard), sinon le plus joué. L'autre choix
+  du 1er et du 2e objet n'est jamais un des 3 objets principaux.
 - Si l'app a déjà enregistré des parties de ce duel, ton bilan s'affiche (« 2 V – 1 D »).
 
 **Kayn : forme rouge ou bleue.** L'analyse générale d'OP.GG mélange ses deux formes (sa page la plus jouée
@@ -180,8 +181,10 @@ données du duel, triées par forme :
   pour le bleu ;
 - objets principaux : une combinaison est rouge si elle compte plus d'objets de combattant (santé ou armure :
   Couperet noir, Danse de la mort…) que d'objets de létalité (Hubris, Cyclosabre voltaïque…), bleue sinon,
-  d'après les catégories de la boutique du client. Autres choix : un objet des combinaisons de l'autre forme
-  est écarté, comme un objet de combattant pour le bleu ou de létalité seule pour le rouge ;
+  d'après les catégories de la boutique du client. Autres choix : un objet présent dans les combinaisons va
+  avec une forme si ses parties dans les combinaisons de cette forme font au moins le quart de celles de l'autre
+  (Cyclosabre voltaïque va aux deux, Danse de la mort au rouge seulement) ; un objet absent des combinaisons
+  est écarté s'il est de l'autre forme (combattant pour le bleu, létalité seule pour le rouge) ;
 - tant que ton adversaire direct n'est pas connu (ou si son duel a trop peu de parties), le duel de Kayn
   contre Lee Sin, un jungler très joué, sert de référence.
 

@@ -573,7 +573,8 @@ pub fn matchup_from(doc: &Value, opponent_id: i64, style: Option<&Style>) -> Opt
         let free = rank["items"].as_array()?.iter().filter(|e| fits(e) && e["ids"][0].as_i64().is_some_and(|id| !taken.contains(&id)));
         items_of(best(free)?).into_iter().next()
     };
-    let mut taken: Vec<i64> = build.core.iter().take(2).map(|i| i.id).collect();
+    // Jamais un des 3 objets principaux (le 3e n'est pas un autre choix du 2e).
+    let mut taken: Vec<i64> = build.core.iter().map(|i| i.id).collect();
     build.first_alt = other(1, &taken);
     taken.extend(build.first_alt.as_ref().map(|i| i.id));
     build.second_alt = other(2, &taken);
