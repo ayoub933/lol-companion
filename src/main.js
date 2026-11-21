@@ -1312,6 +1312,23 @@ function metMark(player) {
   return node;
 }
 
+// Smurf probable : hexagone rouge avec un loup (masque). Dessin fixe (aucune donnée extérieure).
+const MASK = `<svg viewBox="0 0 24 24" aria-hidden="true">
+  <polygon class="hex" points="12,1.5 21.6,7 21.6,17 12,22.5 2.4,17 2.4,7"/>
+  <path class="mask" d="M4.6 10.2c2.2-1.7 5-1.9 7.4-.5 2.4-1.4 5.2-1.2 7.4.5.5 2.6-.8 4.9-3 5.2-1.8.3-3-.9-4.4-.9s-2.6 1.2-4.4.9c-2.2-.3-3.5-2.6-3-5.2z"/>
+  <ellipse class="eye" cx="8.6" cy="11.6" rx="1.6" ry="1.1"/><ellipse class="eye" cx="15.4" cy="11.6" rx="1.6" ry="1.1"/>
+</svg>`;
+
+function smurfMark(player) {
+  if (!player.smurf || !player.rank) return null;
+  const { wins, losses } = player.rank;
+  const node = el("span", "smurf");
+  node.innerHTML = MASK;
+  const rate = Math.round((wins / Math.max(wins + losses, 1)) * 100);
+  node.title = `Smurf probable : ${wins} V – ${losses} D (${rate} %) en classée cette saison, peu de parties pour un % aussi haut`;
+  return node;
+}
+
 function faceCell(player, ready, enemy, opponent, mates) {
   const side = enemy ? " enemy" : "";
   if (!player) return el("div", `fcell${side} empty`, [champIcon(0, ""), el("div", "txt", [el("span", "fname", "?")])]);
@@ -1323,6 +1340,7 @@ function faceCell(player, ready, enemy, opponent, mates) {
         el("span", "fname", `${upper(player.champion)}${player.me ? " · TOI" : ""}`),
         groupMark(player, mates),
         metMark(player),
+        smurfMark(player),
       ]),
       ready && el("span", "line", `niv. ${player.level} · ${player.kills}/${player.deaths}/${player.assists}`),
       // Sur la ligne du rang, pour que les 5 couloirs tiennent toujours dans le bloc.

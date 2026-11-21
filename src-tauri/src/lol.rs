@@ -937,6 +937,8 @@ pub struct Player {
     /// Sa série en cours et son expérience sur son champion, d'après ses dernières parties ; None tant qu'elles
     /// ne sont pas lues (ou s'il est en mode streamer).
     pub recent: Option<RecentForm>,
+    /// Smurf probable, d'après son rang dans la file de la partie (voir `smurf_like`).
+    pub smurf: bool,
 }
 
 /// Ce que ses dernières parties disent d'un joueur (lues pendant le chargement, comme pour les duos).
@@ -2125,6 +2127,7 @@ impl Tracker {
                 assists: score("assists"),
                 me: std::ptr::eq(player, p),
                 rank_hidden: rank.is_none() && hidden(id),
+                smurf: rank.as_ref().is_some_and(smurf_like),
                 rank,
                 position: player["position"].as_str().unwrap_or_default().to_string(),
                 items_value: self.assets.items_value(&inventory(player)),
@@ -2412,6 +2415,7 @@ impl Tracker {
                     champion_id,
                     me: is_me,
                     rank_hidden: puuid.is_none(),
+                    smurf: rank.as_ref().is_some_and(smurf_like),
                     rank,
                     position: lane.to_string(),
                     riot_id,
@@ -2991,6 +2995,15 @@ pub fn rank_in(stats: &Value, queue: &str) -> Rank {
         wins: entry["wins"].as_u64().unwrap_or(0),
         losses: entry["losses"].as_u64().unwrap_or(0),
     }
+}
+
+/// Smurf probable (compte d'un joueur plus fort que son rang) : peu de parties classées cette saison dans la file de
+/// la partie (10 à 100), au moins 65 % de victoires, et trop pour être de la chance : victoires − défaites ≥ 2 × √parties
+/// (plus de 2 écarts-types au-dessus de 50 %). Ex. 15 V – 5 D : oui ; 14 V – 6 D : non ; 130 V – 70 D : non (trop de parties).
+fn smurf_like(rank: &Rank) -> bool {
+    let games = rank.wins + rank.losses;
+    let (wins, losses, total) = (rank.wins as f64, rank.losses as f64, games as f64);
+    (10..=100).contains(&games) && wins >= 0.65 * total && wins - losses >= 2.0 * total.sqrt()
 }
 
 /// Position d'un rang sur l'échelle classée, en LP depuis Fer IV 0 LP : 400 par rang, 100 par division ;

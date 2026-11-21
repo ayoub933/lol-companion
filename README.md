@@ -225,6 +225,12 @@ pour les duos ; toutes files, sans les parties annulées) :
 Elle arrive pendant l'écran de chargement, au fur et à mesure (2 joueurs par seconde). Rien pour un joueur en
 mode streamer.
 
+**Smurf probable** : un hexagone rouge avec un masque à côté du nom (au survol, son bilan). D'après son rang dans
+la file de la partie (solo/duo, flexible pour une flexible) : peu de parties classées cette saison (10 à 100),
+au moins 65 % de victoires, et trop pour être de la chance (victoires − défaites ≥ 2 × √parties, soit plus de
+2 écarts-types au-dessus de 50 %). Exemples : 15 V – 5 D, oui ; 14 V – 6 D, non (peut être de la chance) ;
+130 V – 70 D, non (beaucoup de parties : juste un bon joueur).
+
 Le terminal note les parties lues, celles jouées ensemble et les joueurs croisés
 (« [groupes] partie … : … ; ensemble dans la même équipe : Jinx + Nami 3 ; déjà croisés : … »).
 
