@@ -48,6 +48,10 @@ const SPLASH_CACHE: usize = 6;
 const GRIEVOUS: [i64; 7] = [3123, 3033, 6609, 3916, 3165, 3076, 3075];
 /// Champions aux gros soins : contre eux, un objet à Blessures graves.
 const HEALERS: [i64; 20] = [16, 350, 266, 8, 517, 36, 19, 50, 233, 420, 267, 37, 902, 9, 2, 106, 48, 147, 57, 154];
+/// Fichiers du client en anglais (objets, runes, sorts), repris par CommunityDragon : réglage « noms en anglais ».
+const ENGLISH_DATA: &str = "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1";
+/// Noms anglais pas encore lus (CommunityDragon injoignable) : nouvel essai au plus une fois par minute.
+const ENGLISH_RETRY: Duration = Duration::from_secs(60);
 
 /// Ce que l'interface affiche. Envoyé au front à chaque changement.
 #[derive(Serialize, Clone, Default, PartialEq, Debug)]
@@ -157,6 +161,9 @@ pub struct RuneImport {
     pub page_note: Option<String>,
     /// Sorts mis dans le client, sur D puis sur F (vide si l'app ne les a pas changés).
     pub spells_applied: Vec<String>,
+    /// Leurs numéros (pour leurs noms anglais).
+    #[serde(skip)]
+    pub applied_spells: Vec<i64>,
     /// Pourquoi les sorts n'ont pas été changés.
     pub spells_note: Option<String>,
     /// Aide au choix, tant que ton champion n'est pas verrouillé.
@@ -247,6 +254,18 @@ pub struct Assets {
     loading: Arc<tokio::sync::Mutex<()>>,
     /// Pour Internet (CommunityDragon), avec la vérification normale des certificats.
     web: reqwest::Client,
+    /// Noms anglais des objets, runes et sorts (réglage « noms en anglais »), lus une fois sur CommunityDragon.
+    english: Arc<Mutex<English>>,
+}
+
+/// Noms anglais par numéro, et quand ils ont été demandés.
+#[derive(Default)]
+struct English {
+    items: HashMap<i64, String>,
+    /// Runes et voies de runes.
+    perks: HashMap<i64, String>,
+    spells: HashMap<i64, String>,
+    asked: Option<Instant>,
 }
 
 /// Rangs dont le client a un emblème (images/ranked-emblem/emblem-<rang>.png).
@@ -299,7 +318,92 @@ impl Assets {
             gate: Arc::new(tokio::sync::Semaphore::new(6)),
             loading: Arc::default(),
             web,
+            english: Arc::default(),
         }
+    }
+
+    /// Réglage « noms en anglais » : runes, objets et sorts de la sélection renommés d'après leurs numéros. Les noms
+    /// sont demandés à CommunityDragon la première fois, sans attendre : d'ici là (ou s'il ne répond pas), ceux du
+    /// client et d'OP.GG restent.
+    pub fn in_english(&self, runes: &mut RuneImport) {
+        self.fetch_english();
+        let english = self.english.lock().unwrap();
+        let rename = |names: &HashMap<i64, String>, id: i64, name: &mut String| {
+            if let Some(found) = names.get(&id) {
+                name.clone_from(found);
+            }
+        };
+        rename(&english.perks, runes.keystone_id, &mut runes.keystone);
+        rename(&english.perks, runes.primary_id, &mut runes.primary);
+        rename(&english.perks, runes.secondary_id, &mut runes.secondary);
+        // Sorts : seulement si tous sont connus en anglais (pas de « Flash + Embrasement »).
+        let spells = |ids: &[i64]| -> Option<Vec<String>> { ids.iter().map(|id| english.spells.get(id).cloned()).collect() };
+        if let Some(build) = &mut runes.build {
+            let items = build.starter.iter_mut().chain(&mut build.core).chain(&mut build.boots).chain(&mut build.options);
+            for item in items.chain(&mut build.first_alt).chain(&mut build.second_alt) {
+                rename(&english.items, item.id, &mut item.name);
+            }
+            if let Some(names) = spells(&build.spells) {
+                runes.spells = names;
+            }
+        }
+        if let Some(names) = spells(&runes.applied_spells) {
+            runes.spells_applied = names;
+        }
+    }
+
+    /// Demande les noms anglais à CommunityDragon sans attendre la réponse : une fois, ou de nouveau une minute
+    /// après un échec.
+    fn fetch_english(&self) {
+        {
+            let mut english = self.english.lock().unwrap();
+            let complete = !english.items.is_empty() && !english.perks.is_empty() && !english.spells.is_empty();
+            if complete || english.asked.is_some_and(|at| at.elapsed() < ENGLISH_RETRY) {
+                return;
+            }
+            english.asked = Some(Instant::now());
+        }
+        let assets = self.clone();
+        tauri::async_runtime::spawn(async move {
+            // Adresse remplaçable pour les tests (faux CommunityDragon).
+            let base = std::env::var("ENGLISH_DATA_URL").unwrap_or_else(|_| ENGLISH_DATA.to_string());
+            let items = assets.english_file(&base, "items.json").await;
+            let mut perks = assets.english_file(&base, "perks.json").await;
+            perks.extend(assets.english_file(&base, "perkstyles.json").await);
+            let spells = assets.english_file(&base, "summoner-spells.json").await;
+            eprintln!("[noms] noms anglais lus : {} objets, {} runes, {} sorts", items.len(), perks.len(), spells.len());
+            // Ce qui a été lu sert tout de suite ; une liste manquante sera redemandée.
+            let mut guard = assets.english.lock().unwrap();
+            let english = &mut *guard;
+            for (names, found) in [(&mut english.items, items), (&mut english.perks, perks), (&mut english.spells, spells)] {
+                if !found.is_empty() {
+                    *names = found;
+                }
+            }
+        });
+    }
+
+    /// Numéro → nom, d'un fichier de CommunityDragon (une liste, ou { "styles": [...] } pour les voies de runes) ;
+    /// vide s'il ne répond pas.
+    async fn english_file(&self, base: &str, file: &str) -> HashMap<i64, String> {
+        let doc = match self.web.get(format!("{base}/{file}")).timeout(Duration::from_secs(20)).send().await {
+            Ok(resp) if resp.status().is_success() => resp.json::<Value>().await.unwrap_or(Value::Null),
+            Ok(resp) => {
+                eprintln!("[noms] {file} : réponse {}", resp.status());
+                Value::Null
+            }
+            Err(e) => {
+                eprintln!("[noms] {file} injoignable : {e}");
+                Value::Null
+            }
+        };
+        let entries = doc.as_array().or(doc["styles"].as_array()).into_iter().flatten();
+        // Quelques objets spéciaux ont un nom mis en forme (« <rarityLegendary>… ») : laissés de côté.
+        let named = |e: &Value| {
+            let name = e["name"].as_str().filter(|n| !n.is_empty() && !n.contains('<'))?;
+            Some((e["id"].as_i64()?, name.to_string()))
+        };
+        entries.filter_map(named).collect()
     }
 
     /// Une partie de ton historique en détail (les 10 joueurs et leur rang solo/duo actuel), lue dans le
@@ -964,7 +1068,12 @@ impl Tracker {
         self.last_phase = Some(phase.clone());
 
         let runes = if phase == "ChampSelect" {
-            Some(self.champ_select_runes(&base, &password, manual).await)
+            let mut runes = self.champ_select_runes(&base, &password, manual).await;
+            // Seulement à l'affichage : un changement du réglage se voit tout de suite.
+            if settings.english_names {
+                self.assets.in_english(&mut runes);
+            }
+            Some(runes)
         } else {
             self.rune_import = None;
             self.rune_preview = None;
@@ -1431,6 +1540,7 @@ impl Tracker {
                 match self.apply_spells(base, password, &build.spells).await {
                     Ok(spells) => {
                         result.spells_applied = self.spell_names(base, password, &spells).await;
+                        result.applied_spells = spells.to_vec();
                     }
                     Err(note) => {
                         eprintln!("[sorts] {note}");

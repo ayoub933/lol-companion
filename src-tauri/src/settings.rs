@@ -25,6 +25,8 @@ pub struct Settings {
     pub build_overlay_always: bool,
     /// En partie, en tenant Tab : écarts d'or à côté du tableau des scores.
     pub show_gold_overlay: bool,
+    /// true = noms des objets, runes et sorts en anglais ; false = ceux du client, dans sa langue.
+    pub english_names: bool,
 }
 
 impl Default for Settings {
@@ -42,6 +44,7 @@ impl Default for Settings {
             show_build_overlay: true,
             build_overlay_always: false,
             show_gold_overlay: true,
+            english_names: false,
         }
     }
 }

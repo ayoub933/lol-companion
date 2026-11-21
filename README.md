@@ -99,10 +99,15 @@ Windows » : c'est l'exe de développement qui serait lancé au démarrage.
 - Sets d'objets : un seul, remplacé à chaque partie, ou un par champion.
 - En partie : le panneau des objets à acheter sur le bord gauche du jeu, en tenant Tab ou toute la
   partie, et les écarts d'or à côté du tableau des scores en tenant Tab (chacun peut être coupé).
+- Noms des objets, runes et sorts (dans la sélection) : comme le client, ou en anglais. Les noms anglais
+  sont ceux des fichiers du client en anglais, pris sur CommunityDragon (raw.communitydragon.org) la
+  première fois ; s'il ne répond pas, les noms du client restent et l'app réessaie une minute plus tard.
+  Les champions gardent le nom du client.
 - Lancer avec Windows (l'app démarre cachée près de l'horloge), afficher la fenêtre
   quand le client LoL s'ouvre, notification quand une partie est trouvée, et ce que fait la croix.
 
-Un réglage changé en pleine sélection s'applique au prochain import (nouveau champion ou adversaire).
+Un réglage d'import changé en pleine sélection s'applique au prochain import (nouveau champion ou
+adversaire) ; celui des noms, tout de suite.
 
 ## Sélection des champions
 
