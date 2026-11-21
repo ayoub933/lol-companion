@@ -250,9 +250,17 @@ function renderFigures(profile) {
   }
   const solo = profile.solo;
   const soloGames = solo ? solo.wins + solo.losses : 0;
-  if (soloGames) {
+  $("solo-rate-sub").title = solo?.recordFromOpgg
+    ? "Le client ne donne pas les défaites des autres joueurs : victoires et défaites d'OP.GG (parfois en retard de quelques parties)."
+    : "";
+  if (solo?.lossesHidden) {
+    // Défaites cachées par le client, et OP.GG n'a pas répondu : ses victoires seulement.
+    $("solo-rate").replaceChildren(whole(solo.wins), el("small", "", " V"));
+    $("solo-rate-sub").textContent = "victoires en solo/duo · défaites inconnues";
+  } else if (soloGames) {
     $("solo-rate").replaceChildren(number((solo.wins / soloGames) * 100, 0), el("small", "", " %"));
-    $("solo-rate-sub").textContent = `victoires en solo/duo · ${plural(soloGames, "partie")}`;
+    const source = solo.recordFromOpgg ? " (OP.GG)" : "";
+    $("solo-rate-sub").textContent = `victoires en solo/duo · ${plural(soloGames, "partie")}${source}`;
   } else {
     $("solo-rate").replaceChildren(el("span", "faint", "—"));
     $("solo-rate-sub").textContent = "solo/duo : aucune partie classée";
@@ -1424,12 +1432,17 @@ const MASK = `<svg viewBox="0 0 24 24" aria-hidden="true">
 
 function smurfMark(player) {
   if (!player.smurf || !player.rank) return null;
-  const { wins, losses } = player.rank;
   const node = el("span", "smurf");
   node.innerHTML = MASK;
-  const rate = Math.round((wins / Math.max(wins + losses, 1)) * 100);
   const level = player.accountLevel ? `, compte niveau ${player.accountLevel}` : "";
-  node.title = `Smurf probable : ${wins} V – ${losses} D (${rate} %) en classée cette saison${level}`;
+  const bilan = (wins, losses) => `${wins} V – ${losses} D (${Math.round((wins / Math.max(wins + losses, 1)) * 100)} %)`;
+  const { rank, recent } = player;
+  // Défaites de la saison cachées par le client : le bilan de ses dernières classées.
+  node.title =
+    rank.lossesHidden && recent
+      ? `Smurf probable : ${bilan(recent.rankedWins, recent.rankedLosses)} sur ses dernières classées, ` +
+        `${rank.wins} victoires cette saison${level}`
+      : `Smurf probable : ${bilan(rank.wins, rank.losses)} en classée cette saison${level}`;
   return node;
 }
 

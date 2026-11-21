@@ -57,7 +57,7 @@ impl Search {
         };
         if let Some(found) = by_account {
             eprintln!("[recherche] {} ({region}) : lu dans le client, {} parties", found.riot_id, found.profile.matches.len());
-            return Ok(found);
+            return Ok(self.with_records(found).await);
         }
         let (name, tag) = riot_id
             .rsplit_once('#')
@@ -67,7 +67,7 @@ impl Search {
         if in_client {
             if let Some(found) = from_client(assets, Who::Name(name, tag), riot_id, &region).await {
                 eprintln!("[recherche] {name}#{tag} ({region}) : lu dans le client, {} parties", found.profile.matches.len());
-                return Ok(found);
+                return Ok(self.with_records(found).await);
             }
             eprintln!("[recherche] {name}#{tag} ({region}) : introuvable dans le client, essai sur OP.GG");
         }
@@ -82,6 +82,23 @@ impl Search {
         eprintln!("[recherche] {} ({region}) : lu sur OP.GG, {} parties", found.riot_id, found.profile.matches.len());
         self.games.lock().unwrap().extend(games);
         Ok(found)
+    }
+
+    /// Le client met à 0 les défaites des autres joueurs : leurs victoires et défaites prises alors sur OP.GG.
+    async fn with_records(&self, mut found: Searched) -> Searched {
+        if !found.profile.solo.iter().chain(&found.profile.flex).any(|r| r.losses_hidden) {
+            return found;
+        }
+        let riot_id = found.riot_id.clone();
+        let Some((name, tag)) = riot_id.rsplit_once('#') else {
+            return found;
+        };
+        let doc = self.opgg.lock().await.summoner_profile(name, tag, &found.region).await;
+        match doc {
+            Ok(doc) => fill_records(&mut found.profile, &doc),
+            Err(e) => eprintln!("[recherche] {riot_id} : défaites cachées par le client ; {e}"),
+        }
+        found
     }
 
     /// Une partie lue sur OP.GG, en détail : les 10 joueurs et leur note OP.GG.
@@ -231,6 +248,24 @@ fn from_opgg(profile: &Value, matches: &Value, region: &str, asked: &str) -> (Se
     (found, games)
 }
 
+/// Victoires et défaites d'OP.GG pour les files dont le client cache les défaites (il les met à 0 pour les autres
+/// joueurs) : ses chiffres à lui, parfois en retard de quelques parties ; rang et LP restent ceux du client.
+pub fn fill_records(profile: &mut lol::Profile, doc: &Value) {
+    let stats: Vec<&Value> = doc["data"]["summoner"]["league_stats"].as_array().into_iter().flatten().collect();
+    for (rank, game_type) in [(&mut profile.solo, "SOLORANKED"), (&mut profile.flex, "FLEXRANKED")] {
+        let Some(rank) = rank.as_mut().filter(|rank| rank.losses_hidden) else {
+            continue;
+        };
+        let found = stats.iter().find(|s| s["game_type"] == game_type);
+        let record = found.and_then(|s| Some((s["win"].as_u64()?, s["lose"].as_u64()?)));
+        if let Some((wins, losses)) = record.filter(|(wins, losses)| wins + losses > 0) {
+            (rank.wins, rank.losses) = (wins, losses);
+            rank.losses_hidden = false;
+            rank.record_from_opgg = true;
+        }
+    }
+}
+
 /// Rang d'une file dans le profil OP.GG (« DIAMOND », division 4, 11 LP) ; non classé sans rang.
 fn rank_of(stats: &Value) -> lol::Rank {
     let info = &stats["tier_info"];
@@ -252,6 +287,7 @@ fn rank_of(stats: &Value) -> lol::Rank {
         lp: info["lp"].as_i64().unwrap_or(0),
         wins: stats["win"].as_u64().unwrap_or(0),
         losses: stats["lose"].as_u64().unwrap_or(0),
+        ..Default::default()
     }
 }
 

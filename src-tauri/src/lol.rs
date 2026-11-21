@@ -124,6 +124,12 @@ pub struct Rank {
     pub lp: i64,
     pub wins: u64,
     pub losses: u64,
+    /// true : le client n'a pas donné les défaites (il les met à 0 pour les autres joueurs) ; `wins` est juste,
+    /// `losses` ne veut rien dire.
+    pub losses_hidden: bool,
+    /// Victoires et défaites prises chez OP.GG, faute de les avoir dans le client (rang et LP restent ceux du
+    /// client) : parfois en retard de quelques parties.
+    pub record_from_opgg: bool,
 }
 
 #[derive(Serialize, Clone, Default, PartialEq, Debug)]
@@ -1055,6 +1061,10 @@ pub struct RecentForm {
     pub champion_wins: u32,
     /// OTP (« one-trick ») : il joue surtout ce champion, au moins 60 % de ses dernières parties (10 lues au moins).
     pub otp: bool,
+    /// Victoires et défaites de ses dernières parties dans la file classée de la partie (pour le smurf quand le
+    /// client cache ses défaites de la saison).
+    pub ranked_wins: u32,
+    pub ranked_losses: u32,
 }
 
 /// Joueur déjà croisé dans une de tes 3 dernières parties, sans être venu avec toi.
@@ -1079,6 +1089,8 @@ struct Past {
     win: Option<bool>,
     /// Durée en secondes (une partie annulée dure moins de 5 minutes).
     seconds: u64,
+    /// File (420 : solo/duo, 440 : flexible…).
+    queue: i64,
 }
 
 /// Un joueur de la partie et ses dernières parties : pour les groupes et les joueurs déjà croisés.
@@ -1104,6 +1116,8 @@ struct CurrentGame {
     opponent_id: Option<i64>,
     /// Mode de jeu au sens d'OP.GG ("ranked", "aram"...).
     mode: String,
+    /// File de la partie (420 : solo/duo, 440 : flexible…).
+    queue_id: i64,
     allies: Vec<Player>,
     enemies: Vec<Player>,
     /// Rang de chaque joueur, par champion.
@@ -2398,7 +2412,9 @@ impl Tracker {
                 assists: score("assists"),
                 me: std::ptr::eq(player, p),
                 rank_hidden: rank.is_none() && hidden(id),
-                smurf: rank.as_ref().is_some_and(|rank| smurf_like(rank, levels.and_then(|l| l.get(&id)).copied())),
+                smurf: rank.as_ref().is_some_and(|rank| {
+                    smurf_like(rank, levels.and_then(|l| l.get(&id)).copied(), forms.and_then(|f| f.get(&id)))
+                }),
                 account_level: levels.and_then(|l| l.get(&id)).copied(),
                 rank,
                 position: player["position"].as_str().unwrap_or_default().to_string(),
@@ -2649,7 +2665,8 @@ impl Tracker {
         if !me.is_empty() && theirs.iter().any(|p| p["puuid"] == me.as_str()) {
             std::mem::swap(&mut mine, &mut theirs);
         }
-        let mut game = CurrentGame { game_id, mode: game_mode(&data["queue"]).to_string(), ..Default::default() };
+        let queue_id = data["queue"]["id"].as_i64().unwrap_or(0);
+        let mut game = CurrentGame { game_id, mode: game_mode(&data["queue"]).to_string(), queue_id, ..Default::default() };
         // Ce que la sélection a donné ; la partie en cours le précisera.
         if let Some((champion_id, position, opponent_id, form)) = self.last_pick.clone() {
             game.champion_id = champion_id;
@@ -2695,7 +2712,7 @@ impl Tracker {
                     champion_id,
                     me: is_me,
                     rank_hidden: puuid.is_none(),
-                    smurf: rank.as_ref().is_some_and(|rank| smurf_like(rank, None)),
+                    smurf: rank.as_ref().is_some_and(|rank| smurf_like(rank, None, None)),
                     rank,
                     position: lane.to_string(),
                     riot_id,
@@ -2723,7 +2740,7 @@ impl Tracker {
         let Some(game) = &self.game else {
             return;
         };
-        let game_id = game.game_id;
+        let (game_id, queue) = (game.game_id, game.queue_id);
         let batch: Vec<Recent> = game.to_check.iter().take(2).cloned().collect();
         if batch.is_empty() {
             return;
@@ -2744,11 +2761,11 @@ impl Tracker {
         // Fiche rapide de chacun, dès que ses parties sont lues ; smurf revu avec le niveau de son compte.
         for player in &read {
             let shown = game.allies.iter_mut().chain(game.enemies.iter_mut()).filter(|p| p.champion_id == player.champion_id);
-            let form = (!player.games.is_empty()).then(|| recent_form(&player.games, player.champion_id));
+            let form = (!player.games.is_empty()).then(|| recent_form(&player.games, player.champion_id, queue));
             for shown in shown {
                 shown.recent.clone_from(&form);
                 shown.account_level = player.level;
-                shown.smurf = shown.rank.as_ref().is_some_and(|rank| smurf_like(rank, player.level));
+                shown.smurf = shown.rank.as_ref().is_some_and(|rank| smurf_like(rank, player.level, form.as_ref()));
             }
             if let Some(form) = form {
                 game.forms.insert(player.champion_id, form);
@@ -2819,6 +2836,9 @@ impl Tracker {
         let solo = ranked.as_ref().map(|r| rank_in(r, "RANKED_SOLO_5x5"));
         let flex = ranked.as_ref().map(|r| rank_in(r, "RANKED_FLEX_SR"));
         let mut profile = summarize(solo, flex, records);
+        if profile.solo.iter().chain(&profile.flex).any(|r| r.losses_hidden) {
+            self.fill_records(&mut profile).await;
+        }
         for champion in &mut profile.recent_champions {
             champion.name = self.champ(base, password, champion.champion_id).await.name;
         }
@@ -2834,6 +2854,20 @@ impl Tracker {
             }
         }
         Some(profile)
+    }
+
+    /// Le client cache tes défaites : victoires et défaites d'OP.GG (rang et LP gardés).
+    async fn fill_records(&mut self, profile: &mut Profile) {
+        let Some(riot_id) = self.riot_id.clone() else {
+            return;
+        };
+        let (Some((name, tag)), Some(region)) = (riot_id.rsplit_once('#'), self.assets.client_region().await) else {
+            return;
+        };
+        match self.opgg.summoner_profile(name, tag, &region).await {
+            Ok(doc) => crate::search::fill_records(profile, &doc),
+            Err(e) => eprintln!("[profil] défaites cachées par le client ; {e}"),
+        }
     }
 
     /// Parties enregistrées avant le rangement par compte : celui qui jouait leur champion, d'après la partie
@@ -2914,7 +2948,7 @@ impl Tracker {
         if let (Some(queue), Some(before)) = (queue, game.lp_before.as_ref().filter(|r| ladder(r).is_some())) {
             let stats = self.get(&format!("{base}/lol-ranked/v1/current-ranked-stats"), Some(password)).await;
             let after = stats.map(|stats| rank_in(&stats, queue));
-            match after.filter(|a| a.wins + a.losses != before.wins + before.losses) {
+            match after.filter(|after| counted(before, after)) {
                 Some(after) => record.lp_change = lp_gap(before, &after),
                 None => {
                     if let Some(finished) = &mut self.finished {
@@ -3176,25 +3210,30 @@ fn past_games(list: &Value, puuid: &str, current: i64) -> HashMap<i64, Past> {
             let team = p["teamId"].as_i64().or_else(|| p["stats"]["win"].as_bool().map(|win| if win { 100 } else { 200 }))?;
             let champion = p["championId"].as_i64().unwrap_or(0);
             let (win, seconds) = (p["stats"]["win"].as_bool(), g["gameDuration"].as_u64().unwrap_or(0));
-            Some((game_id, Past { team, champion, start: g["gameCreation"].as_i64().unwrap_or(0), win, seconds }))
+            let (start, queue) = (g["gameCreation"].as_i64().unwrap_or(0), g["queueId"].as_i64().unwrap_or(0));
+            Some((game_id, Past { team, champion, start, win, seconds, queue }))
         })
         .collect()
 }
 
 /// Fiche rapide d'un joueur d'après ses dernières parties (sans les parties annulées) : sa série en cours, la plus
-/// récente d'abord, et ses parties avec ce champion.
-fn recent_form(games: &HashMap<i64, Past>, champion_id: i64) -> RecentForm {
+/// récente d'abord, ses parties avec ce champion, et son bilan dans la file `queue` (celle de la partie).
+fn recent_form(games: &HashMap<i64, Past>, champion_id: i64, queue: i64) -> RecentForm {
     let mut played: Vec<&Past> = games.values().filter(|p| p.win.is_some() && p.seconds >= REMAKE_SECONDS).collect();
     played.sort_by_key(|p| std::cmp::Reverse(p.start));
     let wins: Vec<bool> = played.iter().map(|p| p.win == Some(true)).collect();
     let run = wins.iter().take_while(|w| Some(*w) == wins.first()).count() as i32;
     let on: Vec<&&Past> = played.iter().filter(|p| p.champion == champion_id).collect();
+    let ranked: Vec<&&Past> = played.iter().filter(|p| p.queue == queue).collect();
+    let ranked_wins = ranked.iter().filter(|p| p.win == Some(true)).count() as u32;
     RecentForm {
         games: played.len() as u32,
         streak: if wins.first() == Some(&true) { run } else { -run },
         champion_games: on.len() as u32,
         champion_wins: on.iter().filter(|p| p.win == Some(true)).count() as u32,
         otp: played.len() >= 10 && on.len() * 100 >= 60 * played.len(),
+        ranked_wins,
+        ranked_losses: ranked.len() as u32 - ranked_wins,
     }
 }
 
@@ -3309,13 +3348,27 @@ pub fn rank_in(stats: &Value, queue: &str) -> Rank {
         return Rank::default();
     }
     let division = text("division");
+    let wins = entry["wins"].as_u64().unwrap_or(0);
+    let losses = entry["losses"].as_u64().unwrap_or(0);
     Rank {
         tier,
         division: if division == "NA" { String::new() } else { division },
         lp: entry["leaguePoints"].as_i64().unwrap_or(0),
-        wins: entry["wins"].as_u64().unwrap_or(0),
-        losses: entry["losses"].as_u64().unwrap_or(0),
+        wins,
+        losses,
+        // Le client met les défaites des autres joueurs à 0 (vérifié sur un vrai client, novembre 2026) : des
+        // victoires sans aucune défaite veulent dire « défaites cachées ».
+        losses_hidden: wins > 0 && losses == 0,
+        record_from_opgg: false,
     }
+}
+
+/// Ton rang compte la partie finie : une victoire ou une défaite de plus, ou d'autres LP, un autre rang (le client
+/// peut cacher les défaites).
+fn counted(before: &Rank, after: &Rank) -> bool {
+    let record = |r: &Rank| r.wins + r.losses;
+    let place = |r: &Rank| (r.tier.clone(), r.division.clone(), r.lp);
+    record(after) != record(before) || place(after) != place(before)
 }
 
 /// Niveau de compte en dessous duquel un compte est jeune (les classées s'ouvrent au niveau 30).
@@ -3328,13 +3381,25 @@ const YOUNG_ACCOUNT: u64 = 60;
 ///   130 V – 70 D : non (beaucoup de parties : un bon joueur) ;
 /// - ou compte jeune (niveau sous 60), au moins 60 % de victoires et victoires − défaites ≥ √parties.
 ///   Ex. 13 V – 7 D au niveau 41 : oui (non au niveau 120).
-fn smurf_like(rank: &Rank, level: Option<u64>) -> bool {
-    let games = rank.wins + rank.losses;
+///
+/// Quand le client cache ses défaites de la saison (`losses_hidden`), les mêmes règles s'appliquent à ses dernières
+/// parties dans cette file (`form`, au moins 10), et « peu de parties » devient au plus 65 victoires cette saison
+/// (100 parties à 65 %). Sans ses dernières parties (pas encore lues) : non.
+fn smurf_like(rank: &Rank, level: Option<u64>, form: Option<&RecentForm>) -> bool {
+    let (wins, losses, few) = if rank.losses_hidden {
+        let Some(form) = form else {
+            return false;
+        };
+        (u64::from(form.ranked_wins), u64::from(form.ranked_losses), rank.wins <= 65)
+    } else {
+        (rank.wins, rank.losses, rank.wins + rank.losses <= 100)
+    };
+    let games = wins + losses;
     // % en entiers (pas d'arrondi à la limite) ; l'écart en nombres à virgule, pour la racine.
-    let rate_at_least = |percent: u64| rank.wins * 100 >= percent * games;
-    let margin = rank.wins as f64 - rank.losses as f64;
+    let rate_at_least = |percent: u64| wins * 100 >= percent * games;
+    let margin = wins as f64 - losses as f64;
     let spread = (games as f64).sqrt();
-    let few_games = games <= 100 && rate_at_least(65) && margin >= 2.0 * spread;
+    let few_games = few && rate_at_least(65) && margin >= 2.0 * spread;
     let young = level.is_some_and(|level| level < YOUNG_ACCOUNT) && rate_at_least(60) && margin >= spread;
     games >= 10 && (few_games || young)
 }

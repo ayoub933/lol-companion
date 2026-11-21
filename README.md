@@ -261,6 +261,11 @@ parties classées cette saison :
 Le niveau du compte est lu avec ses dernières parties pendant l'écran de chargement (une demande de plus par
 joueur, une fois par partie) : avant, seule la première règle compte.
 
+Le client met à 0 les défaites des autres joueurs (vérifié sur un vrai client en novembre 2026 : ses victoires
+sont justes). Dans ce cas, les mêmes règles se lisent sur ses dernières parties dans la file de la partie (au
+moins 10, lues pendant le chargement), et « peu de parties » devient au plus 65 victoires cette saison
+(100 parties à 65 %). Le survol donne alors ce bilan récent et ses victoires de la saison.
+
 Le terminal note les parties lues, celles jouées ensemble et les joueurs croisés
 (« [groupes] partie … : … ; ensemble dans la même équipe : Jinx + Nami 3 ; déjà croisés : … »).
 
@@ -373,7 +378,8 @@ celui d'OP.GG tous rangs confondus (leur outil ne le donne pas par rang) : une s
 note sa lecture (« [méta] classement OP.GG : top 52, jungle 48… ; noms non retrouvés dans le client : aucun »).
 
 En classée (solo/duo et flexible), les LP gagnés ou perdus : l'app lit ton rang au début de la partie
-et après (une fois que ton rang compte la partie), et affiche l'écart avec une flèche vers le haut en
+et après (une fois que ton rang compte la partie : une victoire ou une défaite de plus, ou d'autres LP), et
+affiche l'écart avec une flèche vers le haut en
 vert-bleu ou vers le bas en rouge-rose, dans l'historique (entre le mode de jeu et le KDA), sur la
 dernière partie et dans son détail. Les montées et descentes de division sont comptées (100 LP par
 division, 400 par rang, puis les LP de Maître et au-dessus). Seulement pour les parties jouées avec l'app.
@@ -442,6 +448,11 @@ Pour les joueurs de tes parties, l'app le lit directement par son compte dans le
 - Dans la région de ton client : l'app le lit dans le client, comme ton salon (avec le score carry).
 - Ailleurs, ou si le client ne le trouve pas (ou est fermé) : sur OP.GG. Le détail d'une partie donne
   alors la note OP.GG (sur 10, ×10) et sa place à la place du score carry ; pas de score de vision.
+
+Le client met à 0 les défaites des autres joueurs : leur % de victoires de la saison vient alors d'OP.GG
+(« (OP.GG) » après le nombre de parties ; parfois en retard de quelques parties), le rang et les LP restant
+ceux du client. Si OP.GG ne répond pas : ses victoires seulement (« défaites inconnues »). Même chose pour
+ton salon si le client cachait aussi tes défaites.
 
 Ses LP gagnés ou perdus par partie ne sont pas connus : l'app ne les voit que pour tes parties.
 
