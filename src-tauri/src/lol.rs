@@ -934,6 +934,22 @@ pub struct Player {
     /// streamer) ou ne les donne pas.
     pub riot_id: String,
     pub puuid: String,
+    /// Sa série en cours et son expérience sur son champion, d'après ses dernières parties ; None tant qu'elles
+    /// ne sont pas lues (ou s'il est en mode streamer).
+    pub recent: Option<RecentForm>,
+}
+
+/// Ce que ses dernières parties disent d'un joueur (lues pendant le chargement, comme pour les duos).
+#[derive(Serialize, Clone, Default, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentForm {
+    /// Parties lues (20 au plus, sans celles annulées).
+    pub games: u32,
+    /// Série en cours : 3 = 3 victoires d'affilée, −4 = 4 défaites d'affilée.
+    pub streak: i32,
+    /// Ses parties et victoires avec le champion qu'il joue.
+    pub champion_games: u32,
+    pub champion_wins: u32,
 }
 
 /// Joueur déjà croisé dans une de tes 3 dernières parties, sans être venu avec toi.
@@ -954,6 +970,10 @@ struct Past {
     team: i64,
     champion: i64,
     start: i64,
+    /// Victoire ; None si le client ne le dit pas.
+    win: Option<bool>,
+    /// Durée en secondes (une partie annulée dure moins de 5 minutes).
+    seconds: u64,
 }
 
 /// Un joueur de la partie et ses dernières parties : pour les groupes et les joueurs déjà croisés.
@@ -1005,6 +1025,8 @@ struct CurrentGame {
     groups: HashMap<i64, u8>,
     /// Joueurs déjà croisés dans tes 3 dernières parties, par champion.
     met: HashMap<i64, Met>,
+    /// Fiche rapide de chaque joueur dont les parties sont lues, par champion.
+    forms: HashMap<i64, RecentForm>,
     /// Compte de chaque joueur que le client donne, par champion.
     puuids: HashMap<i64, String>,
 }
@@ -2080,6 +2102,7 @@ impl Tracker {
         let ranks = self.game.as_ref().map(|g| &g.ranks);
         let groups = self.game.as_ref().map(|g| &g.groups);
         let met = self.game.as_ref().map(|g| &g.met);
+        let forms = self.game.as_ref().map(|g| &g.forms);
         let puuids = self.game.as_ref().map(|g| &g.puuids);
         // Joueur absent de ceux que le client donne : il est en mode streamer, son rang est caché.
         let hidden = |id: i64| self.game.as_ref().is_some_and(|g| !g.listed.is_empty() && !g.listed.contains(&id));
@@ -2109,6 +2132,7 @@ impl Tracker {
                 met: met.and_then(|m| m.get(&id)).cloned(),
                 riot_id: if hidden(id) { String::new() } else { player["riotId"].as_str().unwrap_or_default().to_string() },
                 puuid: puuids.and_then(|m| m.get(&id)).cloned().unwrap_or_default(),
+                recent: forms.and_then(|f| f.get(&id)).cloned(),
             };
             if player["team"] == p["team"] {
                 allies.push(entry);
@@ -2431,6 +2455,14 @@ impl Tracker {
         let Some(game) = &mut self.game else {
             return;
         };
+        // Fiche rapide de chacun, dès que ses parties sont lues.
+        for player in read.iter().filter(|p| !p.games.is_empty()) {
+            let form = recent_form(&player.games, player.champion_id);
+            for shown in game.allies.iter_mut().chain(game.enemies.iter_mut()).filter(|p| p.champion_id == player.champion_id) {
+                shown.recent = Some(form.clone());
+            }
+            game.forms.insert(player.champion_id, form);
+        }
         game.to_check.drain(..read.len());
         game.checked.extend(read);
         if !game.to_check.is_empty() {
@@ -2819,9 +2851,26 @@ fn past_games(list: &Value, puuid: &str, current: i64) -> HashMap<i64, Past> {
             // Sans numéro d'équipe, le résultat les sépare aussi : gagnants d'un côté, perdants de l'autre.
             let team = p["teamId"].as_i64().or_else(|| p["stats"]["win"].as_bool().map(|win| if win { 100 } else { 200 }))?;
             let champion = p["championId"].as_i64().unwrap_or(0);
-            Some((game_id, Past { team, champion, start: g["gameCreation"].as_i64().unwrap_or(0) }))
+            let (win, seconds) = (p["stats"]["win"].as_bool(), g["gameDuration"].as_u64().unwrap_or(0));
+            Some((game_id, Past { team, champion, start: g["gameCreation"].as_i64().unwrap_or(0), win, seconds }))
         })
         .collect()
+}
+
+/// Fiche rapide d'un joueur d'après ses dernières parties (sans les parties annulées) : sa série en cours, la plus
+/// récente d'abord, et ses parties avec ce champion.
+fn recent_form(games: &HashMap<i64, Past>, champion_id: i64) -> RecentForm {
+    let mut played: Vec<&Past> = games.values().filter(|p| p.win.is_some() && p.seconds >= REMAKE_SECONDS).collect();
+    played.sort_by_key(|p| std::cmp::Reverse(p.start));
+    let wins: Vec<bool> = played.iter().map(|p| p.win == Some(true)).collect();
+    let run = wins.iter().take_while(|w| Some(*w) == wins.first()).count() as i32;
+    let on: Vec<&&Past> = played.iter().filter(|p| p.champion == champion_id).collect();
+    RecentForm {
+        games: played.len() as u32,
+        streak: if wins.first() == Some(&true) { run } else { -run },
+        champion_games: on.len() as u32,
+        champion_wins: on.iter().filter(|p| p.win == Some(true)).count() as u32,
+    }
 }
 
 /// Parties jouées ensemble dans la même équipe, d'après les dernières parties de chacun.

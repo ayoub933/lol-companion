@@ -1256,6 +1256,24 @@ function renderFaceoff(game) {
 }
 
 // Rang d'un joueur de la partie : emblème et division, « Non classé », « Rang masqué » (mode streamer) ou « — ».
+// Fiche rapide d'après ses dernières parties (lues pendant le chargement) : sa série en cours, à partir de 3 d'affilée,
+// et ses parties sur son champion, avec le % à partir de 3 parties (en dessous, il ne veut rien dire).
+function recentLine(player) {
+  const recent = player.recent;
+  if (!recent?.games) return null;
+  const { games, streak, championGames: on, championWins: wins } = recent;
+  const parts = [];
+  if (Math.abs(streak) >= 3) {
+    const won = streak > 0;
+    parts.push(el("span", `streak ${won ? "win" : "loss"}`, `${Math.abs(streak)} ${won ? "V" : "D"} d'affilée`));
+  }
+  const rate = on >= 3 ? ` · ${Math.round((wins / on) * 100)} %` : "";
+  parts.push(el("span", "", on ? `${player.champion} : ${on} sur ${games}${rate}` : `${player.champion} : 0 sur ses ${games} dernières`));
+  const line = el("span", "recent", parts);
+  line.title = `D'après ses ${games} dernières parties (toutes files, sans les parties annulées)`;
+  return line;
+}
+
 function rankLine(player) {
   const line = el("span", "rank");
   if (player.rankHidden) line.textContent = "Rang masqué";
@@ -1307,7 +1325,8 @@ function faceCell(player, ready, enemy, opponent, mates) {
         metMark(player),
       ]),
       ready && el("span", "line", `niv. ${player.level} · ${player.kills}/${player.deaths}/${player.assists}`),
-      rankLine(player),
+      // Sur la ligne du rang, pour que les 5 couloirs tiennent toujours dans le bloc.
+      el("div", "rank-row", [rankLine(player), recentLine(player)]),
     ]),
   ]);
   // Un clic : son profil (joueurs de ta région ; pas ceux en mode streamer).

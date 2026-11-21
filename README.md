@@ -216,6 +216,15 @@ pas être vérifiés.
 ou adversaires, qui étaient dans une de tes 3 dernières parties sans être venus avec toi ; au survol, quand
 (dernière, avant-dernière ou 3e partie), le champion qu'il jouait et s'il était avec toi ou contre toi.
 
+**Fiche rapide de chaque joueur**, sur la ligne de son rang, d'après ses 20 dernières parties (les mêmes, lues
+pour les duos ; toutes files, sans les parties annulées) :
+- sa série en cours, à partir de 3 d'affilée : « 3 V d'affilée » en vert, « 4 D d'affilée » en rouge ;
+- ses parties sur le champion qu'il joue : « Darius : 12 sur 20 · 58 % » (le % à partir de 3 parties), ou
+  « Zed : 0 sur ses 20 dernières ».
+
+Elle arrive pendant l'écran de chargement, au fur et à mesure (2 joueurs par seconde). Rien pour un joueur en
+mode streamer.
+
 Le terminal note les parties lues, celles jouées ensemble et les joueurs croisés
 (« [groupes] partie … : … ; ensemble dans la même équipe : Jinx + Nami 3 ; déjà croisés : … »).
 
