@@ -1,6 +1,6 @@
 [package]
 name = "lol-companion"
-version = "0.10.6"
+version = "0.10.7"
 description = "Compagnon LoL perso (prototype)"
 authors = ["you"]
 edition = "2024"
