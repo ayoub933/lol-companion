@@ -51,6 +51,19 @@ const DETAIL_FIELDS: [&str; 7] = [
     "data.game_detail.teams[].participants[].rune.{primary_rune_id,secondary_page_id}",
     "data.game_detail.teams[].participants[].stats.{kill,death,assist,champion_level,minion_kill,neutral_minion_kill,gold_earned,total_damage_dealt_to_champions,ward_place,op_score,op_score_rank,result}",
 ];
+/// Champs demandés pour le classement des champions de chaque poste (recopiés de la liste fermée de l'outil).
+const META_FIELDS: [&str; 5] = [
+    "data.positions.top[].{champion,is_rip,tier,rank,rank_prev_patch,win_rate,ban_rate,play,role_rate}",
+    "data.positions.jungle[].{champion,is_rip,tier,rank,rank_prev_patch,win_rate,ban_rate,play,role_rate}",
+    "data.positions.mid[].{champion,is_rip,tier,rank,rank_prev_patch,win_rate,ban_rate,play,role_rate}",
+    "data.positions.adc[].{champion,is_rip,tier,rank,rank_prev_patch,win_rate,ban_rate,play,role_rate}",
+    "data.positions.support[].{champion,is_rip,tier,rank,rank_prev_patch,win_rate,ban_rate,play,role_rate}",
+];
+/// Le classement ne donne que le nom des champions : en anglais, il suit leur nom interne (« Master Yi »,
+/// « MasterYi »), quelle que soit la langue du client.
+const META_LANG: &str = "en_US";
+/// Postes du classement, au sens d'OP.GG.
+const META_POSITIONS: [&str; 5] = ["top", "jungle", "mid", "adc", "support"];
 /// Champs demandés pour savoir à quels postes un champion est joué.
 const POSITION_FIELDS: [&str; 3] = [
     "data.summary.{id,is_rip,is_rotation,roles}",
@@ -171,6 +184,25 @@ pub struct Pick {
     pub games: u64,
 }
 
+/// Un champion dans le classement d'OP.GG d'un poste (sa « tier list »).
+#[derive(Clone, Default, PartialEq, Debug)]
+pub struct MetaChamp {
+    /// Numéro du champion dans le client ; 0 tant qu'il n'est pas retrouvé d'après son nom.
+    pub champion_id: i64,
+    /// Nom anglais (« Master Yi ») ; une fois retrouvé, celui du client.
+    pub name: String,
+    /// 1 (le meilleur) à 5.
+    pub tier: u8,
+    /// Place au classement de ce poste (1 = premier), et au patch précédent (0 : inconnue).
+    pub rank: u32,
+    pub rank_prev_patch: u32,
+    pub win_rate: f64,
+    pub ban_rate: f64,
+    pub play: u64,
+    /// Part de ses parties jouées à ce poste (0 à 1).
+    pub role_rate: f64,
+}
+
 /// Pour aider à choisir : qui bat ce champion, et avec qui il s'entend le mieux.
 #[derive(Clone, Default, PartialEq, Debug)]
 pub struct Help {
@@ -246,6 +278,20 @@ impl Client {
             return Err(format!("OP.GG a renvoyé les duels d'un autre champion ({id})"));
         }
         Ok(counters_from(&doc))
+    }
+
+    /// Classement d'OP.GG de chaque poste ("top", "jungle", "mid", "adc", "support"), du premier au dernier :
+    /// une seule petite réponse (15 ko environ) pour tous les champions.
+    pub async fn lane_meta(&mut self) -> Result<HashMap<String, Vec<MetaChamp>>, String> {
+        let args = json!({
+            "position": "all", "lang": META_LANG, "client_app": APP, "desired_output_fields": META_FIELDS,
+        });
+        let text = self.tool_text("lol_list_lane_meta_champions", args).await?;
+        let meta = to_json_doc(&text).map(|doc| meta_from(&doc)).unwrap_or_default();
+        if meta.values().all(Vec::is_empty) {
+            return Err(UNREADABLE.to_string());
+        }
+        Ok(meta)
     }
 
     /// Runes, build et conseils d'OP.GG pour ton champion contre ton adversaire direct.
@@ -611,6 +657,35 @@ fn counters_from(doc: &Value) -> Vec<Pick> {
         .collect();
     picks.sort_by(|a, b| b.win_rate.total_cmp(&a.win_rate).then(b.games.cmp(&a.games)));
     picks
+}
+
+/// Réponse du classement : pour chaque poste, ses champions du premier au dernier (sans ceux retirés du jeu).
+fn meta_from(doc: &Value) -> HashMap<String, Vec<MetaChamp>> {
+    let positions = &doc["data"]["positions"];
+    let entry = |c: &Value| -> Option<MetaChamp> {
+        if c["is_rip"] == true {
+            return None;
+        }
+        Some(MetaChamp {
+            champion_id: 0,
+            name: c["champion"].as_str().filter(|name| !name.is_empty())?.to_string(),
+            tier: c["tier"].as_u64().filter(|tier| (1..=5).contains(tier))? as u8,
+            rank: c["rank"].as_u64().filter(|rank| *rank > 0)? as u32,
+            rank_prev_patch: c["rank_prev_patch"].as_u64().unwrap_or(0) as u32,
+            win_rate: c["win_rate"].as_f64().unwrap_or(0.0),
+            ban_rate: c["ban_rate"].as_f64().unwrap_or(0.0),
+            play: c["play"].as_u64().unwrap_or(0),
+            role_rate: c["role_rate"].as_f64().unwrap_or(0.0),
+        })
+    };
+    META_POSITIONS
+        .iter()
+        .map(|position| {
+            let mut list: Vec<MetaChamp> = positions[position].as_array().into_iter().flatten().filter_map(entry).collect();
+            list.sort_by_key(|c| c.rank);
+            (position.to_string(), list)
+        })
+        .collect()
 }
 
 /// « weak_counters » : les champions qui le battent ; « synergies » : ses meilleurs duos, par poste du partenaire.

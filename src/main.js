@@ -299,16 +299,41 @@ function renderMoment(profile) {
   const list = profile?.recentChampions ?? [];
   $("moment-empty").hidden = list.length > 0;
   $("moment-empty").textContent = profile ? "Aucune partie récente." : "Lecture de tes dernières parties…";
+  $("moment-aside").textContent = list.some((c) => c.meta) ? "tier OP.GG" : "";
   $("moment-cards").replaceChildren(
     ...list.map((c) =>
       el("div", "mcard", [
         champIcon(c.championId, c.name),
         el("span", "mname", upper(c.name)),
         el("span", "games", plural(c.games, "partie")),
+        metaLine(c.meta),
         el("span", "rec", record(c.wins, c.games - c.wins, " – ")),
       ]),
     ),
   );
+}
+
+const place = (n) => (n === 1 ? "1er" : `${n}e`);
+// Sa place dans le classement d'OP.GG : tier (1 = le meilleur, chacun sa couleur), poste, victoires, et places
+// gagnées (▲) ou perdues (▼) depuis le patch précédent.
+function metaLine(meta) {
+  if (!meta) return null;
+  const moved = meta.rankPrevPatch > 0 ? meta.rankPrevPatch - meta.rank : null;
+  const trend =
+    moved == null
+      ? null
+      : el("span", `trend ${moved > 0 ? "up" : moved < 0 ? "down" : "same"}`, moved > 0 ? `▲${moved}` : moved < 0 ? `▼${-moved}` : "=");
+  const line = el("div", "mmeta", [
+    el("span", `tier t${meta.tier}`, `T${meta.tier}`),
+    el("span", "mpos", SHORT_POSITIONS[meta.position] ?? ""),
+    el("span", "mwr", `${number(meta.winRate * 100, 0)}\u202f%`),
+    trend,
+  ]);
+  const before = meta.rankPrevPatch > 0 ? ` (${place(meta.rankPrevPatch)} au patch précédent)` : "";
+  line.title =
+    `OP.GG, ${POSITIONS[meta.position] ?? meta.position} : tier ${meta.tier}, ${place(meta.rank)} sur ${meta.ranked}${before}, ` +
+    `${number(meta.winRate * 100, 1)} % de victoires`;
+  return line;
 }
 
 // « il y a 25 min », « il y a 3 h », « hier », « il y a 4 j », puis la date.
@@ -677,10 +702,11 @@ function matchRow(p, most, duration, title) {
 // ---------- Sélection des champions ----------
 
 function renderSelection(runes) {
-  for (const id of ["duel-hero", "duel", "picks", "help", "runes", "build"]) $(id).hidden = true;
+  for (const id of ["duel-hero", "duel", "bans", "picks", "help", "runes", "build"]) $(id).hidden = true;
   if (!runes) return;
   renderDuelHero(runes);
   renderDuel(runes);
+  renderBans(runes);
   renderPicks(runes);
   renderHelp(runes);
   renderRunes(runes);
@@ -765,6 +791,40 @@ function renderDuel(runes) {
   }
   $("matchup-tip").hidden = !matchup?.tip;
   $("tip-text").textContent = matchup?.tip ? `« ${matchup.tip} »` : "";
+}
+
+// Tant que ton ban n'est pas fait : qui bannir. D'abord ceux qui battent ton champion (survolé ou choisi),
+// puis les mieux classés de ton poste sur OP.GG.
+function renderBans(runes) {
+  const help = runes.bans;
+  $("bans").hidden = !help;
+  if (!help) return;
+  const position = SHORT_POSITIONS[help.position] ?? "";
+  $("ban-list").replaceChildren(
+    ...help.bans.map((b) => {
+      const why = b.counter
+        ? `BAT ${upper(help.champion)}`
+        : [el("span", `tier t${b.tier}`, `T${b.tier}`), el("span", "", position)];
+      const card = el("div", `ban${b.counter ? " counter" : ""}`, [
+        champIcon(b.championId, b.name),
+        el("span", "bname", upper(b.name)),
+        el("span", "bwhy", why),
+        el("span", "bpct", [number(b.winRate * 100, 0), el("small", "", " %")]),
+      ]);
+      const games = b.games ? ` (${whole(b.games)} parties)` : "";
+      card.title = b.counter
+        ? `${b.name} : ${number(b.winRate * 100, 1)} % de victoires contre ${help.champion}${games}`
+        : `${b.name} : tier ${b.tier} à ton poste sur OP.GG, ${number(b.winRate * 100, 1)} % de victoires${games}`;
+      return card;
+    }),
+  );
+  $("bans-pending").textContent = help.pending
+    ? "Recherche sur OP.GG…"
+    : !help.bans.length
+      ? "Pas de suggestion d'OP.GG ici."
+      : !help.champion
+        ? "Survole ton champion : ceux qui le battent passent en premier."
+        : "";
 }
 
 // Les deux équipes ; un clic sur un adversaire le choisit comme adversaire direct.
@@ -1636,19 +1696,25 @@ window.addEventListener("DOMContentLoaded", async () => {
     .then((version) => ($("settings-title").textContent = `RÉGLAGES · v${version}`))
     .catch(() => {});
   $("match-close").addEventListener("click", closeMatch);
-  // Détail ouvert : un clic ailleurs dans l'app le referme, sans rien déclencher d'autre.
+  // Réglages ou détail d'une partie ouverts : un clic ailleurs dans l'app les referme, sans rien déclencher
+  // d'autre (un clic sur le bouton des réglages les referme aussi).
   document.addEventListener(
     "click",
     (event) => {
-      if (!openGame || $("match").contains(event.target)) return;
+      const settingsOpen = !$("settings").hidden && !$("settings").contains(event.target);
+      const matchOpen = openGame && $("match").contains(event.target) === false;
+      if (!settingsOpen && !matchOpen) return;
       event.stopPropagation();
       event.preventDefault();
-      closeMatch();
+      if (settingsOpen) $("settings").hidden = true;
+      else closeMatch();
     },
     true,
   );
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && openGame) closeMatch();
+    if (event.key !== "Escape") return;
+    if (!$("settings").hidden) $("settings").hidden = true;
+    else if (openGame) closeMatch();
   });
   for (const input of settingInputs()) input.addEventListener("change", saveSettings);
   $("update-button").addEventListener("click", async () => {

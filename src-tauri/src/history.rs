@@ -154,6 +154,16 @@ impl History {
             .fold((0, 0), |(games, wins), g| (games + 1, wins + u64::from(g.win)))
     }
 
+    /// Poste où ce compte joue le plus ce champion sur la Faille, d'après les parties suivies par l'app
+    /// (à égalité, le premier dans l'ordre alphabétique).
+    pub fn main_position(&self, puuid: Option<&str>, champion_id: i64) -> Option<String> {
+        let mut counts: HashMap<&str, u32> = HashMap::new();
+        for g in self.of(puuid).filter(|g| g.champion_id == champion_id && g.map_id == 11 && !g.position.is_empty()) {
+            *counts.entry(g.position.as_str()).or_default() += 1;
+        }
+        counts.into_iter().max_by(|a, b| a.1.cmp(&b.1).then(b.0.cmp(a.0))).map(|(position, _)| position.to_string())
+    }
+
     /// Dernière partie et stats de ce compte (`None` : compte pas encore connu, voir `of`).
     pub fn overview(&self, puuid: Option<&str>) -> Option<Overview> {
         let last = self.of(puuid).max_by_key(|g| g.date)?.clone();

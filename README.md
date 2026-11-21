@@ -107,7 +107,8 @@ Windows » : c'est l'exe de développement qui serait lancé au démarrage.
   quand le client LoL s'ouvre, notification quand une partie est trouvée, et ce que fait la croix.
 
 Un réglage d'import changé en pleine sélection s'applique au prochain import (nouveau champion ou
-adversaire) ; celui des noms, tout de suite.
+adversaire) ; celui des noms, tout de suite. Le panneau se referme avec « FERMER », la roue, Échap, ou un clic
+n'importe où ailleurs dans l'app (ce clic ne déclenche rien d'autre).
 
 ## Sélection des champions
 
@@ -131,6 +132,16 @@ adversaires jamais au même poste (Elise jungle 78 % et Amumu jungle 70 % / supp
 Amumu en support). Un adversaire dont OP.GG n'a pas encore donné les postes attend dans une case libre ; au
 survol d'un adversaire, la part de ses parties à ce poste. Le terminal note les postes lus et la répartition
 (« [postes] en face : Renekton top, Elise jungle, Zed mid… »).
+
+**Pendant les bans : bans conseillés** (tant que ton ban n'est pas fait, dès la phase de déclaration). Trois
+champions, avec les données OP.GG :
+- d'abord, si tu as survolé ton champion, les 2 qui le battent le mieux à ton poste (liseré rouge, « BAT
+  AHRI » et leur % de victoires contre lui), seulement s'ils gagnent plus d'une partie sur deux contre lui ;
+- puis les mieux classés de ton poste dans le classement d'OP.GG (tier en couleur, % de victoires à ce
+  poste).
+
+Jamais un champion déjà banni ou pris, ni un champion de ton équipe (survolé ou choisi). Sans champion
+survolé, les trois viennent du classement. Le bloc disparaît une fois ton ban fait.
 
 **Avant de verrouiller : aide au choix.** Avec les données OP.GG :
 - « Contre X » : les 10 champions qui gagnent le plus contre ton adversaire direct, à ton poste,
@@ -340,12 +351,23 @@ Les parties annulées (moins de 5 minutes) ne sont pas comptées.
 
 Au salon : l'illustration du skin de ta dernière partie (celle de base si l'app ne le connaît pas),
 ton rang (solo/duo et flexible), tes 20 dernières parties d'après le client avec ta forme du moment
-(victoire ou défaite, de la plus ancienne à gauche à la plus récente à droite), tes champions du moment, l'historique
+(victoire ou défaite, de la plus ancienne à gauche à la plus récente à droite), tes champions du moment (voir
+plus bas), l'historique
 de tes 10 dernières parties (la plus récente en grand avec toutes ses stats, puis une ligne par
 partie : résultat, file, KDA, CS, durée, quand ; victoire en vert-bleu, défaite en rouge-rose ;
 adversaire et poste pour les parties suivies par l'app), et tes stats par champion (KDA, CS par
 minute, % de victoires) et par duel. L'ARAM est compté à part. Les stats de l'app commencent à la
 première partie jouée avec elle ; l'historique des 10 parties vient du client et les montre toutes.
+
+**Champions du moment** : tes 3 champions les plus joués sur tes 20 dernières parties, avec ton bilan, et leur
+place dans le classement d'OP.GG (« tier list ») du patch : tier en couleur (T1, le meilleur, en or ; T2 en
+vert-bleu ; T3 en bleu ; T4 en gris ; T5 en rouge-rose), poste, % de victoires à ce poste, et places gagnées
+(▲, en vert-bleu) ou perdues (▼, en rouge-rose) depuis le patch précédent (« = » : même place). Au survol :
+sa place exacte (« 3e sur 52 ») et celle du patch précédent. Le poste est celui où tu joues le plus ce
+champion d'après les parties suivies par l'app, sinon son poste principal sur OP.GG. Le classement est
+celui d'OP.GG tous rangs confondus (leur outil ne le donne pas par rang) : une seule petite réponse
+(15 ko environ) pour tous les champions, relue toutes les 3 heures (5 minutes après un échec). Le terminal
+note sa lecture (« [méta] classement OP.GG : top 52, jungle 48… ; noms non retrouvés dans le client : aucun »).
 
 En classée (solo/duo et flexible), les LP gagnés ou perdus : l'app lit ton rang au début de la partie
 et après (une fois que ton rang compte la partie), et affiche l'écart avec une flèche vers le haut en

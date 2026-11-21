@@ -91,11 +91,12 @@ body:not(.board) .col {
 #stats { order: 5; }
 #duels { order: 6; }
 #duel-hero { order: 10; }
-#duel { order: 11; }
-#picks { order: 12; }
-#help { order: 13; }
-#runes { order: 14; }
-#build { order: 15; }
+#bans { order: 11; }
+#duel { order: 12; }
+#picks { order: 13; }
+#help { order: 14; }
+#runes { order: 15; }
+#build { order: 16; }
 #score { order: 20; }
 #game-loading { order: 21; }
 #me-card { order: 22; }
@@ -944,6 +945,50 @@ input[type="checkbox"] {
   font-size: 19px;
   line-height: 1;
 }
+/* Classement d'OP.GG : tier (couleur du meilleur au moins bon), poste, victoires, places gagnées ou perdues
+   depuis le patch précédent. */
+.mmeta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: default;
+}
+.tier {
+  padding: 0 5px;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 13px;
+  line-height: 17px;
+  color: var(--bg);
+  background: var(--tier, var(--muted));
+}
+.tier.t1 { --tier: #ffb83d; }
+.tier.t2 { --tier: var(--victory); }
+.tier.t3 { --tier: var(--accent-light); }
+.tier.t4 { --tier: var(--muted); }
+.tier.t5 { --tier: var(--defeat); }
+.mmeta .mpos {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.mmeta .mwr {
+  font-weight: 600;
+}
+.trend {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 13px;
+}
+.trend.up { color: var(--victory); }
+.trend.down { color: var(--defeat); }
+.trend.same { color: var(--faint); }
+
 /* Tableau de bord : les trois cartes remplissent leur bloc (jusqu'à une certaine hauteur), le bilan en bas. */
 body.board .moment {
   flex: 1;
@@ -2037,6 +2082,69 @@ button.pick:hover {
 }
 .sub-head .aside {
   font-size: 12px;
+}
+
+/* Bans conseillés : trois cartes côte à côte ; celles des champions qui battent le tien, liserées de rouge. */
+.ban-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.ban {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 9px;
+  background: var(--panel);
+  border-top: 3px solid var(--faint);
+}
+.ban.counter {
+  border-top-color: var(--defeat);
+}
+.ban .icon {
+  width: 32px;
+  height: 32px;
+  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+}
+.ban .bname {
+  margin-top: 3px;
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 18px;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ban .bwhy {
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ban .bwhy .tier {
+  display: inline-block;
+  margin-right: 5px;
+}
+.ban .bpct {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 19px;
+  line-height: 1.1;
+}
+.ban .bpct small {
+  font-size: 13px;
+}
+#bans-pending:empty {
+  display: none;
+}
+#bans-pending {
+  margin-top: 6px;
 }
 
 /* Aide au choix : les champions qui battent ton adversaire. Les 3 premiers sur un podium (2e, 1er, 3e)

@@ -155,7 +155,7 @@
         </section>
 
         <section class="card" id="moment" hidden>
-          <h2><span class="mark" aria-hidden="true"></span>CHAMPIONS DU MOMENT</h2>
+          <h2><span class="mark" aria-hidden="true"></span>CHAMPIONS DU MOMENT<span class="aside" id="moment-aside"></span></h2>
           <div class="moment" id="moment-cards"></div>
           <p class="empty-msg" id="moment-empty" hidden>Aucune partie récente.</p>
         </section>
@@ -182,6 +182,13 @@
             <span class="kicker orange" id="them-label">ADVERSAIRE</span>
             <span class="duel-name" id="them-name"></span>
           </div>
+        </section>
+
+        <!-- Pendant les bans (main.js, renderBans()). -->
+        <section class="card" id="bans" hidden>
+          <h2><span class="mark" aria-hidden="true"></span>BANS CONSEILLÉS<span class="aside">OP.GG</span></h2>
+          <div class="ban-list" id="ban-list"></div>
+          <div class="muted small" id="bans-pending"></div>
         </section>
 
         <section class="card duel-panel" id="duel" hidden aria-label="Statistiques du duel">

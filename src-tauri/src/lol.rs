@@ -33,6 +33,12 @@ const REMAKE_SECONDS: u64 = 300;
 const MATCHES_SHOWN: usize = 10;
 /// Contres proposés en sélection (les champions qui battent le mieux ton adversaire).
 const COUNTERS_SHOWN: usize = 10;
+/// Bans conseillés : au plus 2 champions qui battent le tien, complétés par les plus forts de ton poste.
+const BANS_SHOWN: usize = 3;
+const BAN_COUNTERS: usize = 2;
+/// Classement d'OP.GG (tier list) : relu toutes les 3 heures, ou 5 minutes après un échec.
+const META_REFRESH: Duration = Duration::from_secs(3 * 3600);
+const META_RETRY: Duration = Duration::from_secs(5 * 60);
 /// Après une partie, ses stats arrivent dans l'historique du client avec un peu de retard.
 const RECORD_RETRY: Duration = Duration::from_secs(5);
 const RECORD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
@@ -145,6 +151,23 @@ pub struct RecentChampion {
     pub name: String,
     pub games: u64,
     pub wins: u64,
+    /// Sa place dans le classement d'OP.GG, à son poste (absent tant que le classement n'est pas lu).
+    pub meta: Option<ChampionMeta>,
+}
+
+/// Un champion dans le classement d'OP.GG d'un poste.
+#[derive(Serialize, Clone, Default, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ChampionMeta {
+    /// "top", "jungle", "mid", "adc" ou "support".
+    pub position: String,
+    /// 1 (le meilleur) à 5.
+    pub tier: u8,
+    /// Sa place parmi les `ranked` champions classés à ce poste, et au patch précédent (0 : inconnue).
+    pub rank: u32,
+    pub ranked: u32,
+    pub rank_prev_patch: u32,
+    pub win_rate: f64,
 }
 
 /// Résultat de l'import (runes, build, set d'objets). `champion` vide = champion pas encore verrouillé.
@@ -199,6 +222,8 @@ pub struct RuneImport {
     pub spells_note: Option<String>,
     /// Aide au choix, tant que ton champion n'est pas verrouillé.
     pub help: Option<PickHelp>,
+    /// Bans conseillés, tant que ton ban n'est pas fait.
+    pub bans: Option<BanHelp>,
     /// Ton bilan contre ton adversaire direct, d'après l'historique de l'app.
     pub duel_games: u64,
     pub duel_wins: u64,
@@ -263,6 +288,33 @@ pub struct PickHelp {
     pub synergies: Vec<opgg::Pick>,
     /// true tant qu'une réponse d'OP.GG manque encore.
     pub pending: bool,
+}
+
+/// Pendant les bans : qui bannir, d'abord contre ton champion (survolé ou choisi), puis d'après le classement
+/// d'OP.GG de ton poste.
+#[derive(Serialize, Clone, Default, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct BanHelp {
+    /// Ton champion ; vide tant que tu n'en as pas survolé.
+    pub champion: String,
+    /// Ton poste ("top", "jungle", "mid", "adc", "support").
+    pub position: String,
+    pub bans: Vec<BanPick>,
+    /// true tant qu'une réponse d'OP.GG manque encore.
+    pub pending: bool,
+}
+
+#[derive(Serialize, Clone, Default, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct BanPick {
+    pub champion_id: i64,
+    pub name: String,
+    /// true : il bat ton champion (`win_rate` = ses victoires contre lui) ; false : parmi les plus forts de ton
+    /// poste (`win_rate` = ses victoires à ce poste, `tier` son tier).
+    pub counter: bool,
+    pub win_rate: f64,
+    pub games: u64,
+    pub tier: u8,
 }
 
 #[derive(Serialize, Clone, Default, PartialEq, Debug)]
@@ -1153,6 +1205,11 @@ pub struct Tracker {
     champs: HashMap<i64, opgg::Champ>,
     /// Numéro de chaque champion d'après son nom interne en minuscules (« monkeyking » → 62).
     champion_ids: HashMap<String, i64>,
+    /// Tous les champions du client : (numéro, nom interne, nom affiché), lus avec `champion_ids`.
+    champion_list: Vec<(i64, String, String)>,
+    /// Classement d'OP.GG de chaque poste, et quand le relire (None : à lire dès que possible).
+    meta: Option<HashMap<String, Vec<opgg::MetaChamp>>>,
+    meta_due: Option<Instant>,
     /// Noms des sorts d'invocateur, lus une fois dans le client.
     spell_names: HashMap<i64, String>,
     /// Dernière ligne écrite dans le terminal par sujet, pour ne pas la répéter.
@@ -1198,6 +1255,9 @@ impl Tracker {
             roles: HashMap::new(),
             champs: HashMap::new(),
             champion_ids: HashMap::new(),
+            champion_list: Vec::new(),
+            meta: None,
+            meta_due: None,
             spell_names: HashMap::new(),
             last_log: HashMap::new(),
         }
@@ -1266,6 +1326,11 @@ impl Tracker {
         {
             self.owners_checked.clone_from(&self.puuid);
         }
+        // Classement d'OP.GG pour tes champions du moment, hors sélection et partie (en sélection, il sert aux bans).
+        let lobby = !matches!(phase.as_str(), "ChampSelect" | "GameStart" | "InProgress" | "Reconnect");
+        if lobby && self.profile.is_some() {
+            self.lane_meta(&base, &password).await;
+        }
         if phase_changed && phase == "ChampSelect" {
             self.last_pick = None;
         }
@@ -1301,7 +1366,10 @@ impl Tracker {
             riot_id: self.riot_id.clone(),
             summoner_level: self.summoner_level,
             phase: Some(phase),
-            profile: self.profile.clone(),
+            profile: self.profile.clone().map(|mut profile| {
+                self.rate_champions(&mut profile);
+                profile
+            }),
             runes,
             game,
             history: self.history.overview(self.puuid.as_deref()),
@@ -1402,6 +1470,13 @@ impl Tracker {
             });
             let taken = taken_champions(&session, &enemies);
             result.help = self.pick_help(base, password, position, mode, opponent.as_ref(), partner, &taken).await;
+        }
+        // Phase des bans : qui bannir, tant que ton ban n'est pas fait.
+        if laning && my_ban_pending(&session) {
+            let mut avoid = taken_champions(&session, &enemies);
+            avoid.extend(allies.iter().map(|a| a.champion_id).filter(|id| *id > 0));
+            let mine = (shown > 0).then_some(shown);
+            result.bans = Some(self.ban_help(base, password, mine, position, mode, &avoid).await);
         }
         // Ton bilan dans ce duel, pour le champion verrouillé ou cliqué.
         if let Some(id) = opponent.as_ref().map(|o| o.id).filter(|_| shown > 0) {
@@ -1914,6 +1989,146 @@ impl Tracker {
         champ
     }
 
+    /// Liste de tous les champions du client, lue une fois (réessayée au tour suivant en cas d'échec).
+    async fn load_champion_list(&mut self, base: &str, password: &str) {
+        if !self.champion_list.is_empty() {
+            return;
+        }
+        let url = format!("{base}/lol-game-data/assets/v1/champion-summary.json");
+        let Some(Value::Array(list)) = self.get(&url, Some(password)).await else {
+            return;
+        };
+        let text = |c: &Value, key: &str| c[key].as_str().unwrap_or_default().to_string();
+        self.champion_list = list
+            .iter()
+            .filter_map(|c| Some((c["id"].as_i64().filter(|id| *id > 0)?, text(c, "alias"), text(c, "name"))))
+            .collect();
+        self.champion_ids = self.champion_list.iter().map(|(id, alias, _)| (alias.to_lowercase(), *id)).collect();
+    }
+
+    /// Classement d'OP.GG de chaque poste, relu au plus toutes les 3 heures. None tant qu'il n'a pas pu être lu.
+    async fn lane_meta(&mut self, base: &str, password: &str) -> Option<&HashMap<String, Vec<opgg::MetaChamp>>> {
+        if self.meta_due.is_none_or(|due| Instant::now() >= due) {
+            // Sans la liste des champions du client, impossible de retrouver leurs numéros : au tour suivant.
+            self.load_champion_list(base, password).await;
+            if !self.champion_list.is_empty() {
+                self.fetch_meta().await;
+            }
+        }
+        self.meta.as_ref()
+    }
+
+    async fn fetch_meta(&mut self) {
+        match self.opgg.lane_meta().await {
+            Ok(mut meta) => {
+                let mut unknown = Vec::new();
+                for champ in meta.values_mut().flat_map(|list| list.iter_mut()) {
+                    match champion_by_name(&champ.name, &self.champion_list) {
+                        Some((id, name)) => (champ.champion_id, champ.name) = (id, name.to_string()),
+                        None => unknown.push(champ.name.clone()),
+                    }
+                }
+                unknown.sort();
+                unknown.dedup();
+                let counts: Vec<String> = meta.iter().map(|(position, list)| format!("{position} {}", list.len())).collect();
+                eprintln!(
+                    "[méta] classement OP.GG : {} ; noms non retrouvés dans le client : {}",
+                    counts.join(", "),
+                    if unknown.is_empty() { "aucun".to_string() } else { unknown.join(", ") }
+                );
+                self.meta = Some(meta);
+                self.meta_due = Some(Instant::now() + META_REFRESH);
+            }
+            Err(e) => {
+                eprintln!("[méta] classement : {e}");
+                self.meta_due = Some(Instant::now() + META_RETRY);
+            }
+        }
+    }
+
+    /// Tes champions du moment dans le classement d'OP.GG, au poste où tu les joues le plus d'après les parties
+    /// suivies par l'app, sinon à leur poste principal (celui où ils sont le plus joués).
+    fn rate_champions(&self, profile: &mut Profile) {
+        let Some(meta) = &self.meta else {
+            return;
+        };
+        let puuid = self.puuid.as_deref();
+        for champion in &mut profile.recent_champions {
+            let id = champion.champion_id;
+            let at = |position: &str| {
+                let list = meta.get(position)?;
+                let found = list.iter().find(|c| c.champion_id == id)?;
+                Some((position.to_string(), found, list.len()))
+            };
+            let mine = self.history.main_position(puuid, id).and_then(|position| at(&position));
+            let main = || POSITIONS.iter().filter_map(|p| at(p)).max_by(|a, b| a.1.role_rate.total_cmp(&b.1.role_rate));
+            champion.meta = mine.or_else(main).map(|(position, c, ranked)| ChampionMeta {
+                position,
+                tier: c.tier,
+                rank: c.rank,
+                ranked: ranked as u32,
+                rank_prev_patch: c.rank_prev_patch,
+                win_rate: c.win_rate,
+            });
+        }
+    }
+
+    /// Bans conseillés : d'abord les champions qui battent le tien à ton poste (s'ils gagnent plus d'une partie
+    /// sur deux contre lui), puis les mieux classés de ton poste sur OP.GG. Jamais un champion déjà banni ou pris
+    /// (`avoid`), ni un de ton équipe, survolé ou choisi. Une seule question à OP.GG par tour pour les contres.
+    async fn ban_help(
+        &mut self,
+        base: &str,
+        password: &str,
+        mine: Option<i64>,
+        position: &str,
+        mode: &str,
+        avoid: &[i64],
+    ) -> BanHelp {
+        let mut help = BanHelp { position: position.to_string(), ..Default::default() };
+        let mut asked = false;
+        if let Some(id) = mine {
+            let champ = self.champ(base, password, id).await;
+            help.champion = champ.name.clone();
+            match self.help_of(&champ, position, mode, &mut asked).await {
+                Some(found) => {
+                    let all = self.counters_of(base, password, &champ, &found, position, &mut asked).await;
+                    help.pending |= all.is_none();
+                    let list = all.as_deref().filter(|all| !all.is_empty()).unwrap_or(&found.counters);
+                    let counters = list.iter().filter(|p| p.win_rate > 0.5 && !avoid.contains(&p.champion_id));
+                    help.bans.extend(counters.take(BAN_COUNTERS).map(|p| BanPick {
+                        champion_id: p.champion_id,
+                        name: p.name.clone(),
+                        counter: true,
+                        win_rate: p.win_rate,
+                        games: p.games,
+                        tier: 0,
+                    }));
+                }
+                None => help.pending = true,
+            }
+        }
+        let Some(list) = self.lane_meta(base, password).await.and_then(|meta| meta.get(position)) else {
+            return help;
+        };
+        let free: Vec<BanPick> = list
+            .iter()
+            .filter(|c| c.champion_id > 0 && !avoid.contains(&c.champion_id))
+            .filter(|c| !help.bans.iter().any(|b| b.champion_id == c.champion_id))
+            .take(BANS_SHOWN.saturating_sub(help.bans.len()))
+            .map(|c| BanPick {
+                champion_id: c.champion_id,
+                name: c.name.clone(),
+                counter: false,
+                win_rate: c.win_rate,
+                games: c.play,
+                tier: c.tier,
+            })
+            .collect();
+        help.bans.extend(free);
+        help
+    }
+
     /// Runes et build OP.GG pour (champion, poste, mode), gardés en mémoire.
     async fn analysis(&mut self, me: &opgg::Champ, position: &str, mode: &str) -> Result<opgg::Analysis, String> {
         if position.is_empty() {
@@ -2111,16 +2326,7 @@ impl Tracker {
     /// Tes stats dans la partie en cours, via la Live Client Data API.
     /// Pendant l'écran de chargement : les champions et les rangs, d'après le client.
     async fn live_game(&mut self, base: &str, password: &str) -> Game {
-        if self.champion_ids.is_empty() {
-            let url = format!("{base}/lol-game-data/assets/v1/champion-summary.json");
-            if let Some(Value::Array(list)) = self.get(&url, Some(password)).await {
-                self.champion_ids = list
-                    .iter()
-                    .filter_map(|c| Some((c["alias"].as_str()?.to_lowercase(), c["id"].as_i64()?)))
-                    .filter(|(_, id)| *id > 0)
-                    .collect();
-            }
-        }
+        self.load_champion_list(base, password).await;
         if self.game.is_none() {
             self.game = self.start_game(base, password).await;
         }
@@ -2820,6 +3026,7 @@ impl Tracker {
         self.spell_names.clear();
         self.champs.clear();
         self.champion_ids.clear();
+        self.champion_list.clear();
         *self.assets.auth.lock().unwrap() = self.lcu.clone();
     }
 }
@@ -2877,6 +3084,35 @@ fn locked_champion(current: Option<&Value>, session: &Value) -> i64 {
         return my_cell(session).and_then(|p| p["championId"].as_i64()).unwrap_or(0);
     }
     0
+}
+
+/// Ton ban n'est pas encore fait : la phase des bans arrive ou est en cours.
+fn my_ban_pending(session: &Value) -> bool {
+    let me = &session["localPlayerCellId"];
+    let actions = session["actions"].as_array().into_iter().flatten().filter_map(Value::as_array).flatten();
+    actions.filter(|a| a["type"] == "ban" && &a["actorCellId"] == me).any(|a| a["completed"] != true)
+}
+
+/// Numéro et nom dans le client d'un champion d'après son nom anglais sur OP.GG, comparés sans ponctuation, espaces
+/// ni majuscules : son nom interne (« Kai'Sa » = Kaisa) ; sinon son nom affiché (« Wukong »), le plus petit numéro
+/// s'il y en a plusieurs (le client liste aussi des variantes de modes spéciaux, « Jade_Annie » nommée Annie) ;
+/// sinon le champion dont le nom interne est le premier mot de son nom (« Nunu & Willump » = Nunu).
+/// Vérifié sur les vraies listes (client anglais ou français) : les 173 noms d'OP.GG sont retrouvés.
+fn champion_by_name<'a>(name: &str, champions: &'a [(i64, String, String)]) -> Option<(i64, &'a str)> {
+    let key = |text: &str| -> String { text.chars().filter(char::is_ascii_alphanumeric).map(|c| c.to_ascii_lowercase()).collect() };
+    let wanted = key(name);
+    let first = key(name.split_whitespace().next().unwrap_or_default());
+    if wanted.is_empty() {
+        return None;
+    }
+    let by_name = || champions.iter().filter(|(_, _, shown)| key(shown) == wanted).min_by_key(|(id, _, _)| *id);
+    let by_first = || champions.iter().find(|(_, alias, _)| !first.is_empty() && key(alias) == first);
+    champions
+        .iter()
+        .find(|(_, alias, _)| key(alias) == wanted)
+        .or_else(by_name)
+        .or_else(by_first)
+        .map(|(id, _, shown)| (*id, shown.as_str()))
 }
 
 /// Champions déjà pris ou bannis, par une équipe ou l'autre.
@@ -3045,7 +3281,7 @@ pub fn summarize(solo: Option<Rank>, flex: Option<Rank>, records: Vec<history::G
         .map(|(champion_id, games, wins)| {
             // Nom déjà connu (OP.GG le donne avec chaque partie).
             let name = records.iter().find(|r| r.champion_id == champion_id).map(|r| r.champion.clone()).unwrap_or_default();
-            RecentChampion { champion_id, name, games, wins }
+            RecentChampion { champion_id, name, games, wins, meta: None }
         })
         .collect();
     Profile {
