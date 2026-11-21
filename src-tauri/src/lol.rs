@@ -1001,6 +1001,8 @@ pub struct RecentForm {
     /// Ses parties et victoires avec le champion qu'il joue.
     pub champion_games: u32,
     pub champion_wins: u32,
+    /// OTP (« one-trick ») : il joue surtout ce champion, au moins 60 % de ses dernières parties (10 lues au moins).
+    pub otp: bool,
 }
 
 /// Joueur déjà croisé dans une de tes 3 dernières parties, sans être venu avec toi.
@@ -2956,6 +2958,7 @@ fn recent_form(games: &HashMap<i64, Past>, champion_id: i64) -> RecentForm {
         streak: if wins.first() == Some(&true) { run } else { -run },
         champion_games: on.len() as u32,
         champion_wins: on.iter().filter(|p| p.win == Some(true)).count() as u32,
+        otp: played.len() >= 10 && on.len() * 100 >= 60 * played.len(),
     }
 }
 

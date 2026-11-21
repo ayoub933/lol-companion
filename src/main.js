@@ -1373,6 +1373,16 @@ function smurfMark(player) {
   return node;
 }
 
+// OTP : il joue surtout ce champion (au moins 60 % de ses dernières parties). Pastille « OTP », vert vif.
+function otpMark(player) {
+  const recent = player.recent;
+  if (!recent?.otp) return null;
+  const node = el("span", "otp", "OTP");
+  const rate = recent.championGames >= 3 ? ` (${Math.round((recent.championWins / recent.championGames) * 100)} % de victoires)` : "";
+  node.title = `OTP : ${recent.championGames} de ses ${recent.games} dernières parties sur ${player.champion}${rate}`;
+  return node;
+}
+
 function faceCell(player, ready, enemy, opponent, mates) {
   const side = enemy ? " enemy" : "";
   if (!player) return el("div", `fcell${side} empty`, [champIcon(0, ""), el("div", "txt", [el("span", "fname", "?")])]);
@@ -1385,6 +1395,7 @@ function faceCell(player, ready, enemy, opponent, mates) {
         groupMark(player, mates),
         metMark(player),
         smurfMark(player),
+        otpMark(player),
       ]),
       ready && el("span", "line", `niv. ${player.level} · ${player.kills}/${player.deaths}/${player.assists}`),
       // Sur la ligne du rang, pour que les 5 couloirs tiennent toujours dans le bloc.

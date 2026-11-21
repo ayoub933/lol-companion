@@ -229,6 +229,9 @@ pour les duos ; toutes files, sans les parties annulées) :
 - ses parties sur le champion qu'il joue : « Darius : 12 sur 20 · 58 % » (le % à partir de 3 parties), ou
   « Zed : 0 sur ses 20 dernières ».
 
+**OTP** (« one-trick », il joue surtout ce champion) : une pastille « OTP » vert vif à côté du nom, quand au moins
+60 % de ses dernières parties (10 lues au moins) sont sur ce champion ; au survol, combien et son % de victoires.
+
 Elle arrive pendant l'écran de chargement, au fur et à mesure (2 joueurs par seconde). Rien pour un joueur en
 mode streamer.
 
