@@ -113,6 +113,14 @@ impl History {
         self.games.iter().filter(move |g| g.puuid == owner)
     }
 
+    /// Les `count` dernières parties suivies par l'app pour ce compte, la plus récente d'abord.
+    pub fn latest(&self, puuid: &str, count: usize) -> Vec<GameRecord> {
+        let mut games: Vec<GameRecord> = self.games.iter().filter(|g| g.puuid == puuid).cloned().collect();
+        games.sort_by_key(|g| std::cmp::Reverse(g.date));
+        games.truncate(count);
+        games
+    }
+
     /// Parties enregistrées sans leur compte : (partie, champion joué).
     pub fn unowned(&self) -> Vec<(i64, i64)> {
         self.games.iter().filter(|g| g.puuid.is_empty()).map(|g| (g.game_id, g.champion_id)).collect()

@@ -1176,6 +1176,8 @@ pub struct Tracker {
     puuid: Option<String>,
     summoner_id: Option<u64>,
     profile: Option<Profile>,
+    /// Tes 20 dernières parties à la dernière lecture (de quoi compléter une liste raccourcie par le client).
+    recent_records: Vec<history::GameRecord>,
     /// Profil à relire (connexion au client, partie enregistrée).
     profile_due: bool,
     /// Contres et partenaires d'OP.GG par (champion, poste, mode).
@@ -1246,6 +1248,7 @@ impl Tracker {
             puuid: None,
             summoner_id: None,
             profile: None,
+            recent_records: Vec::new(),
             profile_due: true,
             help_cache: HashMap::new(),
             counters_cache: HashMap::new(),
@@ -2832,7 +2835,8 @@ impl Tracker {
             return None;
         }
         let games = matches.as_ref().and_then(|m| m["games"]["games"].as_array()).cloned().unwrap_or_default();
-        let records = games.iter().filter_map(|g| history::record_from(g, self.puuid.as_deref(), self.summoner_id, 0)).collect();
+        let fresh = games.iter().filter_map(|g| history::record_from(g, self.puuid.as_deref(), self.summoner_id, 0)).collect();
+        let records = self.complete_records(fresh);
         let solo = ranked.as_ref().map(|r| rank_in(r, "RANKED_SOLO_5x5"));
         let flex = ranked.as_ref().map(|r| rank_in(r, "RANKED_FLEX_SR"));
         let mut profile = summarize(solo, flex, records);
@@ -2854,6 +2858,30 @@ impl Tracker {
             }
         }
         Some(profile)
+    }
+
+    /// Tes 20 dernières parties : celles que le client vient de donner, complétées par celles déjà vues (lecture
+    /// précédente, parties suivies par l'app). Le client renvoie parfois une liste raccourcie, jusqu'à une seule
+    /// partie (juste après une partie, ou pendant qu'il recharge ton historique chez Riot) : sans ce complément,
+    /// le salon n'affichait plus que ta dernière partie jusqu'au redémarrage de l'app.
+    fn complete_records(&mut self, fresh: Vec<history::GameRecord>) -> Vec<history::GameRecord> {
+        const KEPT: usize = 20;
+        let puuid = self.puuid.clone().unwrap_or_default();
+        let given = fresh.len();
+        let mut records = fresh;
+        let known = self.recent_records.iter().cloned().chain(self.history.latest(&puuid, KEPT));
+        for record in known.filter(|r| r.puuid == puuid) {
+            if !records.iter().any(|r| r.game_id == record.game_id) {
+                records.push(record);
+            }
+        }
+        records.sort_by_key(|r| std::cmp::Reverse(r.date));
+        records.truncate(KEPT);
+        if given < KEPT && records.len() > given {
+            eprintln!("[profil] le client n'a donné que {given} partie(s) : complété avec celles déjà vues ({})", records.len());
+        }
+        self.recent_records.clone_from(&records);
+        records
     }
 
     /// Le client cache tes défaites : victoires et défaites d'OP.GG (rang et LP gardés).
@@ -3049,6 +3077,7 @@ impl Tracker {
         self.puuid = None;
         self.summoner_id = None;
         self.profile = None;
+        self.recent_records.clear();
         self.profile_due = true;
         self.spells_set = None;
         self.seen_spells = None;

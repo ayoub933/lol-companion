@@ -367,6 +367,11 @@ adversaire et poste pour les parties suivies par l'app), et tes stats par champi
 minute, % de victoires) et par duel. L'ARAM est compté à part. Les stats de l'app commencent à la
 première partie jouée avec elle ; l'historique des 10 parties vient du client et les montre toutes.
 
+Le client renvoie parfois une liste de parties raccourcie, jusqu'à une seule (juste après une partie, ou pendant
+qu'il recharge ton historique chez Riot) : l'app la complète avec les parties déjà vues (lecture précédente,
+parties qu'elle a suivies), sans jamais en perdre ; le terminal le note (« [profil] le client n'a donné que
+1 partie(s) : complété… »).
+
 **Champions du moment** : tes 3 champions les plus joués sur tes 20 dernières parties, avec ton bilan, et leur
 place dans le classement d'OP.GG (« tier list ») du patch : tier en couleur (T1, le meilleur, en or ; T2 en
 vert-bleu ; T3 en bleu ; T4 en gris ; T5 en rouge-rose), poste, % de victoires à ce poste, et places gagnées
