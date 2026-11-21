@@ -1325,7 +1325,8 @@ function smurfMark(player) {
   const node = el("span", "smurf");
   node.innerHTML = MASK;
   const rate = Math.round((wins / Math.max(wins + losses, 1)) * 100);
-  node.title = `Smurf probable : ${wins} V – ${losses} D (${rate} %) en classée cette saison, peu de parties pour un % aussi haut`;
+  const level = player.accountLevel ? `, compte niveau ${player.accountLevel}` : "";
+  node.title = `Smurf probable : ${wins} V – ${losses} D (${rate} %) en classée cette saison${level}`;
   return node;
 }
 

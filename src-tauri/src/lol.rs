@@ -937,8 +937,10 @@ pub struct Player {
     /// Sa série en cours et son expérience sur son champion, d'après ses dernières parties ; None tant qu'elles
     /// ne sont pas lues (ou s'il est en mode streamer).
     pub recent: Option<RecentForm>,
-    /// Smurf probable, d'après son rang dans la file de la partie (voir `smurf_like`).
+    /// Smurf probable, d'après son rang dans la file de la partie et le niveau de son compte (voir `smurf_like`).
     pub smurf: bool,
+    /// Niveau de son compte ; None tant qu'il n'est pas lu.
+    pub account_level: Option<u64>,
 }
 
 /// Ce que ses dernières parties disent d'un joueur (lues pendant le chargement, comme pour les duos).
@@ -986,6 +988,8 @@ struct Recent {
     puuid: String,
     /// Ses 20 dernières parties (sans celle en cours), par numéro de partie.
     games: HashMap<i64, Past>,
+    /// Niveau de son compte (pour repérer un smurf).
+    level: Option<u64>,
 }
 
 /// La partie en cours : ses joueurs et leurs rangs (connus dès l'écran de chargement),
@@ -1029,6 +1033,8 @@ struct CurrentGame {
     met: HashMap<i64, Met>,
     /// Fiche rapide de chaque joueur dont les parties sont lues, par champion.
     forms: HashMap<i64, RecentForm>,
+    /// Niveau du compte de chaque joueur lu, par champion.
+    levels: HashMap<i64, u64>,
     /// Compte de chaque joueur que le client donne, par champion.
     puuids: HashMap<i64, String>,
 }
@@ -2105,6 +2111,7 @@ impl Tracker {
         let groups = self.game.as_ref().map(|g| &g.groups);
         let met = self.game.as_ref().map(|g| &g.met);
         let forms = self.game.as_ref().map(|g| &g.forms);
+        let levels = self.game.as_ref().map(|g| &g.levels);
         let puuids = self.game.as_ref().map(|g| &g.puuids);
         // Joueur absent de ceux que le client donne : il est en mode streamer, son rang est caché.
         let hidden = |id: i64| self.game.as_ref().is_some_and(|g| !g.listed.is_empty() && !g.listed.contains(&id));
@@ -2127,7 +2134,8 @@ impl Tracker {
                 assists: score("assists"),
                 me: std::ptr::eq(player, p),
                 rank_hidden: rank.is_none() && hidden(id),
-                smurf: rank.as_ref().is_some_and(smurf_like),
+                smurf: rank.as_ref().is_some_and(|rank| smurf_like(rank, levels.and_then(|l| l.get(&id)).copied())),
+                account_level: levels.and_then(|l| l.get(&id)).copied(),
                 rank,
                 position: player["position"].as_str().unwrap_or_default().to_string(),
                 items_value: self.assets.items_value(&inventory(player)),
@@ -2415,7 +2423,7 @@ impl Tracker {
                     champion_id,
                     me: is_me,
                     rank_hidden: puuid.is_none(),
-                    smurf: rank.as_ref().is_some_and(smurf_like),
+                    smurf: rank.as_ref().is_some_and(|rank| smurf_like(rank, None)),
                     rank,
                     position: lane.to_string(),
                     riot_id,
@@ -2454,18 +2462,28 @@ impl Tracker {
             if let Some(list) = self.get_from_riot(&url, password).await {
                 player.games = past_games(&list, &player.puuid, game_id);
             }
+            let url = format!("{base}/lol-summoner/v2/summoners/puuid/{}", player.puuid);
+            player.level = self.get_from_riot(&url, password).await.and_then(|s| s["summonerLevel"].as_u64());
             read.push(player);
         }
         let Some(game) = &mut self.game else {
             return;
         };
-        // Fiche rapide de chacun, dès que ses parties sont lues.
-        for player in read.iter().filter(|p| !p.games.is_empty()) {
-            let form = recent_form(&player.games, player.champion_id);
-            for shown in game.allies.iter_mut().chain(game.enemies.iter_mut()).filter(|p| p.champion_id == player.champion_id) {
-                shown.recent = Some(form.clone());
+        // Fiche rapide de chacun, dès que ses parties sont lues ; smurf revu avec le niveau de son compte.
+        for player in &read {
+            let shown = game.allies.iter_mut().chain(game.enemies.iter_mut()).filter(|p| p.champion_id == player.champion_id);
+            let form = (!player.games.is_empty()).then(|| recent_form(&player.games, player.champion_id));
+            for shown in shown {
+                shown.recent.clone_from(&form);
+                shown.account_level = player.level;
+                shown.smurf = shown.rank.as_ref().is_some_and(|rank| smurf_like(rank, player.level));
             }
-            game.forms.insert(player.champion_id, form);
+            if let Some(form) = form {
+                game.forms.insert(player.champion_id, form);
+            }
+            if let Some(level) = player.level {
+                game.levels.insert(player.champion_id, level);
+            }
         }
         game.to_check.drain(..read.len());
         game.checked.extend(read);
@@ -2997,13 +3015,25 @@ pub fn rank_in(stats: &Value, queue: &str) -> Rank {
     }
 }
 
-/// Smurf probable (compte d'un joueur plus fort que son rang) : peu de parties classées cette saison dans la file de
-/// la partie (10 à 100), au moins 65 % de victoires, et trop pour être de la chance : victoires − défaites ≥ 2 × √parties
-/// (plus de 2 écarts-types au-dessus de 50 %). Ex. 15 V – 5 D : oui ; 14 V – 6 D : non ; 130 V – 70 D : non (trop de parties).
-fn smurf_like(rank: &Rank) -> bool {
+/// Niveau de compte en dessous duquel un compte est jeune (les classées s'ouvrent au niveau 30).
+const YOUNG_ACCOUNT: u64 = 60;
+
+/// Smurf probable (compte d'un joueur plus fort que son rang), d'après ses parties classées de la saison dans la file
+/// de la partie (au moins 10) :
+/// - peu de parties (100 au plus), au moins 65 % de victoires, et trop pour être de la chance : victoires − défaites
+///   ≥ 2 × √parties (plus de 2 écarts-types au-dessus de 50 %). Ex. 15 V – 5 D : oui ; 14 V – 6 D : non ;
+///   130 V – 70 D : non (beaucoup de parties : un bon joueur) ;
+/// - ou compte jeune (niveau sous 60), au moins 60 % de victoires et victoires − défaites ≥ √parties.
+///   Ex. 13 V – 7 D au niveau 41 : oui (non au niveau 120).
+fn smurf_like(rank: &Rank, level: Option<u64>) -> bool {
     let games = rank.wins + rank.losses;
-    let (wins, losses, total) = (rank.wins as f64, rank.losses as f64, games as f64);
-    (10..=100).contains(&games) && wins >= 0.65 * total && wins - losses >= 2.0 * total.sqrt()
+    // % en entiers (pas d'arrondi à la limite) ; l'écart en nombres à virgule, pour la racine.
+    let rate_at_least = |percent: u64| rank.wins * 100 >= percent * games;
+    let margin = rank.wins as f64 - rank.losses as f64;
+    let spread = (games as f64).sqrt();
+    let few_games = games <= 100 && rate_at_least(65) && margin >= 2.0 * spread;
+    let young = level.is_some_and(|level| level < YOUNG_ACCOUNT) && rate_at_least(60) && margin >= spread;
+    games >= 10 && (few_games || young)
 }
 
 /// Position d'un rang sur l'échelle classée, en LP depuis Fer IV 0 LP : 400 par rang, 100 par division ;
