@@ -72,8 +72,15 @@
       <div class="setting-group">
         <div class="kicker">EN PARTIE</div>
         <label><input type="checkbox" data-setting="showBuildOverlay" /> Panneau des objets à acheter, sur le bord gauche du jeu</label>
-        <label><input type="checkbox" data-setting="showGoldOverlay" /> Écarts d'or, à côté du tableau des scores</label>
-        <div class="muted small">Les deux s'affichent en tenant Tab, par-dessus le jeu en mode « sans bordure ».</div>
+        <label class="choice">
+          Ce panneau s'affiche
+          <select data-setting="buildOverlayAlways">
+            <option value="false">en tenant Tab</option>
+            <option value="true">toute la partie</option>
+          </select>
+        </label>
+        <label><input type="checkbox" data-setting="showGoldOverlay" /> Écarts d'or, à côté du tableau des scores (en tenant Tab)</label>
+        <div class="muted small">Par-dessus le jeu en mode « sans bordure ».</div>
       </div>
       <div class="setting-group">
         <div class="kicker">FENÊTRE</div>

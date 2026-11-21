@@ -66,6 +66,10 @@ pub struct Champ {
     pub name: String,
     /// Nom interne (« MonkeyKing »).
     pub alias: String,
+    /// Type de dégâts d'après le client : "kPhysical", "kMagic" ou "kMixed" (vide si inconnu).
+    pub damage: String,
+    /// Rôles d'après le client : "tank", "fighter", "mage", "assassin", "marksman", "support".
+    pub roles: Vec<String>,
 }
 
 /// Ce qu'OP.GG recommande pour un champion à un poste : runes et build.

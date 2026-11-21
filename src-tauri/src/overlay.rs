@@ -1,8 +1,9 @@
-//! Fenêtres posées sur le jeu, affichées tant que Tab est tenue (avec le tableau des scores) : transparentes,
-//! toujours au-dessus, que les clics traversent et qui ne prennent jamais le clavier. Elles ne se voient que si
-//! LoL est en mode « sans bordure » : en plein écran, le jeu passe par-dessus tout.
-//! - Le panneau des objets à acheter, sur le bord gauche de l'écran du jeu, à mi-hauteur.
-//! - Les écarts d'or, juste à gauche du tableau des scores.
+//! Fenêtres posées sur le jeu, jeu au premier plan : transparentes, toujours au-dessus, que les clics traversent
+//! et qui ne prennent jamais le clavier. Elles ne se voient que si LoL est en mode « sans bordure » : en plein
+//! écran, le jeu passe par-dessus tout.
+//! - Le panneau des objets à acheter, sur le bord gauche de l'écran du jeu, à mi-hauteur : en tenant Tab, ou
+//!   toute la partie (réglage).
+//! - Les écarts d'or, juste à gauche du tableau des scores : en tenant Tab (avec le tableau des scores).
 
 use std::{
     sync::{
@@ -77,6 +78,8 @@ impl Overlay {
 pub struct Ready {
     pub build: AtomicBool,
     pub gold: AtomicBool,
+    /// Panneau des objets affiché toute la partie, sans tenir Tab.
+    pub build_always: AtomicBool,
 }
 
 /// Crée la fenêtre à l'avance (cachée), pour qu'elle s'affiche tout de suite le moment venu.
@@ -89,17 +92,20 @@ pub fn prepare(app: &AppHandle, overlay: Overlay) {
     }
 }
 
-/// Les fenêtres prêtes s'affichent tant que Tab est tenue (sans Alt), jeu au premier plan ;
-/// elles restent cachées le reste du temps (Alt+Tab, clic sur l'autre écran...).
+/// Les fenêtres prêtes s'affichent tant que Tab est tenue (sans Alt), jeu au premier plan, ou tout le temps pour
+/// le panneau des objets si le réglage le demande ; elles restent cachées le reste du temps (Alt+Tab, clic sur
+/// l'autre écran...).
 pub fn watch_tab(app: AppHandle, ready: Arc<Ready>) {
     std::thread::spawn(move || {
         let mut shown: [Option<Rect>; 2] = [None, None];
         loop {
             let wanted = [ready.build.load(Ordering::Relaxed), ready.gold.load(Ordering::Relaxed)];
+            let always = [ready.build_always.load(Ordering::Relaxed), false];
             let active = wanted.contains(&true);
-            let screen = if active && scoreboard_key_held() { game_screen(&app) } else { None };
+            let tab = active && scoreboard_key_held();
+            let screen = if tab || (wanted[0] && always[0]) { game_screen(&app) } else { None };
             for (i, overlay) in [Overlay::Build, Overlay::Gold].into_iter().enumerate() {
-                let target = screen.filter(|_| wanted[i]);
+                let target = screen.filter(|_| wanted[i] && (tab || always[i]));
                 if target != shown[i] {
                     place(&app, overlay, target);
                     shown[i] = target;

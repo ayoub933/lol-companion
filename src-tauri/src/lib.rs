@@ -322,8 +322,8 @@ pub fn run() {
                         *handle.state::<Latest>().0.lock().unwrap() = snap.clone();
                         let _ = handle.emit("lol-state", &snap);
                     }
-                    // En partie, Tab fait apparaître le panneau des objets (tant qu'il en reste à acheter)
-                    // et les écarts d'or.
+                    // En partie : le panneau des objets (en tenant Tab, ou toute la partie) et les écarts d'or
+                    // (en tenant Tab).
                     let started = snap.game.as_ref().filter(|g| g.ready);
                     let build = settings.show_build_overlay && started.is_some_and(|g| !g.panel.is_empty());
                     let gold = settings.show_gold_overlay && started.is_some();
@@ -334,6 +334,7 @@ pub fn run() {
                     }
                     ready.build.store(build, Ordering::Relaxed);
                     ready.gold.store(gold, Ordering::Relaxed);
+                    ready.build_always.store(settings.build_overlay_always, Ordering::Relaxed);
                     let delay = lol::Tracker::next_delay(&snap);
                     previous = snap;
                     tokio::time::sleep(delay).await;

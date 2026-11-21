@@ -38,11 +38,16 @@ const RECORD_RETRY: Duration = Duration::from_secs(5);
 const RECORD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 /// Partie classée dans l'historique mais pas encore comptée dans ton rang : on attend au plus ça ses LP.
 const LP_WAIT: Duration = Duration::from_secs(3 * 60);
-/// Objet gardé ce temps-là après son achat : acheté pour de bon, il quitte le panneau (un achat annulé ou
-/// revendu tout de suite n'y compte pas).
+/// Objet gardé ce temps-là après son achat : acheté pour de bon, il reste grisé dans le panneau même vendu ou
+/// utilisé ensuite (un achat annulé tout de suite n'y compte pas).
 const BOUGHT_AFTER: Duration = Duration::from_secs(30);
 /// Illustrations de skins gardées en mémoire (les plus récentes).
 const SPLASH_CACHE: usize = 6;
+/// Objets à Blessures graves connus (si leur description ne le dit pas dans la langue du client) : Appel du
+/// bourreau, Rappel mortel, Glaive chimiotech, Orbe d'oubli, Morellonomicon, Gilet épineux, Cotte épineuse.
+const GRIEVOUS: [i64; 7] = [3123, 3033, 6609, 3916, 3165, 3076, 3075];
+/// Champions aux gros soins : contre eux, un objet à Blessures graves.
+const HEALERS: [i64; 20] = [16, 350, 266, 8, 517, 36, 19, 50, 233, 420, 267, 37, 902, 9, 2, 106, 48, 147, 57, 154];
 
 /// Ce que l'interface affiche. Envoyé au front à chaque changement.
 #[derive(Serialize, Clone, Default, PartialEq, Debug)]
@@ -257,6 +262,10 @@ struct ItemData {
     icon: String,
     /// Prix total dans la boutique (0 pour les balises, données gratuitement).
     price: u64,
+    /// Catégories de la boutique : "Boots", "Armor", "SpellBlock", "ArmorPenetration", "MagicPenetration"…
+    tags: Vec<String>,
+    /// Applique Blessures graves (réduit les soins des ennemis).
+    grievous: bool,
 }
 
 impl Assets {
@@ -468,8 +477,13 @@ impl Assets {
         let items: HashMap<i64, ItemData> = list
             .iter()
             .filter_map(|it| {
+                let id = it["id"].as_i64()?;
                 let price = it["priceTotal"].as_u64().unwrap_or(0);
-                Some((it["id"].as_i64()?, ItemData { icon: it["iconPath"].as_str()?.to_string(), price }))
+                let tags = it["categories"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect();
+                // Blessures graves : dit dans sa description (client en français ou en anglais), ou objet connu.
+                let text = it["description"].as_str().unwrap_or_default().to_lowercase();
+                let grievous = GRIEVOUS.contains(&id) || text.contains("blessures graves") || text.contains("grievous wounds");
+                Some((id, ItemData { icon: it["iconPath"].as_str()?.to_string(), price, tags, grievous }))
             })
             .collect();
         let loaded = !items.is_empty();
@@ -480,6 +494,21 @@ impl Assets {
     /// Prix d'un objet dans la boutique (0 tant que la liste des objets n'est pas lue).
     fn price(&self, id: i64) -> u64 {
         self.items.lock().unwrap().get(&id).map_or(0, |i| i.price)
+    }
+
+    /// L'objet est dans cette catégorie de la boutique (« Armor », « SpellBlock »…).
+    fn has_tag(&self, id: i64, tag: &str) -> bool {
+        self.items.lock().unwrap().get(&id).is_some_and(|i| i.tags.iter().any(|t| t == tag))
+    }
+
+    /// L'objet applique Blessures graves.
+    fn grievous(&self, id: i64) -> bool {
+        self.items.lock().unwrap().get(&id).is_some_and(|i| i.grievous)
+    }
+
+    /// Bottes améliorées (pas les bottes de base, à 300 pièces d'or).
+    fn upgraded_boots(&self, id: i64) -> bool {
+        self.has_tag(id, "Boots") && self.price(id) > 300
     }
 
     /// Valeur d'un inventaire au prix de la boutique : (objet, nombre) ; None tant que les prix ne sont pas lus.
@@ -607,9 +636,22 @@ pub struct Game {
     /// Les 10 champions : ton équipe et l'équipe adverse, chacune triée par poste.
     pub allies: Vec<Player>,
     pub enemies: Vec<Player>,
-    /// Panneau posé sur le jeu : les objets à acheter (ceux du duel contre ton adversaire de couloir),
-    /// une rangée par étape (départ, 1er objet, bottes, 2e objet), sans ceux déjà achetés. Vide : rien à montrer.
-    pub panel: Vec<Vec<PanelItem>>,
+    /// Panneau posé sur le jeu : les objets à acheter (ceux du duel contre ton adversaire de couloir), une rangée
+    /// par étape (voir `panel`), ceux déjà achetés grisés. Vide : rien à montrer.
+    pub panel: Vec<PanelRow>,
+}
+
+/// Une rangée du panneau posé sur le jeu.
+#[derive(Serialize, Clone, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PanelRow {
+    /// « 1. » à « 5. » : le build dans l'ordre d'achat ; « + » : la suite ; « VS » : contre l'équipe d'en face.
+    pub label: String,
+    pub items: Vec<PanelItem>,
+    /// Étape faite (un de ses objets acheté) : grisée.
+    pub done: bool,
+    /// La prochaine étape à acheter : mise en avant.
+    pub next: bool,
 }
 
 /// Un objet du panneau posé sur le jeu.
@@ -619,8 +661,27 @@ pub struct PanelItem {
     pub id: i64,
     /// Ex. 2 pour deux potions de départ.
     pub count: u32,
-    /// Taille de l'icône : "starter", "main", "boots", ou "alt" (autre choix possible, plus petit).
+    /// Taille de l'icône : "starter", "main", "boots", "alt" (autre choix possible) ou "option" (suite, et
+    /// contre l'équipe d'en face).
     pub size: &'static str,
+    /// Dans ton inventaire, ou acheté pendant la partie : grisé, avec une coche.
+    pub owned: bool,
+    /// Pourquoi il est proposé contre l'équipe d'en face : "soins", "AD", "AP" ou "tanks" ; vide sinon.
+    pub reason: &'static str,
+}
+
+/// Ce que l'équipe d'en face demande, et ton champion pour y répondre.
+#[derive(Default)]
+struct Needs {
+    /// Au moins un gros soigneur en face.
+    anti_heal: bool,
+    /// Dégâts physiques (ou magiques) en large majorité en face.
+    armor: bool,
+    magic_resist: bool,
+    /// Au moins 2 tanks en face : la pénétration qui va avec tes dégâts.
+    penetration: Option<&'static str>,
+    /// Ton composant à Blessures graves si OP.GG n'en propose pas : selon tes dégâts (ou si tu es tank).
+    grievous_component: i64,
 }
 
 /// Un champion de la partie, tel que le tableau des scores (Tab) le montre.
@@ -1443,12 +1504,14 @@ impl Tracker {
         let url = format!("{base}/lol-game-data/assets/v1/champions/{id}.json");
         let Some(info) = self.get(&url, Some(password)).await else {
             // Pas gardé en mémoire : on réessaiera au tour suivant.
-            return opgg::Champ { id, name: id.to_string(), alias: String::new() };
+            return opgg::Champ { id, name: id.to_string(), ..Default::default() };
         };
         let champ = opgg::Champ {
             id,
             name: info["name"].as_str().map_or_else(|| id.to_string(), str::to_string),
             alias: info["alias"].as_str().unwrap_or_default().to_string(),
+            damage: info["tacticalInfo"]["damageType"].as_str().unwrap_or_default().to_string(),
+            roles: info["roles"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect(),
         };
         self.champs.insert(id, champ.clone());
         champ
@@ -1755,15 +1818,22 @@ impl Tracker {
                 game.opponent_id = opponent;
             }
         }
-        // Objets du panneau : ceux du build, sans ceux que tu as achetés pour de bon.
-        let owned: Vec<i64> = p["items"].as_array().into_iter().flatten().filter_map(|it| it["itemID"].as_i64()).collect();
-        self.track_purchases(&owned);
+        // Objets du panneau : ceux du build, ceux que tu as (ou as achetés pendant la partie) grisés.
+        let inventory: Vec<i64> = p["items"].as_array().into_iter().flatten().filter_map(|it| it["itemID"].as_i64()).collect();
+        self.track_purchases(&inventory);
         let build = self.game_build(base, password).await;
+        let enemy_ids: Vec<i64> = enemies.iter().map(|e| e.champion_id).filter(|id| *id > 0).collect();
+        let needs = match &self.game {
+            Some(game) if build.is_some() => self.needs(base, password, game.champion_id, &enemy_ids).await,
+            _ => Needs::default(),
+        };
         let panel = match (&build, &self.game) {
             (Some(build), Some(game)) => {
-                // Départ : sa rangée part dès ton premier achat gardé 30 s, même si c'est un autre départ.
-                let started = game.bought.iter().any(|id| self.assets.price(*id) > 0);
-                panel(build, &game.bought, started)
+                let owned: HashSet<i64> = inventory.iter().chain(&game.bought).copied().collect();
+                // Départ fait dès ton premier achat (même un autre départ), bottes dès des bottes améliorées.
+                let started = owned.iter().any(|id| self.assets.price(*id) > 0);
+                let boots_done = owned.iter().any(|id| self.assets.upgraded_boots(*id));
+                panel(build, &owned, started, boots_done, &needs, &self.assets)
             }
             _ => Vec::new(),
         };
@@ -1787,7 +1857,8 @@ impl Tracker {
         }
     }
 
-    /// Note depuis quand chaque objet est dans ton inventaire : gardé 30 s, il est acheté pour de bon.
+    /// Note depuis quand chaque objet est dans ton inventaire : gardé 30 s, il est acheté pour de bon (et reste
+    /// grisé dans le panneau même vendu ou utilisé ensuite).
     fn track_purchases(&mut self, owned: &[i64]) {
         let Some(game) = &mut self.game else {
             return;
@@ -1798,9 +1869,46 @@ impl Tracker {
             game.held_since.entry(*id).or_insert(now);
         }
         for (id, since) in &game.held_since {
-            if now.duration_since(*since) >= BOUGHT_AFTER && game.bought.insert(*id) {
-                eprintln!("[panneau] objet {id} gardé 30 s : acheté");
+            if now.duration_since(*since) >= BOUGHT_AFTER {
+                game.bought.insert(*id);
             }
+        }
+    }
+
+    /// Ce que l'équipe d'en face demande (voir `Needs`), d'après la fiche de chaque champion dans le client :
+    /// son type de dégâts, ses rôles, et les gros soigneurs (`HEALERS`).
+    async fn needs(&mut self, base: &str, password: &str, me: i64, enemies: &[i64]) -> Needs {
+        let mine = self.champ(base, password, me).await;
+        let (mut physical, mut magic, mut tanks) = (0.0, 0.0, 0);
+        for id in enemies {
+            let enemy = self.champ(base, password, *id).await;
+            match enemy.damage.as_str() {
+                "kPhysical" => physical += 1.0,
+                "kMagic" => magic += 1.0,
+                "kMixed" => {
+                    physical += 0.5;
+                    magic += 0.5;
+                }
+                _ => {}
+            }
+            tanks += usize::from(enemy.roles.iter().any(|r| r == "tank"));
+        }
+        let healers = enemies.iter().filter(|id| HEALERS.contains(id)).count();
+        self.log("contre", format!("[panneau] en face : {physical} AD, {magic} AP, {tanks} tank(s), {healers} soigneur(s)"));
+        let magic_damage = mine.damage == "kMagic";
+        Needs {
+            anti_heal: healers > 0,
+            armor: physical >= 3.5,
+            magic_resist: magic >= 3.5,
+            penetration: (tanks >= 2).then_some(if magic_damage { "MagicPenetration" } else { "ArmorPenetration" }),
+            // Gilet épineux pour un tank, Orbe d'oubli pour des dégâts magiques, sinon Appel du bourreau.
+            grievous_component: if mine.roles.iter().any(|r| r == "tank") {
+                3076
+            } else if magic_damage {
+                3916
+            } else {
+                3123
+            },
         }
     }
 
@@ -2496,28 +2604,77 @@ fn with_atlas(mut build: opgg::Build, position: &str) -> opgg::Build {
     build
 }
 
-/// Panneau en jeu, de haut en bas : départ, 1er objet (et son autre choix), bottes, 2e objet (et son autre choix).
-/// Un objet acheté pour de bon (`bought`) n'y est plus ; le 1er et le 2e objet partent aussi si tu as pris
-/// leur autre choix. `started` : ton premier achat est fait, la rangée du départ n'a plus lieu d'être.
-fn panel(build: &opgg::Build, bought: &HashSet<i64>, started: bool) -> Vec<Vec<PanelItem>> {
-    let item = |i: &opgg::Item, size| PanelItem { id: i.id, count: i.count, size };
-    // Une étape du build : vide dès qu'un de ses objets est acheté.
-    let step = |main: Option<&opgg::Item>, alt: Option<&opgg::Item>, size| -> Vec<PanelItem> {
-        if [main, alt].into_iter().flatten().any(|i| bought.contains(&i.id)) {
-            return Vec::new();
-        }
-        main.map(|m| item(m, size)).into_iter().chain(alt.map(|a| item(a, "alt"))).collect()
+/// Panneau en jeu, de haut en bas : départ, 1er objet (et son autre choix), bottes, 2e objet (et son autre choix),
+/// 3e objet, puis « + » : les 3 premiers choix suivants d'OP.GG, et « VS » : jusqu'à 3 objets contre l'équipe d'en
+/// face (`needs`), pris parmi ces choix avant la suite. Rien ne disparaît : un objet que tu as (`owned`) est grisé, une étape faite aussi, et la
+/// prochaine étape est mise en avant. `started` : ton premier achat est fait ; `boots_done` : tu as des bottes
+/// améliorées (pas forcément celles conseillées).
+fn panel(build: &opgg::Build, owned: &HashSet<i64>, started: bool, boots_done: bool, needs: &Needs, assets: &Assets) -> Vec<PanelRow> {
+    let item = |i: &opgg::Item, size| PanelItem { id: i.id, count: i.count, size, owned: owned.contains(&i.id), reason: "" };
+    // Une étape du build : faite dès qu'un de ses objets est acheté.
+    let step = |main: Option<&opgg::Item>, alt: Option<&opgg::Item>, size| -> (Vec<PanelItem>, bool) {
+        let items: Vec<PanelItem> = main.map(|m| item(m, size)).into_iter().chain(alt.map(|a| item(a, "alt"))).collect();
+        let done = items.iter().any(|i| i.owned);
+        (items, done)
     };
-    let starter = if started { Vec::new() } else { build.starter.iter().map(|i| item(i, "starter")).collect() };
-    [
-        starter,
+    let (boots, boots_owned) = step(build.boots.first(), None, "boots");
+    let path = [
+        (build.starter.iter().map(|i| item(i, "starter")).collect(), started),
         step(build.core.first(), build.first_alt.as_ref(), "main"),
-        step(build.boots.first(), None, "boots"),
+        (boots, boots_owned || boots_done),
         step(build.core.get(1), build.second_alt.as_ref(), "main"),
-    ]
-    .into_iter()
-    .filter(|row| !row.is_empty())
-    .collect()
+        step(build.core.get(2), None, "main"),
+    ];
+    let mut rows: Vec<PanelRow> = Vec::new();
+    for (items, done) in path.into_iter().filter(|(items, _)| !items.is_empty()) {
+        rows.push(PanelRow { label: format!("{}.", rows.len() + 1), items, done, next: false });
+    }
+    let shown: Vec<i64> = rows.iter().flat_map(|r| r.items.iter().map(|i| i.id)).collect();
+    // Contre l'équipe d'en face d'abord : parmi les autres choix d'OP.GG pour ton champion, les plus joués d'abord.
+    let candidates: Vec<&opgg::Item> =
+        build.options.iter().chain(&build.first_alt).chain(&build.second_alt).filter(|i| !shown.contains(&i.id)).collect();
+    // Le premier candidat qui convient, pas déjà proposé.
+    let pick = |taken: &[PanelItem], fits: &dyn Fn(i64) -> bool, reason: &'static str| -> Option<PanelItem> {
+        let found = candidates.iter().find(|i| fits(i.id) && !taken.iter().any(|t| t.id == i.id))?;
+        Some(PanelItem { reason, ..item(found, "option") })
+    };
+    let mut against: Vec<PanelItem> = Vec::new();
+    if needs.anti_heal {
+        // Sans objet à Blessures graves parmi ses choix : le composant qui va avec tes dégâts.
+        let id = needs.grievous_component;
+        let component = (assets.price(id) > 0).then(|| PanelItem { id, count: 1, size: "option", owned: owned.contains(&id), reason: "soins" });
+        let found = pick(&against, &|id| assets.grievous(id), "soins").or(component);
+        against.extend(found);
+    }
+    let wanted = [(needs.armor, "Armor", "AD"), (needs.magic_resist, "SpellBlock", "AP")];
+    for (tag, reason) in wanted.into_iter().filter(|(wanted, _, _)| *wanted).map(|(_, tag, reason)| (tag, reason)) {
+        let found = pick(&against, &|id| assets.has_tag(id, tag), reason);
+        against.extend(found);
+    }
+    if let Some(tag) = needs.penetration {
+        let found = pick(&against, &|id| assets.has_tag(id, tag), "tanks");
+        against.extend(found);
+    }
+    against.truncate(3);
+    // La suite : les 3 premiers choix suivants d'OP.GG, hors ceux déjà proposés contre l'équipe d'en face.
+    let more: Vec<PanelItem> = build
+        .options
+        .iter()
+        .filter(|i| !shown.contains(&i.id) && !against.iter().any(|a| a.id == i.id))
+        .take(3)
+        .map(|i| item(i, "option"))
+        .collect();
+    if !more.is_empty() {
+        rows.push(PanelRow { label: "+".to_string(), done: more.iter().all(|i| i.owned), items: more, next: false });
+    }
+    if !against.is_empty() {
+        rows.push(PanelRow { label: "VS".to_string(), items: against, done: false, next: false });
+    }
+    // La prochaine étape : la première pas encore faite.
+    if let Some(row) = rows.iter_mut().find(|r| !r.done && r.label != "VS") {
+        row.next = true;
+    }
+    rows
 }
 
 /// Set d'objets au format du client : il apparaît dans la boutique, pour ce champion.

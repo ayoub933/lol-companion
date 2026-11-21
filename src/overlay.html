@@ -3,7 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <title>LoL Companion · objets</title>
-    <!-- Panneau posé sur le jeu, tant que Tab est tenue : les icônes numérotées, collées au bord gauche, à mi-hauteur. -->
+    <!-- Panneau posé sur le jeu (en tenant Tab, ou toute la partie) : les icônes numérotées, collées au bord gauche,
+         à mi-hauteur. -->
     <style>
       html,
       body {
@@ -23,16 +24,16 @@
         transform: translateY(-50%);
         display: flex;
         flex-direction: column;
-        gap: calc(22 * var(--u));
+        gap: calc(13 * var(--u));
       }
       .row {
         display: flex;
         align-items: flex-end;
         gap: calc(6 * var(--u));
       }
-      /* Ordre d'achat : 1 = le prochain achat. */
+      /* Ordre d'achat (1. = départ), « + » : la suite, « VS » : contre l'équipe d'en face. */
       .num {
-        width: calc(18 * var(--u));
+        width: calc(22 * var(--u));
         align-self: center;
         text-align: right;
         font: 700 calc(15 * var(--u)) / 1 "Segoe UI", system-ui, sans-serif;
@@ -70,6 +71,58 @@
         height: calc(30 * var(--u));
         opacity: 0.75;
       }
+      /* Choix suivants et objets contre l'équipe d'en face. */
+      .option {
+        width: calc(30 * var(--u));
+        height: calc(30 * var(--u));
+      }
+      .row.more .num,
+      .row.vs .num {
+        font-size: calc(11 * var(--u));
+        letter-spacing: 0.04em;
+      }
+      /* Prochaine étape à acheter : numéro doré, icônes cerclées d'or. */
+      .row.next .num {
+        color: #ffcf4a;
+      }
+      .row.next .icon {
+        box-shadow:
+          0 0 0 calc(2 * var(--u)) #ffcf4a,
+          0 calc(1 * var(--u)) calc(4 * var(--u)) rgba(0, 0, 0, 0.7);
+      }
+      /* Étape faite, objet acheté : grisés ; l'objet acheté porte une coche. */
+      .row.done .num {
+        color: #9a9a9a;
+      }
+      .row.done .icon img,
+      .icon.owned img {
+        filter: grayscale(1) brightness(0.45);
+      }
+      .icon.owned::after {
+        content: "✓";
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        color: #7dffb0;
+        font: 700 calc(17 * var(--u)) / 1 "Segoe UI", system-ui, sans-serif;
+        text-shadow: 0 0 calc(3 * var(--u)) #000;
+      }
+      /* Pourquoi cet objet contre l'équipe d'en face (soins, AD, AP, tanks), sous son icône. */
+      .with-reason {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: calc(2 * var(--u));
+      }
+      .reason {
+        color: #f0e6d2;
+        font: 600 calc(9 * var(--u)) / 1 "Segoe UI", system-ui, sans-serif;
+        text-transform: uppercase;
+        text-shadow:
+          0 0 calc(3 * var(--u)) #000,
+          0 calc(1 * var(--u)) calc(2 * var(--u)) #000;
+      }
       .count {
         position: absolute;
         right: 0;
@@ -94,7 +147,7 @@
       // Icône d'un objet, servie par l'app depuis le client (lcu://localhost/item-<numéro>).
       function icon(item) {
         const box = document.createElement("div");
-        box.className = `icon ${item.size}`;
+        box.className = `icon ${item.size}${item.owned ? " owned" : ""}`;
         const img = document.createElement("img");
         img.alt = "";
         img.src = convertFileSrc(`item-${item.id}`, "lcu");
@@ -111,22 +164,31 @@
           count.textContent = `×${item.count}`;
           box.append(count);
         }
-        return box;
+        if (!item.reason) return box;
+        const wrap = document.createElement("div");
+        wrap.className = "with-reason";
+        const reason = document.createElement("span");
+        reason.className = "reason";
+        reason.textContent = item.reason;
+        wrap.append(box, reason);
+        return wrap;
       }
 
-      // Une rangée : son numéro dans l'ordre d'achat, puis ses objets.
-      function row(items, index) {
+      // Une rangée : son numéro dans l'ordre d'achat (ou « + », « VS »), puis ses objets.
+      function row(line) {
         const div = document.createElement("div");
-        div.className = "row";
+        const kind = line.label === "+" ? " more" : line.label === "VS" ? " vs" : "";
+        div.className = `row${kind}${line.done ? " done" : ""}${line.next ? " next" : ""}`;
         const num = document.createElement("span");
         num.className = "num";
-        num.textContent = `${index + 1}.`;
-        div.append(num, ...items.map(icon));
+        num.textContent = line.label;
+        div.append(num, ...line.items.map(icon));
         return div;
       }
 
       // Les rangées viennent de l'app, de haut en bas : départ, 1er objet (et son autre choix), bottes,
-      // 2e objet (et son autre choix) ; un objet acheté pour de bon n'y est plus, la suite est renumérotée.
+      // 2e objet (et son autre choix), 3e objet, la suite (+), et contre l'équipe d'en face (VS). Rien ne
+      // disparaît : ce qui est acheté est grisé, la prochaine étape mise en avant.
       function render(state) {
         const rows = state?.game?.panel ?? [];
         const key = JSON.stringify(rows);
