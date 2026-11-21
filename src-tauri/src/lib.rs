@@ -261,7 +261,23 @@ pub fn run() {
         })
         .setup(move |app| {
             let file = app.path().app_config_dir()?.join("reglages.json");
-            let settings = Settings::load(&file);
+            let mut settings = Settings::load(&file);
+            // Lancement avec Windows activé par défaut, une seule fois : ensuite, seul ton choix dans les réglages
+            // compte. Pas en développement : Windows lancerait l'exe de développement au démarrage.
+            if !settings.startup_default_applied && !cfg!(debug_assertions) {
+                let autolaunch = app.autolaunch();
+                let enabled = autolaunch.is_enabled().unwrap_or(false) || autolaunch.enable().is_ok();
+                if enabled {
+                    eprintln!("[app] lancement avec Windows activé (par défaut)");
+                    settings.start_with_windows = true;
+                    settings.startup_default_applied = true;
+                    if let Err(e) = settings.save(&file) {
+                        eprintln!("[app] {e}");
+                    }
+                } else {
+                    eprintln!("[app] lancement avec Windows impossible à activer : réessayé au prochain démarrage");
+                }
+            }
             app.manage(Prefs { file, settings: Mutex::new(settings) });
             let data_dir = app.path().app_data_dir()?;
 

@@ -15,6 +15,9 @@ pub struct Settings {
     pub item_set_per_champion: bool,
     /// Lancement avec Windows : c'est Windows qui le garde, ce champ ne fait que le transmettre.
     pub start_with_windows: bool,
+    /// true une fois le lancement avec Windows activé par défaut (première ouverture de la version installée,
+    /// ou mise à jour depuis une version qui ne le faisait pas) : ensuite, seul ton choix dans les réglages compte.
+    pub startup_default_applied: bool,
     pub show_on_client_start: bool,
     pub notify_match_found: bool,
     /// true = la croix réduit l'app dans la zone de notification (près de l'horloge).
@@ -37,7 +40,8 @@ impl Default for Settings {
             import_spells: true,
             flash_key: "auto".to_string(),
             item_set_per_champion: false,
-            start_with_windows: false,
+            start_with_windows: true,
+            startup_default_applied: false,
             show_on_client_start: true,
             notify_match_found: true,
             close_to_tray: true,

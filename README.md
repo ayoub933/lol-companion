@@ -105,6 +105,9 @@ Windows » : c'est l'exe de développement qui serait lancé au démarrage.
   réessaie une minute plus tard. Les champions gardent le nom du client.
 - Lancer avec Windows (l'app démarre cachée près de l'horloge), afficher la fenêtre
   quand le client LoL s'ouvre, notification quand une partie est trouvée, et ce que fait la croix.
+  Le lancement avec Windows est activé par défaut, une seule fois : à la première ouverture de la version
+  installée (ou à la mise à jour vers la 0.10.11 pour une installation plus ancienne). Décoché ensuite, il
+  le reste. Jamais en développement (`cargo run`).
 
 Un réglage d'import changé en pleine sélection s'applique au prochain import (nouveau champion ou
 adversaire) ; celui des noms, tout de suite. Le panneau se referme avec « FERMER », la roue, Échap, ou un clic
