@@ -122,6 +122,9 @@ Les deux équipes s'affichent en colonnes : la tienne à gauche, dans l'ordre de
 
 Les champions déjà pris ou bannis sont retirés de ces listes.
 
+**Un clic sur un champion de la grille, sans le verrouiller**, affiche déjà ses runes, son build et le
+duel contre ton adversaire (« Aperçu ») : rien n'est mis dans le client tant qu'il n'est pas verrouillé.
+
 **Dès que ton champion est verrouillé**, l'app demande à OP.GG les runes et le build les plus
 joués pour ce champion et ton poste, puis :
 1. écrit les runes dans ta page de runes sélectionnée, qui prend le nom « LoL Companion » ;

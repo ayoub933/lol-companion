@@ -161,6 +161,8 @@ pub struct RuneImport {
     pub duel_wins: u64,
     /// Skin choisi pour ton champion (numéro du client, ex. 103015) ; 0 si inconnu.
     pub skin_id: i64,
+    /// true : champion seulement cliqué (pas verrouillé) ; ses runes et son build sont montrés, rien n'est importé.
+    pub preview: bool,
 }
 
 /// Avant de verrouiller : les champions qui battent ton adversaire direct,
@@ -772,6 +774,8 @@ pub struct Tracker {
     summoner_level: Option<u64>,
     /// Import fait pendant cette sélection : (champion, poste, mode, adversaire) et son résultat.
     rune_import: Option<(ImportKey, RuneImport)>,
+    /// Aperçu du champion cliqué mais pas verrouillé (rien d'importé), même forme que `rune_import`.
+    rune_preview: Option<(ImportKey, RuneImport)>,
     /// Réponses OP.GG déjà récupérées, pour ne pas redemander à chaque partie.
     cache: HashMap<(i64, String, String), opgg::Analysis>,
     matchups: HashMap<(i64, i64, String), opgg::Matchup>,
@@ -819,6 +823,7 @@ impl Tracker {
             riot_id: None,
             summoner_level: None,
             rune_import: None,
+            rune_preview: None,
             cache: HashMap::new(),
             matchups: HashMap::new(),
             role_rates: HashMap::new(),
@@ -901,6 +906,7 @@ impl Tracker {
             Some(self.champ_select_runes(&base, &password, manual).await)
         } else {
             self.rune_import = None;
+            self.rune_preview = None;
             self.spells_set = None;
             self.seen_spells = None;
             self.page_set = None;
@@ -973,13 +979,19 @@ impl Tracker {
 
         let current = self.get(&format!("{base}/lol-champ-select/v1/current-champion"), Some(password)).await;
         let champion_id = locked_champion(current.as_ref(), &session);
+        // Champion cliqué dans la grille, pas encore verrouillé : on montre ses runes et son build.
+        let hovered = allies.iter().find(|a| a.me && !a.locked).map(|a| a.champion_id).filter(|id| *id > 0);
         let mut result = if champion_id <= 0 {
             self.log("runes", format!(
-                "[runes] en attente du verrouillage (current-champion = {}, session lue = {})",
+                "[runes] en attente du verrouillage (current-champion = {}, session lue = {}, survolé = {})",
                 current.map(|v| v.to_string()).unwrap_or_else(|| "erreur/404".into()),
-                !session.is_null()
+                !session.is_null(),
+                hovered.unwrap_or(0)
             ));
-            RuneImport::default()
+            match hovered {
+                Some(id) => self.preview(base, password, id, position, mode, opponent.as_ref()).await,
+                None => RuneImport::default(),
+            }
         } else {
             self.log("runes", format!(
                 "[runes] champion {champion_id}, poste client \"{assigned}\", file {}/{}, carte {map_id} -> OP.GG poste \"{position}\", mode \"{mode}\"",
@@ -997,12 +1009,13 @@ impl Tracker {
             let taken = taken_champions(&session, &enemies);
             result.help = self.pick_help(base, password, position, mode, opponent.as_ref(), partner, &taken).await;
         }
+        // Ton bilan dans ce duel, pour le champion verrouillé ou cliqué.
+        let shown = if champion_id > 0 { champion_id } else { hovered.unwrap_or(0) };
+        if let Some(id) = opponent.as_ref().map(|o| o.id).filter(|_| shown > 0) {
+            (result.duel_games, result.duel_wins) = self.history.versus(self.puuid.as_deref(), shown, id);
+        }
         if champion_id > 0 {
-            let opponent_id = opponent.as_ref().map(|o| o.id);
-            if let Some(id) = opponent_id {
-                (result.duel_games, result.duel_wins) = self.history.versus(self.puuid.as_deref(), champion_id, id);
-            }
-            self.last_pick = Some((champion_id, position.to_string(), opponent_id));
+            self.last_pick = Some((champion_id, position.to_string(), opponent.as_ref().map(|o| o.id)));
         }
         result.laning = laning;
         result.skin_id = my_cell(&session).and_then(|p| p["selectedSkinId"].as_i64()).unwrap_or(0);
@@ -1140,9 +1153,14 @@ impl Tracker {
         match self.rune_import.clone() {
             // Déjà fait pour ce champion, ce poste, ce mode et cet adversaire.
             Some((done, result)) if done == key && !result.pending => result,
-            // Recherche annoncée au tour précédent : on la fait maintenant.
+            // Recherche annoncée au tour précédent, ou déjà faite pour l'aperçu : on importe maintenant.
             Some((done, _)) if done == key => {
-                let result = self.import(base, password, &me, position, mode, map_id, opponent).await;
+                let result = self.import(base, password, &me, position, mode, map_id, opponent, true).await;
+                self.rune_import = Some((key, result.clone()));
+                result
+            }
+            _ if self.rune_preview.as_ref().is_some_and(|(seen, r)| *seen == key && !r.pending) => {
+                let result = self.import(base, password, &me, position, mode, map_id, opponent, true).await;
                 self.rune_import = Some((key, result.clone()));
                 result
             }
@@ -1156,6 +1174,41 @@ impl Tracker {
                 pending.pending = true;
                 pending.matchup = None;
                 self.rune_import = Some((key, pending.clone()));
+                pending
+            }
+        }
+    }
+
+    /// Champion cliqué mais pas verrouillé : ses runes, son build et le duel, sans rien importer. Même rythme que
+    /// l'import : « Recherche… » d'abord, OP.GG au tour suivant (une fois par champion, poste, mode et adversaire).
+    async fn preview(
+        &mut self,
+        base: &str,
+        password: &str,
+        champion_id: i64,
+        position: &str,
+        mode: &str,
+        opponent: Option<&opgg::Champ>,
+    ) -> RuneImport {
+        let me = self.champ(base, password, champion_id).await;
+        let key: ImportKey = (champion_id, position.to_string(), mode.to_string(), opponent.map(|o| o.id));
+        match self.rune_preview.clone() {
+            Some((done, result)) if done == key && !result.pending => result,
+            Some((done, _)) if done == key => {
+                let result = self.import(base, password, &me, position, mode, 0, opponent, false).await;
+                self.rune_preview = Some((key, result.clone()));
+                result
+            }
+            _ => {
+                let pending = RuneImport {
+                    champion: me.name.clone(),
+                    champion_id,
+                    position: position.to_string(),
+                    pending: true,
+                    preview: true,
+                    ..Default::default()
+                };
+                self.rune_preview = Some((key, pending.clone()));
                 pending
             }
         }
@@ -1234,11 +1287,13 @@ impl Tracker {
         mode: &str,
         map_id: i64,
         opponent: Option<&opgg::Champ>,
+        apply: bool,
     ) -> RuneImport {
         let mut result = RuneImport {
             champion: me.name.clone(),
             champion_id: me.id,
             position: position.to_string(),
+            preview: !apply,
             ..Default::default()
         };
         let mut chosen = match self.analysis(me, position, mode).await {
@@ -1290,7 +1345,7 @@ impl Tracker {
         result.secondary_id = runes.sub_style;
         result.games = runes.games;
         result.wins = runes.wins;
-        if self.settings.import_runes {
+        if apply && self.settings.import_runes {
             match self.apply_page(base, password, runes).await {
                 Ok(true) => {
                     eprintln!("[runes] page appliquée{versus} : {} ({} / {})", runes.keystone, runes.primary_name, runes.secondary_name);
@@ -1311,7 +1366,7 @@ impl Tracker {
         let build = with_atlas(chosen.build, position);
         if !build.is_empty() {
             result.spells = self.spell_names(base, password, &build.spells).await;
-            if self.settings.import_spells {
+            if apply && self.settings.import_spells {
                 match self.apply_spells(base, password, &build.spells).await {
                     Ok(spells) => {
                         result.spells_applied = self.spell_names(base, password, &spells).await;
@@ -1322,7 +1377,7 @@ impl Tracker {
                     }
                 }
             }
-            if self.settings.import_item_set {
+            if apply && self.settings.import_item_set {
                 let title = format!("{PAGE_NAME} · {}{versus}", me.name);
                 match self.apply_item_set(base, password, me.id, &title, map_id, &build).await {
                     Ok(()) => {

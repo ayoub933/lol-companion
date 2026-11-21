@@ -693,7 +693,7 @@ function renderDuelHero(runes) {
   const me = runes.allies.find((a) => a.me);
   const myId = runes.championId || me?.championId || 0;
   const myName = runes.champion || me?.name || "";
-  const locked = Boolean(runes.champion);
+  const locked = Boolean(runes.champion) && !runes.preview;
   const skin = runes.skinId && Math.floor(runes.skinId / 1000) === myId ? runes.skinId : myId * 1000;
   setArt($("me-art"), myId > 0 ? skin : 0);
   const position = runes.laning ? POSITIONS[runes.position] : "";
@@ -903,7 +903,7 @@ function renderRunes(runes) {
   let appliedClass = "applied span";
   if (!runes.champion) {
     title = "EN ATTENTE";
-    trees = "Verrouille ton champion pour importer ses runes.";
+    trees = "Clique un champion pour voir ses runes ; verrouille-le pour les importer.";
   } else if (runes.pending) {
     const opponent = runes.enemies.find((e) => e.id === runes.opponentId);
     title = "RECHERCHE…";
@@ -919,7 +919,10 @@ function renderRunes(runes) {
       rate = number((runes.wins / runes.games) * 100, 0);
       games = `${whole(runes.games)} parties`;
     }
-    if (runes.pageApplied) {
+    if (runes.preview) {
+      applied = "Aperçu : verrouille ce champion pour les mettre dans ta page";
+      appliedClass += " off";
+    } else if (runes.pageApplied) {
       applied = `Mises dans ta page sélectionnée${runes.matchup?.applied ? ` · duel contre ${runes.matchup.opponent}` : ""}`;
     } else {
       applied = runes.pageNote ?? "Import des runes coupé dans les réglages";
@@ -982,7 +985,7 @@ function renderBuild(runes) {
   $("build").hidden = false;
   $("build-empty").hidden = Boolean(build);
   $("build-empty").textContent = !runes.champion
-    ? "Le build arrive quand tu verrouilles ton champion."
+    ? "Clique un champion pour voir son build."
     : runes.pending
       ? "Recherche sur OP.GG…"
       : "Pas de build trouvé pour ce champion.";
