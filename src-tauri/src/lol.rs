@@ -208,6 +208,10 @@ pub struct Ally {
 pub struct Enemy {
     pub id: i64,
     pub name: String,
+    /// Poste deviné (au sens du client : "top", "jungle", "middle", "bottom", "utility") ; vide sans postes.
+    pub position: String,
+    /// Part de ses parties à ce poste sur OP.GG (0 à 1).
+    pub position_rate: f64,
 }
 
 #[derive(Serialize, Clone, Default, PartialEq, Debug)]
@@ -1017,8 +1021,8 @@ pub struct Tracker {
     /// Réponses OP.GG déjà récupérées, pour ne pas redemander à chaque partie.
     cache: HashMap<(i64, String, String), opgg::Analysis>,
     matchups: HashMap<(i64, i64, String), opgg::Matchup>,
-    /// Part des parties d'un champion à un poste, selon OP.GG.
-    role_rates: HashMap<(i64, String), f64>,
+    /// Part des parties d'un champion à chaque poste (au sens d'OP.GG), selon OP.GG ; vide si OP.GG n'a pas répondu.
+    roles: HashMap<i64, Vec<(String, f64)>>,
     /// Noms des champions, lus une fois dans le client.
     champs: HashMap<i64, opgg::Champ>,
     /// Numéro de chaque champion d'après son nom interne en minuscules (« monkeyking » → 62).
@@ -1064,7 +1068,7 @@ impl Tracker {
             rune_preview: None,
             cache: HashMap::new(),
             matchups: HashMap::new(),
-            role_rates: HashMap::new(),
+            roles: HashMap::new(),
             champs: HashMap::new(),
             champion_ids: HashMap::new(),
             spell_names: HashMap::new(),
@@ -1212,12 +1216,19 @@ impl Tracker {
         for id in their_team.iter().filter_map(|p| p["championId"].as_i64()).filter(|id| *id > 0) {
             enemies.push(self.champ(base, password, id).await);
         }
-        // Adversaire direct : seulement quand le client attribue des postes (classée, normale avec postes...).
+        // Postes adverses et adversaire direct : seulement quand le client attribue des postes (classée, normale
+        // avec postes...).
         let laning = !assigned.is_empty() && !position.is_empty();
-        let (opponent, opponent_manual) = match manual.and_then(|id| enemies.iter().find(|e| e.id == id)) {
+        let chosen = manual.and_then(|id| enemies.iter().find(|e| e.id == id)).cloned();
+        let (lanes, guessed) = if laning {
+            self.enemy_roles(&enemies, position, mode, chosen.as_ref().map(|c| c.id)).await
+        } else {
+            (Vec::new(), None)
+        };
+        let (opponent, opponent_manual) = match chosen {
             _ if !laning => (None, false),
-            Some(chosen) => (Some(chosen.clone()), true),
-            None => (self.guess_opponent(&enemies, position, mode).await, false),
+            Some(chosen) => (Some(chosen), true),
+            None => (guessed, false),
         };
 
         let current = self.get(&format!("{base}/lol-champ-select/v1/current-champion"), Some(password)).await;
@@ -1263,7 +1274,18 @@ impl Tracker {
         result.laning = laning;
         result.skin_id = my_cell(&session).and_then(|p| p["selectedSkinId"].as_i64()).unwrap_or(0);
         result.allies = allies;
-        result.enemies = enemies.iter().map(|e| Enemy { id: e.id, name: e.name.clone() }).collect();
+        result.enemies = enemies
+            .iter()
+            .map(|e| {
+                let lane = lanes.iter().find(|(id, _, _)| *id == e.id);
+                Enemy {
+                    id: e.id,
+                    name: e.name.clone(),
+                    position: lane.map_or("", |(_, lane, _)| client_lane(lane)).to_string(),
+                    position_rate: lane.map_or(0.0, |(_, _, rate)| *rate),
+                }
+            })
+            .collect();
         result.opponent_id = opponent.map(|o| o.id);
         result.opponent_manual = opponent_manual;
         result
@@ -1495,27 +1517,44 @@ impl Tracker {
         allies
     }
 
-    /// Adversaire direct deviné : le champion adverse qui joue le plus souvent à ton poste, selon OP.GG.
-    /// Une seule question à OP.GG par tour, pour que l'interface reste réactive.
-    async fn guess_opponent(&mut self, enemies: &[opgg::Champ], position: &str, mode: &str) -> Option<opgg::Champ> {
-        let unknown = enemies.iter().find(|e| !self.role_rates.contains_key(&(e.id, position.to_string())));
-        if let Some(enemy) = unknown.cloned() {
-            let rate = match self.opgg.positions(&enemy, position, mode).await {
-                Ok(list) => list.iter().find(|(p, _)| p == position).map_or(0.0, |(_, rate)| *rate),
+    /// Poste de chaque adversaire, et ton adversaire direct deviné. Postes : la répartition la plus probable d'après
+    /// la part des parties de chaque champion à chaque poste sur OP.GG, deux jamais au même poste ; l'adversaire
+    /// choisi d'un clic (`chosen`) est à ton poste. Adversaire deviné : celui placé à ton poste, s'il y joue au moins
+    /// 15 % de ses parties (ou dès que les 5 sont connus). Une seule question à OP.GG par tour, pour que l'interface
+    /// reste réactive.
+    async fn enemy_roles(
+        &mut self,
+        enemies: &[opgg::Champ],
+        position: &str,
+        mode: &str,
+        chosen: Option<i64>,
+    ) -> (Vec<(i64, &'static str, f64)>, Option<opgg::Champ>) {
+        if let Some(enemy) = enemies.iter().find(|e| !self.roles.contains_key(&e.id)).cloned() {
+            let shares = match self.opgg.positions(&enemy, position, mode).await {
+                Ok(list) => list,
                 Err(e) => {
-                    eprintln!("[duel] postes de {} introuvables : {e}", enemy.name);
-                    0.0
+                    eprintln!("[postes] postes de {} introuvables : {e}", enemy.name);
+                    Vec::new()
                 }
             };
-            eprintln!("[duel] {} : {:.0} % de ses parties au poste {position}", enemy.name, rate * 100.0);
-            self.role_rates.insert((enemy.id, position.to_string()), rate);
+            let text: Vec<String> = shares.iter().map(|(p, rate)| format!("{p} {:.0} %", rate * 100.0)).collect();
+            eprintln!("[postes] {} : {}", enemy.name, text.join(", "));
+            self.roles.insert(enemy.id, shares);
         }
-        enemies
+        // Seulement ceux dont OP.GG a donné les postes (et celui choisi d'un clic) : les autres attendent sans poste,
+        // pour que les adversaires ne changent pas de place à chaque réponse.
+        let known = |e: &&opgg::Champ| Some(e.id) == chosen || self.roles.get(&e.id).is_some_and(|shares| !shares.is_empty());
+        let ids: Vec<i64> = enemies.iter().filter(known).map(|e| e.id).collect();
+        let lanes = assign_roles(&ids, &self.roles, chosen.map(|id| (id, position)));
+        let name = |id: i64| enemies.iter().find(|e| e.id == id).map_or("?", |e| e.name.as_str());
+        let text: Vec<String> = lanes.iter().map(|(id, lane, _)| format!("{} {lane}", name(*id))).collect();
+        self.log("postes", format!("[postes] en face : {}", text.join(", ")));
+        let complete = enemies.len() == POSITIONS.len() && enemies.iter().all(|e| self.roles.contains_key(&e.id));
+        let guessed = lanes
             .iter()
-            .filter_map(|e| Some((e, *self.role_rates.get(&(e.id, position.to_string()))?)))
-            .filter(|(_, rate)| *rate >= MIN_ROLE_RATE)
-            .max_by(|a, b| a.1.total_cmp(&b.1))
-            .map(|(e, _)| e.clone())
+            .find(|(_, lane, rate)| *lane == position && (*rate >= MIN_ROLE_RATE || complete))
+            .and_then(|(id, _, _)| enemies.iter().find(|e| e.id == *id).cloned());
+        (lanes, guessed)
     }
 
     /// Runes, build et set d'objets : ceux du duel si l'adversaire est connu (et les parties assez nombreuses),
@@ -3009,6 +3048,64 @@ fn game_mode(queue: &Value) -> &'static str {
 }
 
 /// Poste au sens d'OP.GG. Vide si le client n'en attribue pas (hors ARAM/URF/Nexus Blitz).
+/// Postes au sens d'OP.GG, dans l'ordre des couloirs.
+const POSITIONS: [&str; 5] = ["top", "jungle", "mid", "adc", "support"];
+
+/// Poste au sens du client ("middle", "bottom", "utility"…) d'un poste au sens d'OP.GG ("mid", "adc", "support"…).
+fn client_lane(position: &str) -> &'static str {
+    match position {
+        "top" => "top",
+        "jungle" => "jungle",
+        "mid" => "middle",
+        "adc" => "bottom",
+        "support" => "utility",
+        _ => "",
+    }
+}
+
+/// Répartition des adversaires aux postes qui donne, au total, la plus forte part de parties à leur poste (d'après
+/// `roles`, d'OP.GG), deux adversaires jamais au même poste : (champion, poste au sens d'OP.GG, part de ses parties
+/// à ce poste). `fixed` : un adversaire placé d'office à un poste (choisi d'un clic, à ton poste).
+fn assign_roles(ids: &[i64], roles: &HashMap<i64, Vec<(String, f64)>>, fixed: Option<(i64, &str)>) -> Vec<(i64, &'static str, f64)> {
+    let rate = |id: i64, lane: &str| {
+        let shares = roles.get(&id).into_iter().flatten();
+        shares.filter(|(p, _)| p == lane).map(|(_, rate)| *rate).next().unwrap_or(0.0)
+    };
+    let ids = &ids[..ids.len().min(POSITIONS.len())];
+    let mut best: Option<(f64, Vec<usize>)> = None;
+    // 120 façons de placer 5 adversaires : on les essaie toutes (à égalité, la première gagne).
+    for order in permutations(POSITIONS.len()) {
+        let lanes = &order[..ids.len()];
+        let placed = |(id, lane): (&i64, &usize)| fixed.is_none_or(|(chosen, at)| *id != chosen || POSITIONS[*lane] == at);
+        if !ids.iter().zip(lanes).all(placed) {
+            continue;
+        }
+        let score: f64 = ids.iter().zip(lanes).map(|(id, lane)| rate(*id, POSITIONS[*lane])).sum();
+        if best.as_ref().is_none_or(|(top, _)| score > *top) {
+            best = Some((score, lanes.to_vec()));
+        }
+    }
+    let lanes = best.map(|(_, lanes)| lanes).unwrap_or_default();
+    ids.iter().zip(lanes).map(|(id, lane)| (*id, POSITIONS[lane], rate(*id, POSITIONS[lane]))).collect()
+}
+
+/// Toutes les façons d'ordonner 0, 1… n − 1.
+fn permutations(n: usize) -> Vec<Vec<usize>> {
+    let mut all: Vec<Vec<usize>> = vec![Vec::new()];
+    for _ in 0..n {
+        let mut longer = Vec::new();
+        for start in &all {
+            for i in (0..n).filter(|i| !start.contains(i)) {
+                let mut next = start.clone();
+                next.push(i);
+                longer.push(next);
+            }
+        }
+        all = longer;
+    }
+    all
+}
+
 fn lane(assigned: &str, mode: &str) -> &'static str {
     match assigned {
         "top" => "top",

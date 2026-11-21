@@ -794,7 +794,7 @@ function renderPicks(runes) {
     }),
   );
 
-  const rows = enemies.map((enemy) => {
+  const enemyRow = (enemy) => {
     const isOpponent = enemy.id === opponentId;
     const row = el(laning ? "button" : "div", `pick enemy${isOpponent ? " opponent" : ""}`, [
       champIcon(enemy.id, enemy.name),
@@ -803,17 +803,30 @@ function renderPicks(runes) {
     ]);
     if (laning) {
       row.type = "button";
+      if (enemy.position) {
+        row.title = `Poste deviné d'après OP.GG : ${Math.round(enemy.positionRate * 100)} % de ses parties à ce poste`;
+      }
       // Clic : cet adversaire ; reclic sur celui choisi : retour à la devinette.
       row.addEventListener("click", () =>
         invoke("set_opponent", { championId: manual && isOpponent ? null : enemy.id }),
       );
     }
     return row;
-  });
-  // Cases vides pour les adversaires pas encore verrouillés (5 en tout dans les modes avec postes).
-  const slots = laning ? Math.max(0, allies.length - enemies.length) : 0;
-  for (let i = 0; i < slots; i++) {
-    rows.push(el("div", "pick enemy empty", [champIcon(0, ""), el("span", "pname", "…")]));
+  };
+  const emptySlot = () => el("div", "pick enemy empty", [champIcon(0, ""), el("span", "pname", "…")]);
+  let rows = enemies.map(enemyRow);
+  if (laning) {
+    // Face à face : chaque adversaire en face de l'allié du même poste (poste deviné d'après OP.GG) ; une case
+    // vide en face d'un poste encore sans adversaire, puis ceux sans poste dans les cases restantes.
+    const placed = new Set();
+    rows = allies.map((ally) => {
+      const enemy = enemies.find((e) => e.position && e.position === ally.position && !placed.has(e.id));
+      if (!enemy) return null;
+      placed.add(enemy.id);
+      return enemyRow(enemy);
+    });
+    const rest = enemies.filter((e) => !placed.has(e.id)).map(enemyRow);
+    rows = rows.map((row) => row ?? rest.shift() ?? emptySlot()).concat(rest);
   }
   if (!rows.length) rows.push(el("div", "note", "Choix cachés dans ce mode"));
   $("pick-enemies").replaceChildren(...rows);

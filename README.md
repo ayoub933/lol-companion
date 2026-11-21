@@ -115,7 +115,15 @@ En haut, ton champion avec le skin choisi (pour un chroma, l'illustration de son
 ton adversaire direct, puis le duel selon OP.GG : % de victoires de chaque côté, avantage, conseil.
 
 Les deux équipes s'affichent en colonnes : la tienne à gauche, dans l'ordre des postes
-(un champion seulement survolé est atténué, le tien est en bleu), les adversaires à droite.
+(un champion seulement survolé est atténué, le tien est en bleu), les adversaires à droite, chacun en face
+de l'allié du même poste (dans les parties avec postes).
+
+Le client ne donne pas les postes adverses : l'app les devine d'après OP.GG, avec la part des parties de
+chaque champion à chaque poste. Elle prend la répartition la plus probable de toute l'équipe, deux
+adversaires jamais au même poste (Elise jungle 78 % et Amumu jungle 70 % / support 26 % : Elise en jungle,
+Amumu en support). Un adversaire dont OP.GG n'a pas encore donné les postes attend dans une case libre ; au
+survol d'un adversaire, la part de ses parties à ce poste. Le terminal note les postes lus et la répartition
+(« [postes] en face : Renekton top, Elise jungle, Zed mid… »).
 
 **Avant de verrouiller : aide au choix.** Avec les données OP.GG :
 - « Contre X » : les 10 champions qui gagnent le plus contre ton adversaire direct, à ton poste,
@@ -154,9 +162,10 @@ joués pour ce champion et ton poste, puis :
 - Support : OP.GG ne compte pas l'Atlas dans les objets de départ, l'app le remet en tête.
 
 **Duel contre ton adversaire direct** (parties avec postes : classées, normales avec choix des postes) :
-- L'app devine ton adversaire : le champion adverse qui joue le plus souvent à ton poste
-  selon OP.GG (au moins 15 % de ses parties). Clique sur un adversaire pour choisir toi-même ;
-  reclique dessus pour revenir à la devinette.
+- L'app devine ton adversaire : celui placé à ton poste par la répartition des postes (voir plus haut), s'il y
+  joue au moins 15 % de ses parties sur OP.GG, ou dès que les 5 adversaires sont connus. Clique sur un
+  adversaire pour choisir toi-même : il passe à ton poste, les autres se répartissent autour ; reclique
+  dessus pour revenir à la devinette.
 - Runes, build et set d'objets passent alors à ceux du duel (« vs Sett »), avec tes stats contre lui
   et le conseil d'OP.GG (en anglais, OP.GG ne le traduit pas). Moins de 50 parties pour la page de
   runes du duel : les runes générales restent.
