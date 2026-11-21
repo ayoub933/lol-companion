@@ -958,6 +958,7 @@ function renderRunes(runes) {
     ...(normal ? [...tree(runes.primaryId, runes.primary), " · ", ...tree(runes.secondaryId, runes.secondary)] : [trees]),
   );
   $("runes-games").textContent = games;
+  renderForms(runes);
   const line = $("runes-applied");
   line.className = appliedClass;
   line.hidden = !applied;
@@ -989,6 +990,29 @@ function setKeystone(id, title) {
   }
 }
 
+// Kayn : sa forme, rouge ou bleue, décide de ses runes et de son build. Conseillée d'après l'équipe d'en face (les
+// mêlées donnent les orbes rouges, les champions à distance les bleues) ; un clic la choisit, un reclic revient à
+// la forme conseillée.
+// « Kayn rouge » (titre du set d'objets), « forme bleue » (bloc TON BUILD).
+const KAYN_FORMS = { red: "rouge", blue: "bleu" };
+const FORMS = { red: "forme rouge", blue: "forme bleue" };
+function renderForms(runes) {
+  const box = $("forms");
+  box.hidden = !runes.forms;
+  if (!runes.forms) return;
+  box.dataset.manual = runes.formManual ? runes.form : "";
+  for (const button of box.querySelectorAll("button")) button.classList.toggle("on", button.dataset.form === runes.form);
+  const { enemyMelee: melee, enemyRanged: ranged } = runes;
+  const comp = `${melee} mêlée${melee > 1 ? "s" : ""} et ${ranged} à distance en face`;
+  $("forms-note").textContent = runes.formManual
+    ? "choisie · reclique pour la forme conseillée"
+    : runes.form
+      ? `conseillée : ${comp}`
+      : melee + ranged
+        ? `à choisir : ${comp}`
+        : "à choisir, ou conseillée selon l'équipe d'en face";
+}
+
 // « Anneau de Doran, Potion de soin ×2 »
 const itemNames = (items, separator = ", ") =>
   items.map((it) => (it.count > 1 ? `${it.name} ×${it.count}` : it.name)).join(separator);
@@ -1013,7 +1037,8 @@ function renderBuild(runes) {
       "keys",
       list.flatMap((key, i) => (i ? [">", el("span", "key", key)] : [el("span", "key", key)])),
     );
-  const setTitle = `« LoL Companion · ${runes.champion}${versus(runes)} » `;
+  const form = runes.form ? ` ${KAYN_FORMS[runes.form]}` : "";
+  const setTitle = `« LoL Companion · ${runes.champion}${form}${versus(runes)} » `;
   const rows = [
     [
       "SORTS",
@@ -1074,7 +1099,8 @@ function renderGameBuild(game) {
   const key = JSON.stringify([game.panel, build]);
   if (key !== shownBuild) {
     shownBuild = key;
-    $("gb-aside").textContent = build.versus ? `OP.GG · vs ${build.versus}` : "OP.GG";
+    const form = build.form ? ` · ${FORMS[build.form]}` : "";
+    $("gb-aside").textContent = `OP.GG${build.versus ? ` · vs ${build.versus}` : ""}${form}`;
     $("gb-body").replaceChildren(...buildBlocks(game.panel, build));
   }
   const next = build.next;
@@ -1504,6 +1530,12 @@ window.addEventListener("DOMContentLoaded", async () => {
   setupSearch();
   layout();
   window.addEventListener("resize", layout);
+  for (const button of $("forms").querySelectorAll("button")) {
+    button.addEventListener("click", () => {
+      const same = $("forms").dataset.manual === button.dataset.form;
+      invoke("set_form", { form: same ? null : button.dataset.form });
+    });
+  }
   $("settings-button").addEventListener("click", toggleSettings);
   $("settings-close").addEventListener("click", toggleSettings);
   // Version de l'app (celle de tauri.conf.json), à côté du titre des réglages.

@@ -313,6 +313,13 @@
         <!-- Sélection des champions -->
         <section class="card runes" id="runes" hidden aria-label="Runes">
           <h2 class="span"><span class="mark" aria-hidden="true"></span>RUNES</h2>
+          <!-- Kayn : sa forme décide de ses runes et de son build (main.js, renderRunes()). -->
+          <div class="forms span" id="forms" hidden>
+            <span class="kicker">FORME</span>
+            <button class="form-btn red" type="button" data-form="red">ROUGE</button>
+            <button class="form-btn blue" type="button" data-form="blue">BLEUE</button>
+            <span class="muted small" id="forms-note"></span>
+          </div>
           <div class="rune-main">
             <img class="keystone-icon" id="keystone-icon" alt="" hidden />
             <span class="keystone" id="keystone"></span>

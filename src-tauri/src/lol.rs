@@ -48,6 +48,37 @@ const SPLASH_CACHE: usize = 6;
 const GRIEVOUS: [i64; 7] = [3123, 3033, 6609, 3916, 3165, 3076, 3075];
 /// Champions aux gros soins : contre eux, un objet à Blessures graves.
 const HEALERS: [i64; 20] = [16, 350, 266, 8, 517, 36, 19, 50, 233, 420, 267, 37, 902, 9, 2, 106, 48, 147, 57, 154];
+/// Kayn : deux formes (rouge, bleue), chacune ses runes et son build.
+const KAYN: i64 = 141;
+/// Pour les formes de Kayn sans adversaire connu : son duel contre Lee Sin (jungler très joué) sert de référence.
+const LEE_SIN: i64 = 64;
+/// Voie de runes Précision (celle du Conquérant) : la page de Kayn rouge.
+const PRECISION: i64 = 8000;
+
+/// Forme de Kayn : rouge (Rhaast, le darkin : combattant) ou bleue (l'assassin de l'ombre).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Form {
+    Red,
+    Blue,
+}
+
+impl Form {
+    pub fn parse(text: &str) -> Option<Form> {
+        match text {
+            "red" => Some(Form::Red),
+            "blue" => Some(Form::Blue),
+            _ => None,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Form::Red => "red",
+            Form::Blue => "blue",
+        }
+    }
+}
+
 /// Fichiers du client en anglais (objets, runes, sorts), repris par CommunityDragon : réglage « noms en anglais ».
 const ENGLISH_DATA: &str = "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1";
 /// Noms anglais pas encore lus (CommunityDragon injoignable) : nouvel essai au plus une fois par minute.
@@ -175,6 +206,15 @@ pub struct RuneImport {
     pub skin_id: i64,
     /// true : champion seulement cliqué (pas verrouillé) ; ses runes et son build sont montrés, rien n'est importé.
     pub preview: bool,
+    /// true : champion à deux formes (Kayn), à choisir.
+    pub forms: bool,
+    /// Sa forme retenue : "red", "blue" ; vide : pas encore choisie ni conseillée (build général, formes mélangées).
+    pub form: String,
+    /// true : forme choisie d'un clic (sinon conseillée d'après l'équipe d'en face).
+    pub form_manual: bool,
+    /// Champions de mêlée et à distance déjà choisis en face (ce qui donne les orbes rouges ou bleues).
+    pub enemy_melee: usize,
+    pub enemy_ranged: usize,
 }
 
 /// Avant de verrouiller : les champions qui battent ton adversaire direct,
@@ -791,6 +831,8 @@ pub struct Game {
 pub struct GameBuild {
     /// Adversaire du duel dont viennent les objets ; vide : ceux de ton champion à ton poste.
     pub versus: String,
+    /// Forme de Kayn dont viennent les objets : "red", "blue" ; vide pour les autres champions.
+    pub form: String,
     /// Prochain achat ; None quand tout le build est acheté.
     pub next: Option<NextBuy>,
     /// Ordre de montée des compétences, ex. ["Q", "E", "W"].
@@ -947,9 +989,11 @@ struct CurrentGame {
     lp_before: Option<Rank>,
     /// Objets du panneau, et pour quels (champion, poste, adversaire) ils ont été cherchés.
     build: Option<opgg::Build>,
-    build_for: Option<(i64, String, Option<i64>)>,
+    build_for: Option<(i64, String, Option<i64>, Option<Form>)>,
     /// Adversaire du duel dont vient ce build ; vide : build de ton champion à ton poste.
     build_versus: String,
+    /// Forme de Kayn retenue en sélection (son build en partie suit).
+    form: Option<Form>,
     /// Depuis quand chaque objet de ton inventaire y est.
     held_since: HashMap<i64, Instant>,
     /// Objets gardés au moins 30 s : achetés pour de bon, ils ne reviennent plus dans le panneau.
@@ -1004,7 +1048,7 @@ pub struct Tracker {
     /// Parties sans compte déjà essayées en vain depuis le démarrage du client.
     owners_skip: usize,
     /// Ton champion, ton poste et ton adversaire à la fin de la sélection, pour l'historique.
-    last_pick: Option<(i64, String, Option<i64>)>,
+    last_pick: Option<(i64, String, Option<i64>, Option<Form>)>,
     game: Option<CurrentGame>,
     finished: Option<Finished>,
     /// Contenu du lockfile utilisé : s'il change, le client a redémarré.
@@ -1020,7 +1064,8 @@ pub struct Tracker {
     rune_preview: Option<(ImportKey, RuneImport)>,
     /// Réponses OP.GG déjà récupérées, pour ne pas redemander à chaque partie.
     cache: HashMap<(i64, String, String), opgg::Analysis>,
-    matchups: HashMap<(i64, i64, String), opgg::Matchup>,
+    /// Réponses d'OP.GG pour les duels (lues selon la forme de Kayn si besoin).
+    matchups: HashMap<(i64, i64, String), Value>,
     /// Part des parties d'un champion à chaque poste (au sens d'OP.GG), selon OP.GG ; vide si OP.GG n'a pas répondu.
     roles: HashMap<i64, Vec<(String, f64)>>,
     /// Noms des champions, lus une fois dans le client.
@@ -1034,7 +1079,8 @@ pub struct Tracker {
 }
 
 /// Ce qui déclenche un nouvel import : (champion, poste, mode, adversaire direct).
-type ImportKey = (i64, String, String, Option<i64>);
+/// (champion, poste, mode, adversaire, forme de Kayn).
+type ImportKey = (i64, String, String, Option<i64>, Option<Form>);
 
 impl Tracker {
     /// `data_dir` : dossier de l'historique.
@@ -1087,8 +1133,8 @@ impl Tracker {
         }
     }
 
-    /// `manual` = adversaire direct choisi d'un clic dans l'interface.
-    pub async fn poll(&mut self, manual: Option<i64>, settings: &Settings) -> Snapshot {
+    /// `manual` = adversaire direct choisi d'un clic dans l'interface ; `form` : forme de Kayn choisie d'un clic.
+    pub async fn poll(&mut self, manual: Option<i64>, form: Option<Form>, settings: &Settings) -> Snapshot {
         self.settings = settings.clone();
         self.refresh_lockfile();
         // Client fermé (ou en train de démarrer) : l'historique de l'app reste consultable
@@ -1145,7 +1191,7 @@ impl Tracker {
         self.last_phase = Some(phase.clone());
 
         let runes = if phase == "ChampSelect" {
-            let mut runes = self.champ_select_runes(&base, &password, manual).await;
+            let mut runes = self.champ_select_runes(&base, &password, manual, form).await;
             // Seulement à l'affichage : un changement du réglage se voit tout de suite.
             if settings.english_names {
                 self.assets.in_english(&mut runes);
@@ -1185,7 +1231,8 @@ impl Tracker {
 
     /// En sélection : dès que ton champion est verrouillé, importe runes et build OP.GG,
     /// puis ceux du duel contre ton adversaire direct dès qu'il est connu.
-    async fn champ_select_runes(&mut self, base: &str, password: &str, manual: Option<i64>) -> RuneImport {
+    /// `picked_form` : forme de Kayn choisie d'un clic.
+    async fn champ_select_runes(&mut self, base: &str, password: &str, manual: Option<i64>, picked_form: Option<Form>) -> RuneImport {
         let session = self.get(&format!("{base}/lol-champ-select/v1/session"), Some(password)).await.unwrap_or(Value::Null);
         // Ce que le client dit de l'équipe d'en face.
         let their_team = session["theirTeam"].as_array().cloned().unwrap_or_default();
@@ -1235,6 +1282,18 @@ impl Tracker {
         let champion_id = locked_champion(current.as_ref(), &session);
         // Champion cliqué dans la grille, pas encore verrouillé : on montre ses runes et son build.
         let hovered = allies.iter().find(|a| a.me && !a.locked).map(|a| a.champion_id).filter(|id| *id > 0);
+        let shown = if champion_id > 0 { champion_id } else { hovered.unwrap_or(0) };
+        // Kayn : sa forme choisie d'un clic, sinon conseillée d'après l'équipe d'en face (les mêlées donnent les
+        // orbes rouges, les champions à distance les bleues).
+        let ranged = enemies.iter().filter(|e| e.ranged).count();
+        let melee = enemies.len() - ranged;
+        let suggested = match melee.cmp(&ranged) {
+            std::cmp::Ordering::Greater => Some(Form::Red),
+            std::cmp::Ordering::Less => Some(Form::Blue),
+            std::cmp::Ordering::Equal => None,
+        };
+        let forms = shown == KAYN;
+        let form = if forms { picked_form.or(suggested) } else { None };
         let mut result = if champion_id <= 0 {
             self.log("runes", format!(
                 "[runes] en attente du verrouillage (current-champion = {}, session lue = {}, survolé = {})",
@@ -1243,7 +1302,7 @@ impl Tracker {
                 hovered.unwrap_or(0)
             ));
             match hovered {
-                Some(id) => self.preview(base, password, id, position, mode, opponent.as_ref()).await,
+                Some(id) => self.preview(base, password, id, position, mode, opponent.as_ref(), form).await,
                 None => RuneImport::default(),
             }
         } else {
@@ -1251,7 +1310,7 @@ impl Tracker {
                 "[runes] champion {champion_id}, poste client \"{assigned}\", file {}/{}, carte {map_id} -> OP.GG poste \"{position}\", mode \"{mode}\"",
                 queue["id"], queue["gameMode"]
             ));
-            self.locked_import(base, password, champion_id, position, mode, map_id, opponent.as_ref()).await
+            self.locked_import(base, password, champion_id, position, mode, map_id, opponent.as_ref(), form).await
         };
 
         if laning && champion_id <= 0 {
@@ -1264,13 +1323,16 @@ impl Tracker {
             result.help = self.pick_help(base, password, position, mode, opponent.as_ref(), partner, &taken).await;
         }
         // Ton bilan dans ce duel, pour le champion verrouillé ou cliqué.
-        let shown = if champion_id > 0 { champion_id } else { hovered.unwrap_or(0) };
         if let Some(id) = opponent.as_ref().map(|o| o.id).filter(|_| shown > 0) {
             (result.duel_games, result.duel_wins) = self.history.versus(self.puuid.as_deref(), shown, id);
         }
         if champion_id > 0 {
-            self.last_pick = Some((champion_id, position.to_string(), opponent.as_ref().map(|o| o.id)));
+            self.last_pick = Some((champion_id, position.to_string(), opponent.as_ref().map(|o| o.id), form));
         }
+        result.forms = forms;
+        result.form = form.map_or("", Form::name).to_string();
+        result.form_manual = forms && picked_form.is_some();
+        (result.enemy_melee, result.enemy_ranged) = (melee, ranged);
         result.laning = laning;
         result.skin_id = my_cell(&session).and_then(|p| p["selectedSkinId"].as_i64()).unwrap_or(0);
         result.allies = allies;
@@ -1412,20 +1474,21 @@ impl Tracker {
         mode: &str,
         map_id: i64,
         opponent: Option<&opgg::Champ>,
+        form: Option<Form>,
     ) -> RuneImport {
         let me = self.champ(base, password, champion_id).await;
-        let key: ImportKey = (champion_id, position.to_string(), mode.to_string(), opponent.as_ref().map(|o| o.id));
+        let key: ImportKey = (champion_id, position.to_string(), mode.to_string(), opponent.as_ref().map(|o| o.id), form);
         match self.rune_import.clone() {
             // Déjà fait pour ce champion, ce poste, ce mode et cet adversaire.
             Some((done, result)) if done == key && !result.pending => result,
             // Recherche annoncée au tour précédent, ou déjà faite pour l'aperçu : on importe maintenant.
             Some((done, _)) if done == key => {
-                let result = self.import(base, password, &me, position, mode, map_id, opponent, true).await;
+                let result = self.import(base, password, &me, position, mode, map_id, opponent, form, true).await;
                 self.rune_import = Some((key, result.clone()));
                 result
             }
             _ if self.rune_preview.as_ref().is_some_and(|(seen, r)| *seen == key && !r.pending) => {
-                let result = self.import(base, password, &me, position, mode, map_id, opponent, true).await;
+                let result = self.import(base, password, &me, position, mode, map_id, opponent, form, true).await;
                 self.rune_import = Some((key, result.clone()));
                 result
             }
@@ -1446,6 +1509,7 @@ impl Tracker {
 
     /// Champion cliqué mais pas verrouillé : ses runes, son build et le duel, sans rien importer. Même rythme que
     /// l'import : « Recherche… » d'abord, OP.GG au tour suivant (une fois par champion, poste, mode et adversaire).
+    #[allow(clippy::too_many_arguments)]
     async fn preview(
         &mut self,
         base: &str,
@@ -1454,13 +1518,14 @@ impl Tracker {
         position: &str,
         mode: &str,
         opponent: Option<&opgg::Champ>,
+        form: Option<Form>,
     ) -> RuneImport {
         let me = self.champ(base, password, champion_id).await;
-        let key: ImportKey = (champion_id, position.to_string(), mode.to_string(), opponent.map(|o| o.id));
+        let key: ImportKey = (champion_id, position.to_string(), mode.to_string(), opponent.map(|o| o.id), form);
         match self.rune_preview.clone() {
             Some((done, result)) if done == key && !result.pending => result,
             Some((done, _)) if done == key => {
-                let result = self.import(base, password, &me, position, mode, 0, opponent, false).await;
+                let result = self.import(base, password, &me, position, mode, 0, opponent, form, false).await;
                 self.rune_preview = Some((key, result.clone()));
                 result
             }
@@ -1558,7 +1623,8 @@ impl Tracker {
     }
 
     /// Runes, build et set d'objets : ceux du duel si l'adversaire est connu (et les parties assez nombreuses),
-    /// sinon les recommandations générales du champion.
+    /// sinon les recommandations générales du champion. `form` (Kayn) : ceux de sa forme, pris dans le duel, sinon
+    /// dans son duel contre Lee Sin (l'analyse générale d'OP.GG mélange les deux formes).
     #[allow(clippy::too_many_arguments)]
     async fn import(
         &mut self,
@@ -1569,6 +1635,7 @@ impl Tracker {
         mode: &str,
         map_id: i64,
         opponent: Option<&opgg::Champ>,
+        form: Option<Form>,
         apply: bool,
     ) -> RuneImport {
         let mut result = RuneImport {
@@ -1589,7 +1656,7 @@ impl Tracker {
         let mut versus = String::new();
         if let Some(opponent) = opponent {
             let mut info = MatchupInfo { opponent: opponent.name.clone(), ..Default::default() };
-            match self.matchup(me, opponent, position).await {
+            match self.matchup(me, opponent, position, form).await {
                 Ok(m) => {
                     info.applied = m.analysis.runes.games >= MIN_MATCHUP_GAMES;
                     eprintln!(
@@ -1615,6 +1682,18 @@ impl Tracker {
                 }
             }
             result.matchup = Some(info);
+        }
+        // Kayn sans duel utilisable : sa forme d'après son duel contre Lee Sin.
+        if let Some(form) = form.filter(|_| versus.is_empty()) {
+            let reference = self.champ(base, password, LEE_SIN).await;
+            match self.matchup(me, &reference, position, Some(form)).await {
+                Ok(m) if m.analysis.runes.games > 0 && !m.analysis.build.is_empty() => {
+                    eprintln!("[forme] {} {} : page {} ({} parties contre Lee Sin)", me.name, form.name(), m.analysis.runes.keystone, m.analysis.runes.games);
+                    chosen = m.analysis;
+                }
+                Ok(_) => eprintln!("[forme] {} {} : rien contre Lee Sin, runes générales gardées", me.name, form.name()),
+                Err(e) => eprintln!("[forme] duel de référence introuvable : {e}"),
+            }
         }
 
         // Runes affichées dans tous les cas ; mises dans le client seulement si l'import est activé.
@@ -1661,7 +1740,13 @@ impl Tracker {
                 }
             }
             if apply && self.settings.import_item_set {
-                let title = format!("{PAGE_NAME} · {}{versus}", me.name);
+                // « LoL Companion · Kayn rouge vs Lee Sin » : la forme de Kayn dans le titre.
+                let form = match form {
+                    Some(Form::Red) => " rouge",
+                    Some(Form::Blue) => " bleu",
+                    None => "",
+                };
+                let title = format!("{PAGE_NAME} · {}{form}{versus}", me.name);
                 match self.apply_item_set(base, password, me.id, &title, map_id, &build).await {
                     Ok(()) => {
                         eprintln!("[objets] set « {title} » importé");
@@ -1734,6 +1819,7 @@ impl Tracker {
             alias: info["alias"].as_str().unwrap_or_default().to_string(),
             damage: info["tacticalInfo"]["damageType"].as_str().unwrap_or_default().to_string(),
             roles: info["roles"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect(),
+            ranged: info["tacticalInfo"]["attackType"] == "kRanged",
         };
         self.champs.insert(id, champ.clone());
         champ
@@ -1753,15 +1839,33 @@ impl Tracker {
         Ok(a)
     }
 
-    /// Duel OP.GG contre cet adversaire, gardé en mémoire.
-    async fn matchup(&mut self, me: &opgg::Champ, opponent: &opgg::Champ, position: &str) -> Result<opgg::Matchup, String> {
+    /// Duel OP.GG contre cet adversaire (réponse gardée en mémoire). `form` (Kayn) : seulement ce qui va avec sa
+    /// forme (voir `KaynStyle`).
+    async fn matchup(
+        &mut self,
+        me: &opgg::Champ,
+        opponent: &opgg::Champ,
+        position: &str,
+        form: Option<Form>,
+    ) -> Result<opgg::Matchup, String> {
         let key = (me.id, opponent.id, position.to_string());
-        if let Some(m) = self.matchups.get(&key) {
-            return Ok(m.clone());
+        if !self.matchups.contains_key(&key) {
+            let doc = self.opgg.matchup_doc(me, opponent, position).await?;
+            self.matchups.insert(key.clone(), doc);
         }
-        let m = self.opgg.matchup(me, opponent, position).await?;
-        self.matchups.insert(key, m.clone());
-        Ok(m)
+        let doc = &self.matchups[&key];
+        let parsed = match form {
+            Some(form) => {
+                // Catégories des objets (santé, armure, létalité) : lues dans le client.
+                self.assets.load_items().await;
+                let kayn = KaynStyle::new(form, doc, &self.assets);
+                let (runes, core, item) = (|p: &Value| kayn.runes(p), |c: &[i64]| kayn.core(c), |id| kayn.item(id));
+                let style = opgg::Style { runes: &runes, core: &core, item: &item };
+                opgg::matchup_from(doc, opponent.id, Some(&style))
+            }
+            None => opgg::matchup_from(doc, opponent.id, None),
+        };
+        parsed.ok_or_else(|| "Réponse OP.GG illisible (format changé ?)".to_string())
     }
 
     /// Noms des sorts d'invocateur (« Saut éclair »...), tels que le client les affiche.
@@ -2059,6 +2163,7 @@ impl Tracker {
                 let rows = panel(build, &owned, started, boots_done, &needs, &self.assets, english);
                 let details = GameBuild {
                     versus: game.build_versus.clone(),
+                    form: game.form.filter(|_| game.champion_id == KAYN).map_or("", Form::name).to_string(),
                     next: next_buy(&rows, &inventory, &self.assets, english),
                     skills: build.skill_max.clone(),
                     enemy_note: needs.note.clone(),
@@ -2160,7 +2265,9 @@ impl Tracker {
     /// sinon ceux de ton champion à ton poste. Cherchés une fois par (champion, poste, adversaire).
     async fn game_build(&mut self, base: &str, password: &str) -> Option<opgg::Build> {
         let game = self.game.as_ref()?;
-        let key = (game.champion_id, game.position.clone(), game.opponent_id);
+        // La forme retenue en sélection ne vaut que pour Kayn.
+        let form = game.form.filter(|_| game.champion_id == KAYN);
+        let key = (game.champion_id, game.position.clone(), game.opponent_id, form);
         if game.build_for.as_ref() == Some(&key) {
             return game.build.clone();
         }
@@ -2173,13 +2280,22 @@ impl Tracker {
         let mut versus = String::new();
         if let Some(id) = key.2 {
             let opponent = self.champ(base, password, id).await;
-            match self.matchup(&me, &opponent, &key.1).await {
+            match self.matchup(&me, &opponent, &key.1, key.3).await {
                 Ok(m) if m.analysis.runes.games >= MIN_MATCHUP_GAMES => {
                     build = Some(m.analysis.build);
                     versus = opponent.name;
                 }
                 Ok(_) => eprintln!("[panneau] {} vs {} : trop peu de parties, objets généraux", me.name, opponent.name),
                 Err(e) => eprintln!("[panneau] duel introuvable ({e}), objets généraux"),
+            }
+        }
+        // Kayn sans duel utilisable : le build de sa forme d'après son duel contre Lee Sin.
+        if let Some(form) = key.3.filter(|_| build.is_none()) {
+            let reference = self.champ(base, password, LEE_SIN).await;
+            match self.matchup(&me, &reference, &key.1, Some(form)).await {
+                Ok(m) if !m.analysis.build.is_empty() => build = Some(m.analysis.build),
+                Ok(_) => eprintln!("[panneau] {} {} : rien contre Lee Sin, objets généraux", me.name, form.name()),
+                Err(e) => eprintln!("[panneau] duel de référence introuvable ({e}), objets généraux"),
             }
         }
         if build.is_none() {
@@ -2227,10 +2343,11 @@ impl Tracker {
         }
         let mut game = CurrentGame { game_id, mode: game_mode(&data["queue"]).to_string(), ..Default::default() };
         // Ce que la sélection a donné ; la partie en cours le précisera.
-        if let Some((champion_id, position, opponent_id)) = self.last_pick.clone() {
+        if let Some((champion_id, position, opponent_id, form)) = self.last_pick.clone() {
             game.champion_id = champion_id;
             game.position = position;
             game.opponent_id = opponent_id;
+            game.form = form;
         }
         for (team, allies) in [(mine, true), (theirs, false)] {
             let mut players: Vec<(usize, Player)> = Vec::new();
@@ -3087,6 +3204,74 @@ fn assign_roles(ids: &[i64], roles: &HashMap<i64, Vec<(String, f64)>>, fixed: Op
     }
     let lanes = best.map(|(_, lanes)| lanes).unwrap_or_default();
     ids.iter().zip(lanes).map(|(id, lane)| (*id, POSITIONS[lane], rate(*id, POSITIONS[lane]))).collect()
+}
+
+/// Kayn : ce qui va avec sa forme dans un duel OP.GG. Runes : voie principale Précision (Conquérant) pour le rouge,
+/// une autre (Moisson noire, Grêle de lames…) pour le bleu. Combinaison d'objets principaux : rouge si elle compte
+/// plus d'objets de combattant (santé ou armure) que d'objets de létalité (sans santé ni armure), bleue s'il y en a
+/// moins. Autre objet : il va s'il apparaît dans des combinaisons de sa forme ; sinon, s'il n'apparaît pas dans
+/// celles de l'autre et n'est pas un objet de l'autre forme (combattant pour le bleu, létalité seule pour le rouge).
+struct KaynStyle {
+    form: Form,
+    /// Pour chaque objet du duel : +1 combattant, −1 létalité seule, 0 ni l'un ni l'autre.
+    sides: HashMap<i64, i32>,
+    /// Objets des combinaisons de sa forme, et de celles de l'autre.
+    mine: HashSet<i64>,
+    theirs: HashSet<i64>,
+}
+
+impl KaynStyle {
+    fn new(form: Form, doc: &Value, assets: &Assets) -> Self {
+        let ids = |e: &Value| -> Vec<i64> { e["ids"].as_array().into_iter().flatten().filter_map(Value::as_i64).collect() };
+        let d = &doc["data"];
+        let combos: Vec<Vec<i64>> = d["core_items"].as_array().into_iter().flatten().map(ids).collect();
+        let singles = d["single_items"].as_array().into_iter().flatten().flat_map(|s| s["items"].as_array().into_iter().flatten());
+        let all: Vec<i64> = combos.iter().flatten().copied().chain(singles.flat_map(ids)).collect();
+        let side = |id: i64| match (assets.has_tag(id, "Health") || assets.has_tag(id, "Armor"), assets.has_tag(id, "ArmorPenetration")) {
+            (true, _) => 1,
+            (false, true) => -1,
+            (false, false) => 0,
+        };
+        let sides: HashMap<i64, i32> = all.into_iter().map(|id| (id, side(id))).collect();
+        let (mut mine, mut theirs) = (HashSet::new(), HashSet::new());
+        for combo in &combos {
+            match combo_form(combo, &sides) {
+                Some(f) if f == form => mine.extend(combo.iter().copied()),
+                Some(_) => theirs.extend(combo.iter().copied()),
+                None => {}
+            }
+        }
+        Self { form, sides, mine, theirs }
+    }
+
+    fn runes(&self, page: &Value) -> bool {
+        (page["primary_page_id"] == PRECISION) == (self.form == Form::Red)
+    }
+
+    fn core(&self, combo: &[i64]) -> bool {
+        combo_form(combo, &self.sides) == Some(self.form)
+    }
+
+    fn item(&self, id: i64) -> bool {
+        if self.mine.contains(&id) || self.theirs.contains(&id) {
+            return self.mine.contains(&id);
+        }
+        let side = self.sides.get(&id).copied().unwrap_or(0);
+        match self.form {
+            Form::Red => side >= 0,
+            Form::Blue => side <= 0,
+        }
+    }
+}
+
+/// Forme d'une combinaison d'objets de Kayn (voir `KaynStyle`) ; None à égalité.
+fn combo_form(combo: &[i64], sides: &HashMap<i64, i32>) -> Option<Form> {
+    let total: i32 = combo.iter().map(|id| sides.get(id).copied().unwrap_or(0)).sum();
+    match total.cmp(&0) {
+        std::cmp::Ordering::Greater => Some(Form::Red),
+        std::cmp::Ordering::Less => Some(Form::Blue),
+        std::cmp::Ordering::Equal => None,
+    }
 }
 
 /// Toutes les façons d'ordonner 0, 1… n − 1.

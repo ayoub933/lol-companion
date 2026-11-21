@@ -173,6 +173,25 @@ joués pour ce champion et ton poste, puis :
   joués au moins 100 fois (en dessous, un % élevé peut être du hasard), sinon le plus joué.
 - Si l'app a déjà enregistré des parties de ce duel, ton bilan s'affiche (« 2 V – 1 D »).
 
+**Kayn : forme rouge ou bleue.** L'analyse générale d'OP.GG mélange ses deux formes (sa page la plus jouée
+peut être bleue et son build rouge). Pour Kayn, l'app prend donc runes, sorts, build et set d'objets dans les
+données du duel, triées par forme :
+- runes : voie principale Précision (Conquérant) pour le rouge, une autre (Moisson noire, Grêle de lames…)
+  pour le bleu ;
+- objets principaux : une combinaison est rouge si elle compte plus d'objets de combattant (santé ou armure :
+  Couperet noir, Danse de la mort…) que d'objets de létalité (Hubris, Cyclosabre voltaïque…), bleue sinon,
+  d'après les catégories de la boutique du client. Autres choix : un objet des combinaisons de l'autre forme
+  est écarté, comme un objet de combattant pour le bleu ou de létalité seule pour le rouge ;
+- tant que ton adversaire direct n'est pas connu (ou si son duel a trop peu de parties), le duel de Kayn
+  contre Lee Sin, un jungler très joué, sert de référence.
+
+La forme est conseillée d'après l'équipe d'en face : rouge s'il y a plus de champions de mêlée (ils donnent les
+orbes rouges), bleue s'il y a plus de champions à distance ; à égalité, rien n'est conseillé (build général en
+attendant). Les boutons Rouge / Bleue du bloc Runes la choisissent ; un reclic revient à la forme conseillée.
+Le set d'objets s'appelle « LoL Companion · Kayn rouge vs … ». En partie, le panneau sur le jeu et « TON
+BUILD » suivent la forme retenue en sélection. Le terminal note ce qui a été pris (« [forme] Kayn red : page
+8010 (432 parties contre Lee Sin) »).
+
 Stats OP.GG tous rangs par défaut : pour changer, modifie `TIER` dans `src-tauri/src/opgg.rs`
 (par exemple `Some("emerald_plus")`). Les données OP.GG sont réservées à un usage personnel.
 

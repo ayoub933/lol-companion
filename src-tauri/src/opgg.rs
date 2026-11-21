@@ -70,6 +70,18 @@ pub struct Champ {
     pub damage: String,
     /// Rôles d'après le client : "tank", "fighter", "mage", "assassin", "marksman", "support".
     pub roles: Vec<String>,
+    /// Champion à distance d'après le client (false : mêlée, ou inconnu).
+    pub ranged: bool,
+}
+
+/// Un style de jeu à part pour un même champion (Kayn rouge ou bleu) : ce qui lui va dans les listes d'OP.GG.
+pub struct Style<'a> {
+    /// Une page de runes d'OP.GG (entrée de la liste « runes ») lui va.
+    pub runes: &'a dyn Fn(&Value) -> bool,
+    /// Une combinaison d'objets principaux lui va.
+    pub core: &'a dyn Fn(&[i64]) -> bool,
+    /// Un objet seul (autre choix, choix suivants) lui va.
+    pub item: &'a dyn Fn(i64) -> bool,
 }
 
 /// Ce qu'OP.GG recommande pour un champion à un poste : runes et build.
@@ -237,7 +249,8 @@ impl Client {
     }
 
     /// Runes, build et conseils d'OP.GG pour ton champion contre ton adversaire direct.
-    pub async fn matchup(&mut self, me: &Champ, opponent: &Champ, position: &str) -> Result<Matchup, String> {
+    /// Réponse d'OP.GG pour le duel, à lire avec `matchup_from` (une fois par style si besoin).
+    pub async fn matchup_doc(&mut self, me: &Champ, opponent: &Champ, position: &str) -> Result<Value, String> {
         let args = json!({
             "position": position,
             "my_champion": self.name_of(me),
@@ -251,7 +264,8 @@ impl Client {
         if id != 0 && id != me.id {
             return Err(format!("OP.GG a renvoyé le duel d'un autre champion ({id})"));
         }
-        matchup_from(&doc, opponent.id).ok_or_else(|| UNREADABLE.to_string())
+        matchup_from(&doc, opponent.id, None).ok_or_else(|| UNREADABLE.to_string())?;
+        Ok(doc)
     }
 
     /// Analyse d'un champion, en essayant les noms possibles ; retient celui qu'OP.GG accepte.
@@ -517,9 +531,14 @@ fn analysis_from(doc: &Value) -> Option<Analysis> {
 }
 
 /// Réponse de l'outil des duels : chaque liste est triée de la plus jouée à la moins jouée.
-fn matchup_from(doc: &Value, opponent_id: i64) -> Option<Matchup> {
+/// `style` (Kayn rouge ou bleu) : seulement les pages de runes, objets principaux et autres objets qui lui vont
+/// (s'il n'y en a aucun dans une liste, toute la liste).
+pub fn matchup_from(doc: &Value, opponent_id: i64, style: Option<&Style>) -> Option<Matchup> {
     let d = &doc["data"];
-    let runes = build_runes(d["summary"]["id"].as_i64().unwrap_or(0), &d["runes"][0])?;
+    let list = |key: &str| d[key].as_array().map(Vec::as_slice).unwrap_or_default();
+    let page = style.and_then(|s| list("runes").iter().find(|p| (s.runes)(p))).or(list("runes").first())?;
+    let runes = build_runes(d["summary"]["id"].as_i64().unwrap_or(0), page)?;
+    let fits = |e: &Value| e["ids"][0].as_i64().is_some_and(|id| style.is_none_or(|s| (s.item)(id)));
     // 4e, 5e et 6e objets : les 3 plus achetés à chaque étape (au moins 10 parties).
     let step = |depth: i64| -> Vec<Value> {
         d["single_items"]
@@ -528,14 +547,17 @@ fn matchup_from(doc: &Value, opponent_id: i64) -> Option<Matchup> {
             .flatten()
             .find(|s| s["depth"] == depth)
             .and_then(|s| s["items"].as_array())
-            .map(|items| items.iter().filter(|i| i["play"].as_u64().unwrap_or(0) >= 10).take(3).cloned().collect())
+            .map(|items| items.iter().filter(|i| i["play"].as_u64().unwrap_or(0) >= 10 && fits(i)).take(3).cloned().collect())
             .unwrap_or_default()
     };
-    let pick = |key: &str| best(d[key].as_array().into_iter().flatten()).unwrap_or(&NULL);
+    let pick = |key: &str| best(list(key)).unwrap_or(&NULL);
+    let ids = |e: &Value| -> Vec<i64> { e["ids"].as_array().into_iter().flatten().filter_map(Value::as_i64).collect() };
+    let cores: Vec<&Value> = list("core_items").iter().filter(|c| style.is_none_or(|s| (s.core)(&ids(c)))).collect();
+    let core = if cores.is_empty() { pick("core_items") } else { best(cores).unwrap_or(&NULL) };
     // Même forme que l'analyse générale, pour la lire de la même façon.
     let shaped = json!({
         "starter_items": pick("starter_items"),
-        "core_items": pick("core_items"),
+        "core_items": core,
         "boots": pick("boots"),
         "fourth_items": step(4),
         "fifth_items": step(5),
@@ -548,7 +570,7 @@ fn matchup_from(doc: &Value, opponent_id: i64) -> Option<Matchup> {
     // Autre choix pour le 1er (puis le 2e) objet : le meilleur des objets achetés à ce rang, hors ceux déjà retenus.
     let other = |depth: i64, taken: &[i64]| -> Option<Item> {
         let rank = d["single_items"].as_array()?.iter().find(|s| s["depth"] == depth)?;
-        let free = rank["items"].as_array()?.iter().filter(|e| e["ids"][0].as_i64().is_some_and(|id| !taken.contains(&id)));
+        let free = rank["items"].as_array()?.iter().filter(|e| fits(e) && e["ids"][0].as_i64().is_some_and(|id| !taken.contains(&id)));
         items_of(best(free)?).into_iter().next()
     };
     let mut taken: Vec<i64> = build.core.iter().take(2).map(|i| i.id).collect();
