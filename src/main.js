@@ -1401,6 +1401,11 @@ window.addEventListener("DOMContentLoaded", async () => {
   window.addEventListener("resize", layout);
   $("settings-button").addEventListener("click", toggleSettings);
   $("settings-close").addEventListener("click", toggleSettings);
+  // Version de l'app (celle de tauri.conf.json), à côté du titre des réglages.
+  window.__TAURI__.app
+    .getVersion()
+    .then((version) => ($("settings-title").textContent = `RÉGLAGES · v${version}`))
+    .catch(() => {});
   $("match-close").addEventListener("click", closeMatch);
   // Détail ouvert : un clic ailleurs dans l'app le referme, sans rien déclencher d'autre.
   document.addEventListener(
