@@ -324,7 +324,7 @@ function metaLine(meta) {
       ? null
       : el("span", `trend ${moved > 0 ? "up" : moved < 0 ? "down" : "same"}`, moved > 0 ? `▲${moved}` : moved < 0 ? `▼${-moved}` : "=");
   const line = el("div", "mmeta", [
-    el("span", `tier t${meta.tier}`, `T${meta.tier}`),
+    el("span", `opgg-tier t${meta.tier}`, `T${meta.tier}`),
     el("span", "mpos", SHORT_POSITIONS[meta.position] ?? ""),
     el("span", "mwr", `${number(meta.winRate * 100, 0)}\u202f%`),
     trend,
@@ -804,7 +804,7 @@ function renderBans(runes) {
     ...help.bans.map((b) => {
       const why = b.counter
         ? `BAT ${upper(help.champion)}`
-        : [el("span", `tier t${b.tier}`, `T${b.tier}`), el("span", "", position)];
+        : [el("span", `opgg-tier t${b.tier}`, `T${b.tier}`), el("span", "", position)];
       const card = el("div", `ban${b.counter ? " counter" : ""}`, [
         champIcon(b.championId, b.name),
         el("span", "bname", upper(b.name)),

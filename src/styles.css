@@ -958,20 +958,20 @@ input[type="checkbox"] {
   color: var(--text-2);
   cursor: default;
 }
-.tier {
+.opgg-tier {
   padding: 0 5px;
   font-family: var(--display);
   font-weight: 800;
   font-size: 13px;
   line-height: 17px;
   color: var(--bg);
-  background: var(--tier, var(--muted));
+  background: var(--opgg-tier, var(--muted));
 }
-.tier.t1 { --tier: #ffb83d; }
-.tier.t2 { --tier: var(--victory); }
-.tier.t3 { --tier: var(--accent-light); }
-.tier.t4 { --tier: var(--muted); }
-.tier.t5 { --tier: var(--defeat); }
+.opgg-tier.t1 { --opgg-tier: #ffb83d; }
+.opgg-tier.t2 { --opgg-tier: var(--victory); }
+.opgg-tier.t3 { --opgg-tier: var(--accent-light); }
+.opgg-tier.t4 { --opgg-tier: var(--muted); }
+.opgg-tier.t5 { --opgg-tier: var(--defeat); }
 .mmeta .mpos {
   font-size: 11px;
   font-weight: 600;
@@ -2127,7 +2127,7 @@ button.pick:hover {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ban .bwhy .tier {
+.ban .bwhy .opgg-tier {
   display: inline-block;
   margin-right: 5px;
 }
