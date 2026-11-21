@@ -97,8 +97,8 @@ Windows » : c'est l'exe de développement qui serait lancé au démarrage.
   (chacun peut être coupé). Les recommandations restent affichées.
 - Saut éclair sur D ou F, ou « sa touche actuelle » (sinon F).
 - Sets d'objets : un seul, remplacé à chaque partie, ou un par champion.
-- En partie, quand tu tiens Tab : le panneau des objets à acheter sur le bord gauche du jeu, et les
-  écarts d'or à côté du tableau des scores (chacun peut être coupé).
+- En partie : le panneau des objets à acheter sur le bord gauche du jeu, en tenant Tab ou toute la
+  partie, et les écarts d'or à côté du tableau des scores en tenant Tab (chacun peut être coupé).
 - Lancer avec Windows (l'app démarre cachée près de l'horloge), afficher la fenêtre
   quand le client LoL s'ouvre, notification quand une partie est trouvée, et ce que fait la croix.
 
@@ -193,18 +193,34 @@ Une fois la partie lancée :
   du couloir, sur une case aux mêmes couleurs. Sans postes (ARAM...), les deux équipes côte à côte.
   « Rang masqué » : joueur en mode streamer.
 
-En tenant Tab (avec le tableau des scores), deux choses s'affichent par-dessus le jeu.
+Deux choses s'affichent par-dessus le jeu : le panneau des objets (en tenant Tab, ou toute la partie
+selon le réglage) et les écarts d'or (en tenant Tab, avec le tableau des scores).
 
 **Panneau des objets à acheter**, collé au bord gauche de l'écran, à mi-hauteur : juste les icônes,
-une rangée numérotée par achat, de haut en bas : départ, 1er objet (avec un autre choix, plus petit),
-bottes, 2e objet (avec un autre choix). Le 1 est toujours le prochain achat. Ce sont les objets du duel
-contre ton vrai adversaire de couloir, choisis comme en sélection ; trop peu de parties sur ce duel :
-ceux de ton champion à ton poste.
-- Un objet acheté et toujours là 30 secondes plus tard quitte le panneau pour de bon, même revendu
-  ensuite (un achat annulé ou revendu dans les 30 secondes ne compte pas). Le 1er et le 2e objet
-  partent aussi si tu as pris leur autre choix ; la rangée du départ part dès ton premier achat,
-  même si c'est un autre départ. Les rangées restantes sont renumérotées ; quand tout est acheté,
-  il n'y a plus de panneau.
+une rangée par étape, de haut en bas :
+- 1. départ, 2. 1er objet (avec un autre choix, plus petit), 3. bottes, 4. 2e objet (avec un autre
+  choix), 5. 3e objet. Ce sont les objets du duel contre ton vrai adversaire de couloir, choisis comme
+  en sélection ; trop peu de parties sur ce duel : ceux de ton champion à ton poste ;
+- « + » : la suite, les 3 choix suivants les plus joués sur OP.GG ;
+- « VS » : jusqu'à 3 objets contre l'équipe d'en face, pris parmi les choix d'OP.GG pour ton champion,
+  avec la raison sous l'icône :
+  - SOINS : un gros soigneur en face (Soraka, Aatrox, Vladimir, Dr. Mundo…) : un objet à Blessures
+    graves, sinon le composant qui va avec tes dégâts (Appel du bourreau, Orbe d'oubli, Gilet épineux
+    pour un tank) ;
+  - AD ou AP : en face, au moins 3,5 champions sur 5 font des dégâts physiques (ou magiques ; un
+    champion mixte compte pour moitié) : un objet d'armure (ou de résistance magique) ;
+  - TANKS : 2 tanks ou plus en face : de la pénétration d'armure (magique si tes dégâts sont magiques).
+
+  Le type de dégâts et les rôles viennent de la fiche de chaque champion dans le client, les
+  catégories des objets de la boutique. Le terminal note ce qu'il voit en face
+  (« [panneau] en face : 4 AD, 1 AP, 3 tank(s), 1 soigneur(s) »).
+
+Rien ne disparaît du panneau :
+- un objet que tu as est grisé, avec une coche verte ; une étape faite aussi (le départ dès ton premier
+  achat, même si c'est un autre départ ; les bottes dès que tu as des bottes améliorées, même d'autres) ;
+- un objet gardé 30 secondes reste grisé même vendu ou utilisé ensuite (un achat annulé dans les
+  30 secondes ne compte pas) ;
+- la prochaine étape a son numéro et un contour dorés.
 
 **Écarts d'or**, en colonne juste à gauche du tableau des scores : celui de ton équipe à hauteur de
 l'en-tête, avec l'icône de l'or, puis celui de chaque couloir à hauteur de sa ligne (bleu : ton joueur
