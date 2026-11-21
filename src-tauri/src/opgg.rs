@@ -106,12 +106,16 @@ impl Build {
     }
 }
 
-#[derive(Serialize, Clone, PartialEq, Debug)]
+#[derive(Serialize, Clone, Default, PartialEq, Debug)]
 pub struct Item {
     pub id: i64,
     pub name: String,
     /// Ex. 2 pour deux potions de départ.
     pub count: u32,
+    /// Parties et victoires de ce choix sur OP.GG (pour un objet seul, comme les choix suivants ; pour un objet
+    /// des objets principaux, celles des trois ensemble).
+    pub games: u64,
+    pub wins: u64,
 }
 
 /// Page de runes recommandée par OP.GG, prête à envoyer au client.
@@ -684,7 +688,8 @@ fn items_of(entry: &Value) -> Vec<Item> {
             Some(it) => it.count += 1,
             None => {
                 let name = entry["ids_names"][i].as_str().map_or_else(|| id.to_string(), str::to_string);
-                out.push(Item { id, name, count: 1 });
+                let (games, wins) = (entry["play"].as_u64().unwrap_or(0), entry["win"].as_u64().unwrap_or(0));
+                out.push(Item { id, name, count: 1, games, wins });
             }
         }
     }

@@ -99,10 +99,10 @@ Windows » : c'est l'exe de développement qui serait lancé au démarrage.
 - Sets d'objets : un seul, remplacé à chaque partie, ou un par champion.
 - En partie : le panneau des objets à acheter sur le bord gauche du jeu, en tenant Tab ou toute la
   partie, et les écarts d'or à côté du tableau des scores en tenant Tab (chacun peut être coupé).
-- Noms des objets, runes et sorts (dans la sélection) : comme le client, ou en anglais. Les noms anglais
-  sont ceux des fichiers du client en anglais, pris sur CommunityDragon (raw.communitydragon.org) la
-  première fois ; s'il ne répond pas, les noms du client restent et l'app réessaie une minute plus tard.
-  Les champions gardent le nom du client.
+- Noms des objets, runes et sorts (sélection, et « TON BUILD » en partie) : comme le client, ou en
+  anglais. Les noms anglais sont ceux des fichiers du client en anglais, pris sur CommunityDragon
+  (raw.communitydragon.org) la première fois ; s'il ne répond pas, les noms du client restent et l'app
+  réessaie une minute plus tard. Les champions gardent le nom du client.
 - Lancer avec Windows (l'app démarre cachée près de l'horloge), afficher la fenêtre
   quand le client LoL s'ouvre, notification quand une partie est trouvée, et ce que fait la croix.
 
@@ -194,6 +194,15 @@ Une fois la partie lancée :
   grand au milieu, sur une case bleue si ton équipe est devant, orange si c'est l'équipe d'en face
   (grise à moins de 100 pièces d'écart) ;
 - ta carte : ton skin, KDA, CS, or en poche ;
+- en dessous, « TON BUILD » (la moitié de la colonne), le même build que le panneau sur le jeu mais en détail
+  (au survol d'une icône : nom et prix) :
+  - prochain achat : l'objet, son prix, ce qu'il te manque avec ton or en poche (ses composants que tu as
+    déjà sont déduits, comme dans la boutique) et ses composants, ceux que tu as cochés ;
+  - ordre : départ › 1er objet (son autre choix en petit) › bottes › 2e › 3e, ce que tu as grisé, la
+    prochaine étape cerclée d'or ;
+  - ensuite : les choix suivants avec leur % de victoires sur OP.GG ; contre eux : les objets contre l'équipe
+    d'en face, avec la raison ;
+  - la montée des compétences, et ce que l'app voit en face (« 4 AD · 1 AP · 3 tanks · soins : Dr. Mundo ») ;
 - le face-à-face, couloir par couloir : niveau, KDA et rang de chacun, et au milieu l'écart d'or
   du couloir, sur une case aux mêmes couleurs. Sans postes (ARAM...), les deux équipes côte à côte.
   « Rang masqué » : joueur en mode streamer.

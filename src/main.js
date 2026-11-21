@@ -1037,14 +1037,106 @@ function teamValue(team) {
 }
 
 function renderGame(game) {
-  for (const id of ["score", "game-loading", "me-card", "faceoff"]) $(id).hidden = true;
+  for (const id of ["score", "game-loading", "me-card", "game-build", "faceoff"]) $(id).hidden = true;
   if (!game) return;
   $("game-loading").hidden = game.ready;
   if (game.ready) {
     renderScore(game);
     renderMe(game);
+    renderGameBuild(game);
   }
   renderFaceoff(game);
+}
+
+// Ton build en détail, sous ta carte : le prochain achat avec l'or qu'il te manque, l'ordre des achats, la suite
+// avec les % de victoires OP.GG, les objets contre l'équipe d'en face et la montée des compétences.
+// Refait seulement quand le build change ; l'or en poche, lui, change chaque seconde : juste la barre et le texte.
+let shownBuild = "";
+function renderGameBuild(game) {
+  const build = game.build;
+  $("game-build").hidden = false;
+  $("gb-empty").hidden = Boolean(build);
+  $("gb-body").hidden = !build;
+  if (!build) return;
+  const key = JSON.stringify([game.panel, build]);
+  if (key !== shownBuild) {
+    shownBuild = key;
+    $("gb-aside").textContent = build.versus ? `OP.GG · vs ${build.versus}` : "OP.GG";
+    $("gb-body").replaceChildren(...buildBlocks(game.panel, build));
+  }
+  const next = build.next;
+  const gold = $("gb-gold");
+  if (!next || !gold) return;
+  const missing = next.left - game.gold;
+  gold.querySelector(".fill").style.width = `${next.left ? Math.min(100, (game.gold / next.left) * 100) : 100}%`;
+  gold.querySelector(".text").textContent =
+    missing > 0 ? `Il te manque ${whole(missing)} or` : "Tu as de quoi l'acheter";
+  gold.classList.toggle("ready", missing <= 0);
+}
+
+// Icône d'un objet du build : grisée avec une coche si tu l'as ; au survol, son nom et son prix.
+function buildIcon(item, size, under) {
+  const box = el("span", `gb-icon ${size}${item.owned ? " owned" : ""}`, [smallIcon(iconUrl(`item-${item.id}`), "gb-img")]);
+  if (item.count > 1) box.append(el("span", "count", String(item.count)));
+  box.title = [item.name, item.price ? `${whole(item.price)} or` : "", item.owned ? "déjà à toi" : ""]
+    .filter(Boolean)
+    .join(" · ");
+  return under == null ? box : el("span", "gb-under", [box, el("span", "gb-note", under)]);
+}
+
+function buildBlocks(panel, build) {
+  const blocks = [];
+  const next = build.next;
+  if (next) {
+    const names = next.items.map((it) => (it.count > 1 ? `${it.name} ×${it.count}` : it.name)).join(", ");
+    const gold = el("div", "gb-gold", [el("span", "bar", [el("span", "fill")]), el("span", "text")]);
+    gold.id = "gb-gold";
+    const parts = next.components.length
+      ? el("div", "gb-parts", next.components.map((c) => buildIcon(c, "part")))
+      : null;
+    blocks.push(
+      el("div", "gb-next", [
+        el("span", "gb-k", "PROCHAIN ACHAT"),
+        el("div", "gb-next-main", [
+          el("div", "gb-next-icons", next.items.map((it) => buildIcon(it, "big"))),
+          el("div", "gb-next-text", [
+            el("div", "gb-name", [el("span", "", names), el("span", "gb-price", `${whole(next.price)} or`)]),
+            gold,
+          ]),
+          parts,
+        ]),
+      ]),
+    );
+  } else {
+    blocks.push(el("p", "muted small", "Build principal acheté : la suite et les objets contre eux sont en dessous."));
+  }
+  // L'ordre des achats : départ › 1er objet (son autre choix en petit) › bottes › 2e › 3e.
+  const path = panel.filter((row) => /^\d/.test(row.label));
+  const steps = path.flatMap((row, i) => {
+    const icons = row.items.map((it) => buildIcon(it, it.size === "alt" ? "alt" : "step"));
+    const step = el("span", `gb-step${row.done ? " done" : ""}${row.next ? " next" : ""}`, icons);
+    return i ? [el("span", "gb-arrow", "›"), step] : [step];
+  });
+  if (steps.length) blocks.push(el("div", "gb-row", [el("span", "gb-k", "ORDRE"), el("div", "gb-path", steps)]));
+  // La suite et les objets contre l'équipe d'en face, côte à côte.
+  const rate = (it) => (it.games ? `${Math.round((it.wins / it.games) * 100)} %` : "");
+  const more = panel.find((row) => row.label === "+");
+  const versus = panel.find((row) => row.label === "VS");
+  const halves = [];
+  if (more) halves.push(el("div", "gb-half", [el("span", "gb-k", "ENSUITE"), el("div", "gb-icons", more.items.map((it) => buildIcon(it, "step", rate(it))))]));
+  if (versus) {
+    const icons = versus.items.map((it) => buildIcon(it, "step", it.reason.toUpperCase()));
+    halves.push(el("div", "gb-half", [el("span", "gb-k", "CONTRE EUX"), el("div", "gb-icons", icons)]));
+  }
+  if (halves.length) blocks.push(el("div", "gb-halves", halves));
+  const foot = [];
+  if (build.skills.length) {
+    const keys = build.skills.flatMap((key, i) => (i ? [el("span", "gb-arrow", "›"), el("span", "key", key)] : [el("span", "key", key)]));
+    foot.push(el("span", "gb-skills", [el("span", "gb-k", "MONTÉE"), ...keys]));
+  }
+  if (build.enemyNote) foot.push(el("span", "gb-enemy", `En face : ${build.enemyNote}`));
+  if (foot.length) blocks.push(el("div", "gb-foot", foot));
+  return blocks;
 }
 
 function renderScore(game) {

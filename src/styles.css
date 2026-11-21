@@ -99,7 +99,8 @@ body:not(.board) .col {
 #score { order: 20; }
 #game-loading { order: 21; }
 #me-card { order: 22; }
-#faceoff { order: 23; }
+#game-build { order: 23; }
+#faceoff { order: 24; }
 #hint { order: 30; }
 
 /* Tableau de bord : une grille par écran (en douzièmes de la largeur). */
@@ -2534,6 +2535,212 @@ body.board .me-hero {
 }
 .card.me .cells {
   margin: 0 12px;
+}
+/* En partie : ta carte et ton build se partagent la colonne (moitié chacun). */
+body.board[data-view="game"] #me-card:not([hidden]) {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+/* Ton build en détail (en partie), sous ta carte. */
+.gb {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  font-weight: 500;
+  font-size: 13px;
+  line-height: 1.3;
+}
+.gb-k {
+  color: var(--muted);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+.gb-next,
+.gb-row,
+.gb-half {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.gb-next-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.gb-next-icons,
+.gb-parts,
+.gb-icons {
+  flex: none;
+  display: flex;
+  gap: 5px;
+}
+.gb-next-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gb-name {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text);
+  font-weight: 600;
+}
+.gb-name span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gb-price {
+  flex: none;
+  color: #f0c75e;
+}
+.gb-gold {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.gb-gold .bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--chip);
+  overflow: hidden;
+}
+.gb-gold .fill {
+  display: block;
+  height: 100%;
+  background: #f0c75e;
+}
+.gb-gold.ready .text {
+  color: var(--victory);
+}
+.gb-icon {
+  position: relative;
+  flex: none;
+  display: block;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--panel-2);
+}
+.gb-icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.gb-icon.big {
+  width: 40px;
+  height: 40px;
+}
+.gb-icon.step {
+  width: 32px;
+  height: 32px;
+}
+/* Autre choix possible : plus petit et un peu effacé. */
+.gb-icon.alt {
+  width: 22px;
+  height: 22px;
+  opacity: 0.75;
+}
+.gb-icon.part {
+  width: 26px;
+  height: 26px;
+}
+/* Objet que tu as, étape faite : grisés ; l'objet que tu as porte une coche. */
+.gb-icon.owned img,
+.gb-step.done img {
+  filter: grayscale(1) brightness(0.45);
+}
+.gb-icon.owned::after {
+  content: "✓";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #7dffb0;
+  font: 700 16px / 1 var(--body);
+  text-shadow: 0 0 3px #000;
+}
+.gb-icon .count {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  padding: 0 3px;
+  border-top-left-radius: 3px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #f2f2f2;
+  font-size: 10px;
+  line-height: 1.2;
+}
+.gb-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.gb-step {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 5px;
+}
+/* Prochaine étape : cerclée d'or, comme sur le jeu. */
+.gb-step.next {
+  box-shadow: 0 0 0 2px #ffcf4a;
+}
+.gb-arrow {
+  color: var(--faint);
+  font-size: 16px;
+}
+.gb-halves {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+/* Sous l'icône : % de victoires OP.GG (la suite), ou pourquoi l'objet (contre eux). */
+.gb-under {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.gb-note {
+  color: var(--text-2);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.gb-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.gb-skills {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.gb-skills .gb-k {
+  margin-right: 4px;
+}
+.gb-skills .key {
+  width: 22px;
+  height: 22px;
+  font-size: 13px;
 }
 
 /* Face-à-face : en tableau de bord, les cinq couloirs se partagent la hauteur du bloc. */
