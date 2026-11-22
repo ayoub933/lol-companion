@@ -48,6 +48,10 @@
 [hidden] {
   display: none !important;
 }
+/* Image que le client n'a pas donnée (fermé...) : cachée, sa place reste. */
+.missing {
+  visibility: hidden;
+}
 
 button {
   font: inherit;
@@ -934,9 +938,13 @@ input[type="checkbox"] {
 
 /* ---------- Salon ---------- */
 
-/* Hauteur selon la largeur de la colonne (cqw : centième de sa largeur). */
+/* Hauteur selon la largeur de la colonne (cqw : centième de sa largeur) ; sur le tableau de bord, selon la hauteur
+   de la fenêtre (--vh), pour que les blocs dessous tiennent même dans une fenêtre plus large que 16:9. */
 .hero.player {
   height: clamp(190px, 50cqw, 250px);
+}
+body.board .hero.player {
+  height: clamp(190px, calc(var(--vh) * 0.286), 320px);
 }
 .hero-name {
   position: absolute;
@@ -1944,6 +1952,9 @@ body.board #stats .srow {
 .hero.duel {
   height: clamp(230px, 56cqw, 320px);
 }
+body.board .hero.duel {
+  height: clamp(230px, calc(var(--vh) * 0.4), 400px);
+}
 .half {
   top: 0;
   bottom: 0;
@@ -2748,7 +2759,7 @@ body.board #help.grow .podium {
   grid-template-columns: 66px minmax(0, 1fr);
   gap: 10px;
   align-items: center;
-  padding: 8px 0;
+  padding: 6px 0;
   font-size: 13px;
 }
 .lrow + .lrow {
@@ -2772,6 +2783,29 @@ body.board #help.grow .podium {
   font-weight: 600;
   color: var(--accent-light);
 }
+/* Build de la sélection : le set importé et les niveaux, sur une ligne chacun. */
+.set-line {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.levels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.lv {
+  width: 11px;
+  font-family: Consolas, "DejaVu Sans Mono", monospace;
+  font-size: 12px;
+  text-align: center;
+  color: var(--text-2);
+}
+.lv.ult {
+  color: var(--accent-light);
+  font-weight: 700;
+}
 .keys {
   display: flex;
   align-items: center;
@@ -2791,11 +2825,6 @@ body.board #help.grow .podium {
   font-weight: 800;
   font-size: 15px;
   clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
-}
-.mono {
-  font-family: Consolas, "DejaVu Sans Mono", monospace;
-  font-size: 13px;
-  letter-spacing: 0.05em;
 }
 
 /* ---------- En partie ---------- */
@@ -2973,11 +3002,16 @@ body.board .me-hero {
 .card.me .cells {
   margin: 0 12px;
 }
-/* En partie : ta carte et ton build se partagent la colonne (un gros tiers pour ta carte, le build a ses sets
-   d'objets en plus). */
+/* En partie : ton build prend la hauteur de ce qu'il montre, ta carte le reste (son illustration s'agrandit). */
 body.board[data-view="game"] #me-card:not([hidden]) {
-  flex: 0.58 1 0;
+  flex: 1 1 auto;
   min-height: 0;
+}
+body.board[data-view="game"] #game-build.grow {
+  flex: 0 1 auto;
+}
+body.board[data-view="game"] .me-hero {
+  min-height: 150px;
 }
 
 /* Ton build en détail (en partie), sous ta carte. */
@@ -3214,10 +3248,16 @@ body.board[data-view="game"] #me-card:not([hidden]) {
   color: var(--faint);
   font-size: 16px;
 }
+/* La suite, les objets contre eux et la montée, côte à côte ; la montée prend juste sa place. */
 .gb-halves {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
   gap: 10px;
+}
+.gb-halves .gb-half {
+  flex: 1 1 0;
+}
+.gb-halves .gb-climb {
+  flex: none;
 }
 /* Sous l'icône : % de victoires OP.GG (la suite), ou pourquoi l'objet (contre eux). */
 .gb-under {
@@ -3245,9 +3285,6 @@ body.board[data-view="game"] #me-card:not([hidden]) {
   display: flex;
   align-items: center;
   gap: 5px;
-}
-.gb-skills .gb-k {
-  margin-right: 4px;
 }
 .gb-skills .key {
   width: 22px;
@@ -3666,6 +3703,9 @@ body:not(.board) .worth .tag {
 /* Un peu moins haute que celle du salon : ses runes et ses compétences tiennent dessous. */
 .hero.champ {
   height: clamp(160px, 42cqw, 220px);
+}
+body.board .hero.champ {
+  height: clamp(160px, calc(var(--vh) * 0.24), 300px);
 }
 /* Dans la liste sous la barre : une ligne chacun, l'icône biseautée comme les autres icônes de champion. */
 .champ-suggest {

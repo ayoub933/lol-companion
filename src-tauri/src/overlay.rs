@@ -7,9 +7,9 @@
 //!
 //! Créées au début de la partie, cachées entre deux appuis sur Tab, fermées une fois la partie finie.
 //!
-//! Ctrl+X en partie, jeu au premier plan : la fenêtre de l'app vient par-dessus le jeu, à sa taille et sans
-//! bordure ; Ctrl+X encore (ou la partie finie) : elle revient où et comme elle était, et le jeu reprend le
-//! clavier. Les touches sont seulement lues : Ctrl+X n'est pris à aucune autre app.
+//! Ctrl+X en partie, jeu au premier plan : la fenêtre de l'app vient par-dessus le jeu, au milieu (les 2/3 de sa
+//! hauteur) et sans bordure ; Ctrl+X encore (ou la partie finie) : elle revient où et comme elle était, et le jeu
+//! reprend le clavier. Les touches sont seulement lues : Ctrl+X n'est pris à aucune autre app.
 
 use std::{
     sync::{
@@ -165,9 +165,35 @@ pub fn watch_tab(app: AppHandle, ready: Arc<Ready>) {
     });
 }
 
-/// L'app par-dessus le jeu : sans bordure, toujours au-dessus, à la place et à la taille de sa fenêtre ; elle prend
-/// le clavier. Renvoie où elle était (None si elle n'existe pas).
-fn open_panel(app: &AppHandle, (x, y, w, h): Rect) -> Option<Saved> {
+/// L'app par-dessus le jeu (Ctrl+X) : au milieu, aux 2/3 de sa hauteur, en 16:9 (1280 × 720 sur un jeu en
+/// 1920 × 1080) ; pas moins de 576 pixels de haut à 100 % (en dessous, l'app passerait sur une seule colonne).
+const PANEL_SHARE: f64 = 2.0 / 3.0;
+const PANEL_MIN_HEIGHT: f64 = 576.0;
+
+/// Place de l'app par-dessus le jeu, dans sa fenêtre `game` (en pixels de l'écran).
+fn panel_rect(app: &AppHandle, game: Rect) -> Rect {
+    let (x, y, w, h) = game;
+    let height = (h as f64 * PANEL_SHARE).max(PANEL_MIN_HEIGHT * scale_at(app, game)).min(h as f64);
+    let width = (height * 16.0 / 9.0).min(w as f64);
+    let (width, height) = (width.round() as i32, height.round() as i32);
+    (x + (w - width) / 2, y + (h - height) / 2, width, height)
+}
+
+/// Échelle de l'écran du jeu (1,5 à 150 %) ; 1 si inconnue.
+fn scale_at(app: &AppHandle, (x, y, w, h): Rect) -> f64 {
+    let (cx, cy) = (x + w / 2, y + h / 2);
+    let monitors = app.available_monitors().unwrap_or_default();
+    let screen = monitors.iter().find(|m| {
+        let (p, s) = (m.position(), m.size());
+        (p.x..p.x + s.width as i32).contains(&cx) && (p.y..p.y + s.height as i32).contains(&cy)
+    });
+    screen.map_or(1.0, |m| m.scale_factor())
+}
+
+/// L'app par-dessus le jeu : sans bordure, toujours au-dessus, au milieu de sa fenêtre (voir PANEL_SHARE) ; elle
+/// prend le clavier. Renvoie où elle était (None si elle n'existe pas).
+fn open_panel(app: &AppHandle, game: Rect) -> Option<Saved> {
+    let (x, y, w, h) = panel_rect(app, game);
     let window = app.get_webview_window("main")?;
     let maximized = window.is_maximized().unwrap_or(false);
     let minimized = window.is_minimized().unwrap_or(false);

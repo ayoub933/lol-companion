@@ -359,11 +359,11 @@ Pour les deux :
 - Ils peuvent être coupés dans les réglages (roue ⚙, « En partie »).
 
 **Ctrl+X** pendant la partie (écran de chargement compris), jeu au premier plan : la fenêtre de l'app vient
-par-dessus le jeu, à la place et à la taille de sa fenêtre, sans bordure, et prend le clavier. Ctrl+X encore
-(l'app ou le jeu au premier plan) : elle revient où et comme elle était (autre écran, agrandie, réduite ou cachée
-près de l'horloge) et le jeu reprend le clavier ; la fin de la partie la remet aussi à sa place. Les touches
-sont seulement lues (comme Tab) : Ctrl+X reste « couper » dans les autres apps, et arrive aussi au jeu. Il faut
-LoL en « Sans bordure », comme pour les panneaux.
+par-dessus le jeu, au milieu, aux 2/3 de sa hauteur (1280 × 720 sur un jeu en 1920 × 1080), sans bordure, et
+prend le clavier. Ctrl+X encore (l'app ou le jeu au premier plan) : elle revient où et comme elle était (autre
+écran, agrandie, réduite ou cachée près de l'horloge) et le jeu reprend le clavier ; la fin de la partie la
+remet aussi à sa place. Les touches sont seulement lues (comme Tab) : Ctrl+X reste « couper » dans les autres
+apps, et arrive aussi au jeu. Il faut LoL en « Sans bordure », comme pour les panneaux.
 
 CS : pendant la partie, l'API de Riot ne les donne que par paliers de 10 (0, 10, 20…).
 L'app affiche une fourchette (« 80–89 ») et un rythme par minute estimé ; le compte exact

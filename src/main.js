@@ -84,12 +84,14 @@ const iconUrl = (id) => convertFileSrc(String(id), "lcu");
 const splashUrl = (skinId) => convertFileSrc(`splash-${skinId}`, "lcu");
 
 // Met une image du client dans <img> (rien à faire si c'est déjà la bonne).
-// Si le client était trop occupé pour la donner, on réessaie une fois, 2 secondes plus tard.
+// Si le client était trop occupé pour la donner, on réessaie une fois, 2 secondes plus tard ; toujours rien
+// (client fermé) : l'image est cachée, sa case reste.
 function setImage(img, url) {
   if (img.dataset.url === url) return;
   img.dataset.url = url;
+  img.classList.remove("missing");
   img.onerror = () => {
-    img.onerror = null;
+    img.onerror = () => img.classList.add("missing");
     setTimeout(() => {
       if (img.dataset.url === url) img.src = `${url}?retry`;
     }, 2000);
@@ -154,8 +156,8 @@ function clock(seconds) {
 const record = (wins, losses, separator = "–") => [el("span", "win", wins), separator, el("span", "loss", losses)];
 
 // Emblème d'un rang (image du client, le nom au survol). Si l'image manque, même après un nouvel essai
-// 2 secondes plus tard, le nom du rang en texte à sa place.
-function emblem(tier, size) {
+// 2 secondes plus tard, le nom du rang en texte à sa place ; `quiet` (le rang est déjà écrit à côté) : rien.
+function emblem(tier, size, quiet = false) {
   const name = TIERS[tier] ?? tier;
   const box = el("span", `emblem ${size}`);
   box.title = name;
@@ -163,6 +165,7 @@ function emblem(tier, size) {
   img.alt = name;
   const url = iconUrl(`rank-${tier.toLowerCase()}`);
   img.onerror = () => {
+    if (img.dataset.retried && quiet) return box.classList.add("missing");
     if (img.dataset.retried) return box.replaceWith(el("span", "tier-name", upper(name)));
     img.dataset.retried = "1";
     setTimeout(() => (img.src = `${url}?retry`), 2000);
@@ -1333,7 +1336,20 @@ function renderBuild(runes) {
       ].filter(Boolean)),
     );
   const form = runes.form ? ` ${KAYN_FORMS[runes.form]}` : "";
-  const setTitle = `« LoL Companion · ${runes.champion}${form}${versus(runes)} » `;
+  // Le set d'objets importé, sur une ligne : son nom sans « LoL Companion · » (en entier au survol).
+  const setName = `${runes.champion}${form}${versus(runes)}`;
+  const setLine = el("span", "set-line", [`« ${setName} » `, el("span", "badge", "importé")]);
+  setLine.title = `Set « LoL Companion · ${setName} » importé dans le client`;
+  // La compétence prise à chaque niveau, sur une ligne (l'ultime en bleu).
+  const levels = el(
+    "span",
+    "levels",
+    build.skillOrder.map((key, i) => {
+      const level = el("span", key === "R" ? "lv ult" : "lv", key);
+      level.title = `Niveau ${i + 1} : ${key}`;
+      return level;
+    }),
+  );
   const rows = [
     ["SORTS", spellIds.length ? [spells, applied ? el("span", "badge", "appliqués") : null].filter(Boolean) : "", runes.spellsNote],
     ["DÉPART", build.starter.length ? itemIcons(build.starter) : ""],
@@ -1341,11 +1357,8 @@ function renderBuild(runes) {
     ["BOTTES", build.boots.length ? itemIcons(build.boots) : ""],
     ["ENSUITE", build.options.length ? itemIcons(build.options, "/") : ""],
     ["MONTÉE", build.skillMax.length ? abilities(build.skillMax) : ""],
-    ["NIVEAUX", build.skillOrder.length ? el("span", "mono", build.skillOrder.join(" ")) : ""],
-    [
-      "SET",
-      runes.itemSetOk ? [setTitle, el("span", "badge", "importé")] : runes.itemSetError && el("span", "error-text", runes.itemSetError),
-    ],
+    ["NIVEAUX", build.skillOrder.length ? levels : ""],
+    ["SET", runes.itemSetOk ? setLine : runes.itemSetError && el("span", "error-text", runes.itemSetError)],
   ].filter(([, value]) => (Array.isArray(value) ? value.length : value));
   $("build-list").replaceChildren(
     ...rows.map(([label, value, note]) =>
@@ -1467,7 +1480,7 @@ function buildBlocks(panel, build, championId) {
     });
     blocks.push(el("div", "gb-row", [el("span", "gb-k", "SETS D'OBJETS"), el("div", "gb-sets", rows)]));
   }
-  // La suite et les objets contre l'équipe d'en face, côte à côte.
+  // La suite, les objets contre l'équipe d'en face et la montée des compétences, côte à côte.
   const rate = (it) => (it.games ? `${Math.round((it.wins / it.games) * 100)} %` : "");
   const more = panel.find((row) => row.label === "+");
   const versus = panel.find((row) => row.label === "VS");
@@ -1477,16 +1490,14 @@ function buildBlocks(panel, build, championId) {
     const icons = versus.items.map((it) => buildIcon(it, "mid", it.reason.toUpperCase()));
     halves.push(el("div", "gb-half", [el("span", "gb-k", "CONTRE EUX"), el("div", "gb-icons", icons)]));
   }
-  if (halves.length) blocks.push(el("div", "gb-halves", halves));
-  const foot = [];
   if (build.skills.length) {
     // Les icônes de ses compétences (la touche dans le coin), sinon juste les touches.
     const skill = (key) => (championId > 0 ? keyIcon(iconUrl(`ability-${championId}-${key.toLowerCase()}`), key, key) : el("span", "key", key));
     const keys = build.skills.flatMap((key, i) => (i ? [el("span", "gb-arrow", "›"), skill(key)] : [skill(key)]));
-    foot.push(el("span", "gb-skills", [el("span", "gb-k", "MONTÉE"), ...keys]));
+    halves.push(el("div", "gb-half gb-climb", [el("span", "gb-k", "MONTÉE"), el("div", "gb-skills", keys)]));
   }
-  if (build.enemyNote) foot.push(el("span", "gb-enemy", `En face : ${build.enemyNote}`));
-  if (foot.length) blocks.push(el("div", "gb-foot", foot));
+  if (halves.length) blocks.push(el("div", "gb-halves", halves));
+  if (build.enemyNote) blocks.push(el("div", "gb-foot", [el("span", "gb-enemy", `En face : ${build.enemyNote}`)]));
   // Le conseil d'OP.GG contre ton adversaire de couloir (en anglais : OP.GG ne le traduit pas), sur 2 lignes au
   // plus ; en entier au survol.
   const tip = build.tip;
@@ -2256,7 +2267,7 @@ function renderChampionPlayers(page) {
     const rate = p.games ? p.wins / p.games : 0;
     const row = el("button", "cd-row player-row", [
       el("span", "cd-rank", String(p.rank)),
-      p.tier ? emblem(p.tier, "small") : el("span", "cd-noemblem"),
+      p.tier ? emblem(p.tier, "small", true) : el("span", "cd-noemblem"),
       el("span", "cd-who", [el("span", "cd-player", [name, el("small", "", tag)]), el("span", "cd-sub", rank)]),
       el("span", "cd-stat", [el("span", `cd-pct ${rate >= 0.5 ? "win" : "loss"}`, percent(rate)), el("span", "cd-games", `${whole(p.games)} parties`)]),
     ]);
