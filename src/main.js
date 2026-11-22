@@ -1226,7 +1226,7 @@ function pageRow(page, on) {
   const icons = el("span", "ricons");
   page.perks.slice(0, 6).forEach((id, i) => {
     if (i === 4) icons.append(el("span", "rsep"));
-    const img = el("img", i === 0 ? "ricon key" : "ricon");
+    const img = el("img", i === 0 ? "ricon keystone-rune" : "ricon");
     img.alt = "";
     img.title = page.runeNames[i] ?? "";
     setImage(img, iconUrl(`perk-${id}`));
