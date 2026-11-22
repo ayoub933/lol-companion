@@ -405,10 +405,49 @@ span.icon.slot {
   min-width: 0;
 }
 
+/* Tableau de bord : l'en-tête reprend les colonnes du tableau (mêmes largeurs, même écart), la recherche
+   part du bord gauche de la colonne du milieu (l'historique au salon). */
+body.board .top {
+  gap: 10px;
+}
+body.board[data-view="lobby"] .top {
+  grid-template-columns: 4fr 5fr 3fr;
+}
+body.board[data-view="selection"] .top {
+  grid-template-columns: 5fr 4fr 3fr;
+}
+body.board[data-view="game"] .top,
+body.board.searching[data-view="lobby"] .top {
+  grid-template-columns: 4fr 8fr;
+}
+
 /* ---------- Recherche d'un joueur ---------- */
 
 .search-zone {
   position: relative;
+}
+body.board .search-zone {
+  grid-row: 1;
+  grid-column: 2;
+  min-width: 0;
+}
+body.board .search {
+  width: min(440px, 100%);
+}
+/* Deux colonnes (partie en cours, salon d'un joueur cherché) : la recherche et la droite de l'en-tête se
+   partagent la seconde, assez large. */
+body.board[data-view="game"] .search-zone,
+body.board.searching[data-view="lobby"] .search-zone {
+  justify-self: start;
+}
+body.board[data-view="game"] .search,
+body.board.searching[data-view="lobby"] .search {
+  width: 440px;
+}
+body.board[data-view="game"] .top-right,
+body.board.searching[data-view="lobby"] .top-right {
+  grid-row: 1;
+  grid-column: 2;
 }
 .search {
   width: clamp(250px, 32vw, 440px);
@@ -513,7 +552,11 @@ span.icon.slot {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-/* Message sous la barre, par-dessus la page (sans la décaler). */
+/* Message sous la barre, par-dessus la page (sans la décaler) ; sur le tableau de bord, calé à gauche comme elle. */
+body.board .search-msg {
+  left: 0;
+  transform: none;
+}
 .search-msg {
   position: absolute;
   z-index: 20;
