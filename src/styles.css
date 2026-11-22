@@ -3080,6 +3080,11 @@ body.board[data-view="game"] #me-card:not([hidden]) {
   width: 26px;
   height: 26px;
 }
+/* Build de la sélection. */
+.gb-icon.mid {
+  width: 28px;
+  height: 28px;
+}
 /* Objet que tu as, étape faite : grisés ; l'objet que tu as porte une coche. */
 .gb-icon.owned img,
 .gb-step.done img {
@@ -3095,7 +3100,8 @@ body.board[data-view="game"] #me-card:not([hidden]) {
   font: 700 16px / 1 var(--body);
   text-shadow: 0 0 3px #000;
 }
-.gb-icon .count {
+.gb-icon .count,
+.gb-icon .tag {
   position: absolute;
   right: 0;
   bottom: 0;
@@ -3119,6 +3125,26 @@ body.board[data-view="game"] #me-card:not([hidden]) {
   padding: 2px;
   border-radius: 5px;
 }
+/* Touche d'un sort ou d'une compétence (D, F, Q…). */
+.gb-icon .tag {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 11px;
+}
+/* Build de la sélection : une ligne d'icônes, la flèche ou la barre entre elles. */
+.bicons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+.bsep {
+  color: var(--faint);
+  font-size: 13px;
+}
+
 /* Prochaine étape : cerclée d'or, comme sur le jeu. */
 .gb-step.next {
   box-shadow: 0 0 0 2px #ffcf4a;
@@ -3166,6 +3192,10 @@ body.board[data-view="game"] #me-card:not([hidden]) {
   width: 22px;
   height: 22px;
   font-size: 13px;
+}
+.gb-skills .gb-icon {
+  width: 24px;
+  height: 24px;
 }
 /* Conseil d'OP.GG contre ton adversaire : 2 lignes au plus (en entier au survol). */
 .gb-tip {

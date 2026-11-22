@@ -6,6 +6,10 @@
 //! - Les écarts d'or, juste à gauche du tableau des scores : en tenant Tab (avec le tableau des scores).
 //!
 //! Créées au début de la partie, cachées entre deux appuis sur Tab, fermées une fois la partie finie.
+//!
+//! Ctrl+X en partie, jeu au premier plan : la fenêtre de l'app vient par-dessus le jeu, à sa taille et sans
+//! bordure ; Ctrl+X encore (ou la partie finie) : elle revient où et comme elle était, et le jeu reprend le
+//! clavier. Les touches sont seulement lues : Ctrl+X n'est pris à aucune autre app.
 
 use std::{
     sync::{
@@ -14,7 +18,7 @@ use std::{
     },
     time::Duration,
 };
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 /// Rectangle en pixels de l'écran : (x, y, largeur, hauteur).
 type Rect = (i32, i32, i32, i32);
@@ -82,6 +86,17 @@ pub struct Ready {
     pub gold: AtomicBool,
     /// Panneau des objets affiché toute la partie, sans tenir Tab.
     pub build_always: AtomicBool,
+    /// Partie en cours (écran de chargement compris) : Ctrl+X met l'app par-dessus le jeu.
+    pub in_game: AtomicBool,
+}
+
+/// Fenêtre de l'app juste avant Ctrl+X, pour la remettre pareil.
+struct Saved {
+    position: PhysicalPosition<i32>,
+    size: PhysicalSize<u32>,
+    maximized: bool,
+    minimized: bool,
+    visible: bool,
 }
 
 /// Crée la fenêtre à l'avance (cachée), pour qu'elle s'affiche tout de suite le moment venu.
@@ -112,7 +127,27 @@ pub fn close(app: &AppHandle, overlay: Overlay) {
 pub fn watch_tab(app: AppHandle, ready: Arc<Ready>) {
     std::thread::spawn(move || {
         let mut shown: [Option<Rect>; 2] = [None, None];
+        // App par-dessus le jeu (Ctrl+X) : où elle était avant ; Ctrl+X tenues au tour d'avant.
+        let mut saved: Option<Saved> = None;
+        let mut held = false;
         loop {
+            let in_game = ready.in_game.load(Ordering::Relaxed);
+            let pressed = in_game && panel_keys_held();
+            if pressed && !held {
+                saved = match saved.take() {
+                    None => game_screen(&app).and_then(|screen| open_panel(&app, screen)),
+                    Some(before) if app_or_game_in_front(&app) => {
+                        close_panel(&app, before);
+                        None
+                    }
+                    Some(before) => Some(before),
+                };
+            }
+            held = pressed;
+            // Partie finie : l'app revient à sa place.
+            if let Some(before) = saved.take_if(|_| !in_game) {
+                close_panel(&app, before);
+            }
             let wanted = [ready.build.load(Ordering::Relaxed), ready.gold.load(Ordering::Relaxed)];
             let always = [ready.build_always.load(Ordering::Relaxed), false];
             let active = wanted.contains(&true);
@@ -125,9 +160,56 @@ pub fn watch_tab(app: AppHandle, ready: Arc<Ready>) {
                     shown[i] = target;
                 }
             }
-            std::thread::sleep(if active { TAB_POLL } else { IDLE_POLL });
+            std::thread::sleep(if active || in_game { TAB_POLL } else { IDLE_POLL });
         }
     });
+}
+
+/// L'app par-dessus le jeu : sans bordure, toujours au-dessus, à la place et à la taille de sa fenêtre ; elle prend
+/// le clavier. Renvoie où elle était (None si elle n'existe pas).
+fn open_panel(app: &AppHandle, (x, y, w, h): Rect) -> Option<Saved> {
+    let window = app.get_webview_window("main")?;
+    let maximized = window.is_maximized().unwrap_or(false);
+    let minimized = window.is_minimized().unwrap_or(false);
+    let visible = window.is_visible().unwrap_or(false);
+    // Réduite ou agrandie : d'abord sa taille normale, pour la noter (réduite, sa place ne veut rien dire).
+    if minimized || maximized {
+        let _ = window.unminimize();
+        let _ = window.unmaximize();
+        std::thread::sleep(Duration::from_millis(150));
+    }
+    let saved = Saved { position: window.outer_position().ok()?, size: window.inner_size().ok()?, maximized, minimized, visible };
+    let _ = window.set_decorations(false);
+    let _ = window.set_always_on_top(true);
+    let _ = window.set_position(PhysicalPosition::new(x, y));
+    let _ = window.set_size(PhysicalSize::new(w.max(1) as u32, h.max(1) as u32));
+    let _ = window.show();
+    let _ = window.set_focus();
+    eprintln!("[panneau] app par-dessus le jeu ({w} × {h}), Ctrl+X pour la remettre");
+    Some(saved)
+}
+
+/// L'app revient où et comme elle était, et le jeu reprend le clavier.
+fn close_panel(app: &AppHandle, saved: Saved) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let _ = window.set_always_on_top(false);
+    let _ = window.set_decorations(true);
+    // D'abord sur son écran, puis sa taille (en pixels de cet écran).
+    let _ = window.set_position(saved.position);
+    let _ = window.set_size(saved.size);
+    if saved.maximized {
+        let _ = window.maximize();
+    }
+    if saved.minimized {
+        let _ = window.minimize();
+    }
+    if !saved.visible {
+        let _ = window.hide();
+    }
+    focus_game();
+    eprintln!("[panneau] app remise à sa place");
 }
 
 /// Pose la fenêtre sur cet écran du jeu, ou la cache (None).
@@ -195,6 +277,46 @@ fn game_screen(_app: &AppHandle) -> Option<Rect> {
     }
 }
 
+/// Ctrl+X enfoncées, sans Alt. Seulement lues : elles arrivent à la fenêtre active comme d'habitude.
+#[cfg(windows)]
+fn panel_keys_held() -> bool {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_CONTROL, VK_MENU, VK_X};
+    let down = |key: u16| unsafe { GetAsyncKeyState(i32::from(key)) } < 0;
+    down(VK_CONTROL) && down(VK_X) && !down(VK_MENU)
+}
+
+/// Fenêtre active : l'app ou le jeu (Ctrl+X tapé dans une autre app ne remet pas l'app à sa place).
+#[cfg(windows)]
+fn app_or_game_in_front(app: &AppHandle) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetForegroundWindow};
+    unsafe {
+        let front = GetForegroundWindow();
+        if front.is_null() {
+            return false;
+        }
+        let ours = app.get_webview_window("main").and_then(|w| w.hwnd().ok());
+        if ours.map(|hwnd| hwnd.0 as windows_sys::Win32::Foundation::HWND) == Some(front) {
+            return true;
+        }
+        let mut class = [0u16; 64];
+        let len = GetClassNameW(front, class.as_mut_ptr(), class.len() as i32);
+        String::from_utf16_lossy(&class[..len.max(0) as usize]) == "RiotWindowClass"
+    }
+}
+
+/// Rend le clavier au jeu (fenêtre de classe « RiotWindowClass »).
+#[cfg(windows)]
+fn focus_game() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowW, SetForegroundWindow};
+    let class: Vec<u16> = "RiotWindowClass\0".encode_utf16().collect();
+    unsafe {
+        let game = FindWindowW(class.as_ptr(), std::ptr::null());
+        if !game.is_null() {
+            SetForegroundWindow(game);
+        }
+    }
+}
+
 /// Tab enfoncée, sans Alt (Alt+Tab sert à changer de fenêtre). L'état de la touche est seulement lu :
 /// elle arrive au jeu comme d'habitude.
 #[cfg(windows)]
@@ -236,6 +358,20 @@ fn game_screen(app: &AppHandle) -> Option<Rect> {
     let (p, s) = (monitor.position(), monitor.size());
     Some((p.x, p.y, s.width as i32, s.height as i32))
 }
+
+/// Hors Windows (tests) : Ctrl+X comptent comme tenues tant que le fichier nommé par LOL_FAKE_CTRLX existe.
+#[cfg(not(windows))]
+fn panel_keys_held() -> bool {
+    std::env::var_os("LOL_FAKE_CTRLX").is_some_and(|file| std::path::Path::new(&file).exists())
+}
+
+#[cfg(not(windows))]
+fn app_or_game_in_front(_app: &AppHandle) -> bool {
+    true
+}
+
+#[cfg(not(windows))]
+fn focus_game() {}
 
 /// Hors Windows (tests) : Tab compte comme tenue tant que le fichier nommé par LOL_FAKE_TAB existe.
 #[cfg(not(windows))]

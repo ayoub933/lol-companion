@@ -170,8 +170,10 @@ duel contre ton adversaire (« Aperçu ») : rien n'est mis dans le client tant 
 joués pour ce champion et ton poste, puis :
 1. écrit les runes dans ta page de runes sélectionnée, qui prend le nom « LoL Companion » ;
 2. met les sorts d'invocateur conseillés, le Saut éclair sur ta touche ;
-3. affiche le build : objets de départ, 3 objets principaux, bottes, choix suivants,
-   ordre des compétences ;
+3. affiche le build en icônes (leur nom au survol) : sorts d'invocateur (leur touche D ou F dans le coin),
+   objets de départ (le nombre dans le coin), 3 objets principaux dans l'ordre d'achat, bottes, choix
+   suivants, ordre de montée des compétences (icônes du champion, la touche dans le coin), puis la
+   compétence de chaque niveau ;
 4. ajoute à la boutique un set d'objets « LoL Companion · <champion> ».
 
 - Runes : pas besoin de page libre, ce que contenait ta page sélectionnée est remplacé. Le client ne
@@ -297,7 +299,8 @@ Une fois la partie lancée :
     prochaine étape cerclée d'or ;
   - ensuite : les choix suivants avec leur % de victoires sur OP.GG ; contre eux : les objets contre l'équipe
     d'en face, avec la raison ;
-  - la montée des compétences, et ce que l'app voit en face (« 4 AD · 1 AP · 3 tanks · soins : Dr. Mundo ») ;
+  - la montée des compétences (icônes de ton champion), et ce que l'app voit en face (« 4 AD · 1 AP · 3 tanks ·
+    soins : Dr. Mundo ») ;
   - l'astuce d'OP.GG contre ton adversaire de couloir de la partie, avec le style de jeu conseillé (« joue
     prudemment »), sur 2 lignes (en entier au survol ; en anglais, OP.GG ne la traduit pas) ;
 - le face-à-face, couloir par couloir : niveau, KDA et rang de chacun, et au milieu l'écart d'or
@@ -351,6 +354,13 @@ Pour les deux :
 - Les clics les traversent et ils ne prennent jamais le clavier.
 - Il faut LoL en mode d'affichage « Sans bordure » : en plein écran, le jeu passe par-dessus tout.
 - Ils peuvent être coupés dans les réglages (roue ⚙, « En partie »).
+
+**Ctrl+X** pendant la partie (écran de chargement compris), jeu au premier plan : la fenêtre de l'app vient
+par-dessus le jeu, à la place et à la taille de sa fenêtre, sans bordure, et prend le clavier. Ctrl+X encore
+(l'app ou le jeu au premier plan) : elle revient où et comme elle était (autre écran, agrandie, réduite ou cachée
+près de l'horloge) et le jeu reprend le clavier ; la fin de la partie la remet aussi à sa place. Les touches
+sont seulement lues (comme Tab) : Ctrl+X reste « couper » dans les autres apps, et arrive aussi au jeu. Il faut
+LoL en « Sans bordure », comme pour les panneaux.
 
 CS : pendant la partie, l'API de Riot ne les donne que par paliers de 10 (0, 10, 20…).
 L'app affiche une fourchette (« 80–89 ») et un rythme par minute estimé ; le compte exact
@@ -513,7 +523,8 @@ Quand une partie est trouvée, une notification Windows le signale. L'app n'acce
 - `src-tauri/src/settings.rs` : réglages.
 - `src-tauri/src/lib.rs` : fenêtre, icône près de l'horloge, mises à jour, boucle qui prévient
   l'interface quand l'état change.
-- `src-tauri/src/overlay.rs` : fenêtres posées sur le jeu (panneau des objets, écarts d'or) et touche Tab.
+- `src-tauri/src/overlay.rs` : fenêtres posées sur le jeu (panneau des objets, écarts d'or), touche Tab, et
+  l'app par-dessus le jeu avec Ctrl+X.
 - `src/` : l'interface (`index.html`, `main.js`, `styles.css`) et les fenêtres en jeu (`overlay.html`
   pour le panneau, `gold.html` pour les écarts d'or).
 - `src/fonts/` : les polices Barlow et Barlow Condensed de l'interface (licence SIL OFL 1.1, `OFL.txt`).

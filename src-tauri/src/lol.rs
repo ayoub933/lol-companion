@@ -242,8 +242,7 @@ pub struct RuneImport {
     pub page_note: Option<String>,
     /// Sorts mis dans le client, sur D puis sur F (vide si l'app ne les a pas changés).
     pub spells_applied: Vec<String>,
-    /// Leurs numéros (pour leurs noms anglais).
-    #[serde(skip)]
+    /// Leurs numéros (icônes, noms anglais).
     pub applied_spells: Vec<i64>,
     /// Pourquoi les sorts n'ont pas été changés.
     pub spells_note: Option<String>,
@@ -459,6 +458,8 @@ pub struct Assets {
     matches: Arc<Mutex<HashMap<(i64, i64), history::MatchDetails>>>,
     /// Nom de chaque champion d'après le client, lus une fois (salon d'un joueur cherché).
     champion_names: Arc<Mutex<HashMap<i64, String>>>,
+    /// Chemins des icônes des compétences de chaque champion déjà demandé (build de la sélection).
+    abilities: Arc<Mutex<HashMap<i64, Abilities>>>,
     /// Icônes des runes et emblèmes des rangs déjà lus, par chemin.
     images: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     /// Requêtes en cours vers le client : 6 au plus (voir client_file).
@@ -471,6 +472,9 @@ pub struct Assets {
     /// Noms anglais des objets, runes et sorts (réglage « noms en anglais »), lus une fois sur CommunityDragon.
     english: Arc<Mutex<English>>,
 }
+
+/// Compétences d'un champion : (touche en minuscule, chemin de son icône dans le client).
+type Abilities = Vec<(String, String)>;
 
 /// Noms anglais par numéro, et quand ils ont été demandés.
 #[derive(Default)]
@@ -567,6 +571,7 @@ impl Assets {
             spell_paths: Arc::default(),
             matches: Arc::default(),
             champion_names: Arc::default(),
+            abilities: Arc::default(),
             images: Arc::default(),
             gate: Arc::new(tokio::sync::Semaphore::new(6)),
             loading: Arc::default(),
@@ -789,6 +794,24 @@ impl Assets {
         let bytes = self.client_file(path).await?;
         self.images.lock().unwrap().insert(path.to_string(), bytes.clone());
         Some(bytes)
+    }
+
+    /// Icône d'une compétence d'un champion (q, w, e ou r), d'après sa fiche dans le client (lue une fois par
+    /// champion) ; l'image est gardée en mémoire.
+    pub async fn ability_icon(&self, champion: i64, key: &str) -> Option<Vec<u8>> {
+        if !self.abilities.lock().unwrap().contains_key(&champion) {
+            let doc = self.client_file(&format!("/lol-game-data/assets/v1/champions/{champion}.json")).await?;
+            let doc: Value = serde_json::from_slice(&doc).ok()?;
+            let paths: Abilities = doc["spells"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|s| Some((s["spellKey"].as_str()?.to_lowercase(), s["abilityIconPath"].as_str()?.to_string())))
+                .collect();
+            self.abilities.lock().unwrap().insert(champion, paths);
+        }
+        let path = self.abilities.lock().unwrap().get(&champion)?.iter().find(|(k, _)| k == key)?.1.clone();
+        self.cached_client_file(&path).await
     }
 
     /// Icône carrée d'un champion (PNG), lue dans le client puis gardée en mémoire.

@@ -286,7 +286,8 @@ pub fn run() {
         // Images lues dans le client : lcu://localhost/<numéro du champion>, lcu://localhost/item-<numéro de l'objet>,
         // lcu://localhost/splash-<numéro du skin> (illustration), lcu://localhost/perk-<numéro de la rune ou de la voie>,
         // lcu://localhost/spell-<numéro du sort>, lcu://localhost/rank-<rang en minuscules> (emblème),
-        // lcu://localhost/gold (icône de l'or), lcu://localhost/profile-<numéro de l'icône de profil>.
+        // lcu://localhost/gold (icône de l'or), lcu://localhost/profile-<numéro de l'icône de profil>,
+        // lcu://localhost/ability-<numéro du champion>-<q, w, e ou r> (compétence).
         .register_asynchronous_uri_scheme_protocol("lcu", move |_ctx, request, responder| {
             let icons = icons.clone();
             let path = request.uri().path().trim_start_matches('/').to_string();
@@ -311,6 +312,11 @@ pub fn run() {
                     icons.rank_emblem(tier).await.map(|png| (png, "image/png"))
                 } else if path == "gold" {
                     icons.gold_icon().await.map(|png| (png, "image/png"))
+                } else if let Some((champion, key)) = path.strip_prefix("ability-").and_then(|rest| rest.split_once('-')) {
+                    match number(champion) {
+                        Some(id) => icons.ability_icon(id, key).await.map(|png| (png, "image/png")),
+                        None => None,
+                    }
                 } else if let Some(icon) = path.strip_prefix("profile-") {
                     match number(icon) {
                         Some(id) => icons.profile_icon(id).await.map(|jpg| (jpg, "image/jpeg")),
@@ -495,6 +501,7 @@ pub fn run() {
                     ready.build.store(build, Ordering::Relaxed);
                     ready.gold.store(gold, Ordering::Relaxed);
                     ready.build_always.store(settings.build_overlay_always, Ordering::Relaxed);
+                    ready.in_game.store(snap.game.is_some(), Ordering::Relaxed);
                     let delay = lol::Tracker::next_delay(&snap);
                     previous = snap;
                     tokio::time::sleep(delay).await;

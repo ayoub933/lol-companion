@@ -1283,8 +1283,22 @@ function renderForms(runes) {
 }
 
 // « Anneau de Doran, Potion de soin ×2 »
-const itemNames = (items, separator = ", ") =>
-  items.map((it) => (it.count > 1 ? `${it.name} ×${it.count}` : it.name)).join(separator);
+// Icônes du build de la sélection : objets (nombre dans le coin), entre eux une flèche (ordre d'achat) ou une
+// barre (au choix) ; le nom au survol.
+const itemIcons = (items, separator = "") =>
+  el(
+    "span",
+    "bicons",
+    items.flatMap((item, i) => [i && separator ? el("span", "bsep", separator) : null, buildIcon(item, "mid")].filter(Boolean)),
+  );
+
+// Sort d'invocateur ou compétence du champion : son icône, sa touche dans le coin (D, F, Q…), son nom au survol.
+function keyIcon(url, key, name) {
+  const box = el("span", "gb-icon mid", [smallIcon(url, "gb-img")]);
+  if (key) box.append(el("span", "count tag", key));
+  box.title = name;
+  return box;
+}
 
 function renderBuild(runes) {
   const build = runes.build;
@@ -1299,26 +1313,34 @@ function renderBuild(runes) {
     $("build-list").replaceChildren();
     return;
   }
-  const [d, f] = runes.spellsApplied;
-  const keys = (list) =>
+  // Sorts mis dans le client (sur D puis F), sinon ceux conseillés.
+  const applied = runes.appliedSpells?.length > 0;
+  const spellIds = applied ? runes.appliedSpells : build.spells;
+  const spellNames = applied ? runes.spellsApplied : runes.spells;
+  const spells = el(
+    "span",
+    "bicons",
+    spellIds.map((id, i) => keyIcon(iconUrl(`spell-${id}`), applied ? ["D", "F"][i] : "", spellNames[i] ?? "")),
+  );
+  // Ordre de montée des compétences, avec leurs icônes.
+  const abilities = (list) =>
     el(
       "span",
-      "keys",
-      list.flatMap((key, i) => (i ? [">", el("span", "key", key)] : [el("span", "key", key)])),
+      "bicons",
+      list.flatMap((key, i) => [
+        i ? el("span", "bsep", ">") : null,
+        keyIcon(iconUrl(`ability-${runes.championId}-${key.toLowerCase()}`), key, key),
+      ].filter(Boolean)),
     );
   const form = runes.form ? ` ${KAYN_FORMS[runes.form]}` : "";
   const setTitle = `« LoL Companion · ${runes.champion}${form}${versus(runes)} » `;
   const rows = [
-    [
-      "SORTS",
-      f ? [`D ${d} · F ${f} `, el("span", "badge", "appliqués")] : runes.spells.join(" + "),
-      runes.spellsNote,
-    ],
-    ["DÉPART", itemNames(build.starter)],
-    ["CŒUR", itemNames(build.core, " → ")],
-    ["BOTTES", itemNames(build.boots)],
-    ["ENSUITE", itemNames(build.options, " / ")],
-    ["MONTÉE", build.skillMax.length ? keys(build.skillMax) : ""],
+    ["SORTS", spellIds.length ? [spells, applied ? el("span", "badge", "appliqués") : null].filter(Boolean) : "", runes.spellsNote],
+    ["DÉPART", build.starter.length ? itemIcons(build.starter) : ""],
+    ["CŒUR", build.core.length ? itemIcons(build.core, "→") : ""],
+    ["BOTTES", build.boots.length ? itemIcons(build.boots) : ""],
+    ["ENSUITE", build.options.length ? itemIcons(build.options, "/") : ""],
+    ["MONTÉE", build.skillMax.length ? abilities(build.skillMax) : ""],
     ["NIVEAUX", build.skillOrder.length ? el("span", "mono", build.skillOrder.join(" ")) : ""],
     [
       "SET",
@@ -1370,7 +1392,8 @@ function renderGameBuild(game) {
     shownBuild = key;
     const form = build.form ? ` · ${FORMS[build.form]}` : "";
     $("gb-aside").textContent = `OP.GG${build.versus ? ` · vs ${build.versus}` : ""}${form}`;
-    $("gb-body").replaceChildren(...buildBlocks(game.panel, build));
+    const me = game.allies.find((p) => p.me);
+    $("gb-body").replaceChildren(...buildBlocks(game.panel, build, me?.championId ?? 0));
   }
   const next = build.next;
   const gold = $("gb-gold");
@@ -1392,7 +1415,7 @@ function buildIcon(item, size, under) {
   return under == null ? box : el("span", "gb-under", [box, el("span", "gb-note", under)]);
 }
 
-function buildBlocks(panel, build) {
+function buildBlocks(panel, build, championId) {
   const blocks = [];
   const next = build.next;
   if (next) {
@@ -1439,7 +1462,9 @@ function buildBlocks(panel, build) {
   if (halves.length) blocks.push(el("div", "gb-halves", halves));
   const foot = [];
   if (build.skills.length) {
-    const keys = build.skills.flatMap((key, i) => (i ? [el("span", "gb-arrow", "›"), el("span", "key", key)] : [el("span", "key", key)]));
+    // Les icônes de ses compétences (la touche dans le coin), sinon juste les touches.
+    const skill = (key) => (championId > 0 ? keyIcon(iconUrl(`ability-${championId}-${key.toLowerCase()}`), key, key) : el("span", "key", key));
+    const keys = build.skills.flatMap((key, i) => (i ? [el("span", "gb-arrow", "›"), skill(key)] : [skill(key)]));
     foot.push(el("span", "gb-skills", [el("span", "gb-k", "MONTÉE"), ...keys]));
   }
   if (build.enemyNote) foot.push(el("span", "gb-enemy", `En face : ${build.enemyNote}`));
