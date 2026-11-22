@@ -126,6 +126,26 @@ async fn search_player(
     search.find(&assets, &riot_id, &region, puuid.as_deref()).await
 }
 
+/// Tous les champions, pour les suggestions de la barre de recherche.
+#[tauri::command]
+async fn champions(
+    assets: tauri::State<'_, lol::Assets>,
+    search: tauri::State<'_, search::Search>,
+) -> Result<Vec<search::ChampionEntry>, String> {
+    search.champions(&assets).await
+}
+
+/// Page d'un champion (comme sur DPM) à un poste ("top"…), sinon à son poste le plus joué, d'après OP.GG.
+#[tauri::command]
+async fn champion_page(
+    assets: tauri::State<'_, lol::Assets>,
+    search: tauri::State<'_, search::Search>,
+    champion_id: i64,
+    position: Option<String>,
+) -> Result<search::ChampionPage, String> {
+    search.champion_page(&assets, champion_id, position).await
+}
+
 /// Une partie d'un joueur cherché, lue sur OP.GG, en détail.
 #[tauri::command]
 async fn searched_match_details(
@@ -281,6 +301,8 @@ pub fn run() {
             match_details,
             search_player,
             searched_match_details,
+            champions,
+            champion_page,
             friends
         ])
         // Images lues dans le client : lcu://localhost/<numéro du champion>, lcu://localhost/item-<numéro de l'objet>,

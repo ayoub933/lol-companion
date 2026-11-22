@@ -294,7 +294,7 @@ pub struct RunePage {
 }
 
 impl RunePage {
-    fn of(runes: &opgg::Runes) -> Self {
+    pub(crate) fn of(runes: &opgg::Runes) -> Self {
         Self {
             perks: runes.perks.clone(),
             rune_names: runes.rune_names.clone(),
@@ -1045,6 +1045,22 @@ impl Assets {
         Some(friends)
     }
 
+    /// Tous les champions d'après le client : (numéro, nom affiché, nom interne, rôles) ; vide si le client est fermé.
+    pub async fn champion_entries(&self) -> Vec<(i64, String, String, Vec<String>)> {
+        let list = self.client_json("/lol-game-data/assets/v1/champion-summary.json", false).await;
+        list.as_ref()
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            // Pas « None » (-1), ni les formes spéciales de mode de jeu (numéros à partir de 10 000).
+            .filter(|c| c["id"].as_i64().is_some_and(|id| (1..10_000).contains(&id)))
+            .filter_map(|c| {
+                let roles = c["roles"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect();
+                Some((c["id"].as_i64()?, c["name"].as_str()?.to_string(), c["alias"].as_str()?.to_string(), roles))
+            })
+            .collect()
+    }
+
     /// Nom d'un champion d'après le client (la liste est lue une fois) ; son numéro s'il est inconnu.
     pub async fn champion_name(&self, id: i64) -> String {
         if self.champion_names.lock().unwrap().is_empty() {
@@ -1129,6 +1145,19 @@ pub struct GameBuild {
     pub enemy_note: String,
     /// Conseil d'OP.GG contre ton adversaire de couloir (vide sans duel).
     pub tip: DuelTip,
+    /// Sets d'objets (3 objets principaux) les plus joués du duel, le classique d'abord ; un seul sans duel.
+    pub sets: Vec<GameSet>,
+}
+
+/// Un set d'objets proposé à l'écran de l'app : ses 3 objets (grisés si tu les as), ses parties et victoires sur
+/// OP.GG, et s'il est celui de l'ordre des achats.
+#[derive(Serialize, Clone, Default, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GameSet {
+    pub items: Vec<PanelItem>,
+    pub games: u64,
+    pub wins: u64,
+    pub current: bool,
 }
 
 /// Conseil d'OP.GG pour un duel : style de jeu ("defensive", "aggressive", "even") et astuce (en anglais : OP.GG ne
@@ -2740,6 +2769,28 @@ impl Tracker {
                 let started = owned.iter().any(|id| self.assets.price(*id) > 0);
                 let boots_done = owned.iter().any(|id| self.assets.upgraded_boots(*id));
                 let rows = panel(build, &owned, started, boots_done, &needs, &self.assets, english);
+                let core_ids: Vec<i64> = build.core.iter().map(|i| i.id).collect();
+                let set_item = |i: &opgg::Item| PanelItem {
+                    id: i.id,
+                    count: i.count,
+                    size: "option",
+                    owned: owned.contains(&i.id),
+                    reason: "",
+                    name: self.assets.item_name(i.id, english),
+                    price: self.assets.price(i.id),
+                    games: 0,
+                    wins: 0,
+                };
+                let sets = build
+                    .sets
+                    .iter()
+                    .map(|set| GameSet {
+                        items: set.items.iter().map(set_item).collect(),
+                        games: set.games,
+                        wins: set.wins,
+                        current: set.items.iter().map(|i| i.id).eq(core_ids.iter().copied()),
+                    })
+                    .collect();
                 let details = GameBuild {
                     versus: game.build_versus.clone(),
                     form: game.form.filter(|_| game.champion_id == KAYN).map_or("", Form::name).to_string(),
@@ -2747,6 +2798,7 @@ impl Tracker {
                     skills: build.skill_max.clone(),
                     enemy_note: needs.note.clone(),
                     tip: game.tip.clone(),
+                    sets,
                 };
                 (rows, Some(details))
             }

@@ -18,6 +18,10 @@ const MIN_PLAY: u64 = 100;
 /// leur % de victoires veuille dire quelque chose).
 const PAGES_SHOWN: usize = 3;
 const MIN_PAGE_GAMES: u64 = 50;
+/// Sets d'objets (les 3 objets principaux) proposés pour un duel : le plus joué, puis 2 autres (au moins 50 parties
+/// chacun). Sans duel, OP.GG n'en donne qu'un.
+const SETS_SHOWN: usize = 3;
+const MIN_SET_GAMES: u64 = 50;
 static NULL: Value = Value::Null;
 /// Champs demandés à OP.GG, recopiés de la liste fermée donnée par leur outil.
 const FIELDS: [&str; 11] = [
@@ -68,6 +72,29 @@ const META_FIELDS: [&str; 5] = [
 const META_LANG: &str = "en_US";
 /// Postes du classement, au sens d'OP.GG.
 const META_POSITIONS: [&str; 5] = ["top", "jungle", "mid", "adc", "support"];
+/// Page d'un champion (recherche) : en plus de son build (FIELDS), ses stats à chaque poste, ses meilleurs et pires
+/// duels, ses meilleurs partenaires (OP.GG les range par poste du partenaire, sans le sien).
+const PAGE_FIELDS: [&str; 10] = [
+    "data.summary.positions[].name",
+    "data.summary.positions[].stats.{play,win_rate,pick_rate,role_rate,ban_rate,kda}",
+    "data.summary.positions[].stats.tier_data.{tier,rank}",
+    "data.strong_counters[].{champion_id,champion_name,play,win}",
+    "data.weak_counters[].{champion_id,champion_name,play,win}",
+    "data.synergies.top[].{synergy_champion_id,synergy_champion_name,play,win}",
+    "data.synergies.jungle[].{synergy_champion_id,synergy_champion_name,play,win}",
+    "data.synergies.mid[].{synergy_champion_id,synergy_champion_name,play,win}",
+    "data.synergies.adc[].{synergy_champion_id,synergy_champion_name,play,win}",
+    "data.synergies.support[].{synergy_champion_id,synergy_champion_name,play,win}",
+];
+/// Joueurs d'un champion (les plus de parties avec lui dans une région) : leur rang en solo/duo et leurs stats.
+const LEADERBOARD_FIELDS: [&str; 5] = [
+    "leaderboard[].rank",
+    "leaderboard[].summoner.{game_name,tagline}",
+    "leaderboard[].summoner.league_stats[].game_type",
+    "leaderboard[].summoner.league_stats[].tier_info.{tier,division,lp}",
+    "leaderboard[].most_champion_stat.{play,win,kill,death,assist}",
+];
+
 /// Champs demandés pour savoir à quels postes un champion est joué.
 const POSITION_FIELDS: [&str; 3] = [
     "data.summary.{id,is_rip,is_rotation,roles}",
@@ -127,6 +154,24 @@ pub struct Build {
     pub skill_max: Vec<String>,
     /// Compétence prise à chaque niveau, ex. ["W", "Q", "E", "Q"...].
     pub skill_order: Vec<String>,
+    /// Sets d'objets (3 objets principaux) les plus joués, le classique d'abord (voir SETS_SHOWN).
+    pub sets: Vec<CoreSet>,
+}
+
+/// Un set d'objets : les 3 objets principaux, avec ses parties et victoires sur OP.GG.
+#[derive(Serialize, Clone, Default, PartialEq, Debug)]
+pub struct CoreSet {
+    pub items: Vec<Item>,
+    pub games: u64,
+    pub wins: u64,
+}
+
+pub(crate) fn core_set(entry: &Value) -> CoreSet {
+    CoreSet {
+        items: items_of(entry),
+        games: entry["play"].as_u64().unwrap_or(0),
+        wins: entry["win"].as_u64().unwrap_or(0),
+    }
 }
 
 impl Build {
@@ -191,6 +236,24 @@ pub struct Pick {
     pub name: String,
     pub win_rate: f64,
     pub games: u64,
+}
+
+/// Un joueur du classement d'un champion (ses parties avec lui, son rang en solo/duo).
+#[derive(Serialize, Clone, Default, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct TopPlayer {
+    pub rank: u32,
+    /// « Pseudo#TAG ».
+    pub riot_id: String,
+    /// Rang en solo/duo : "DIAMOND", 2, 73 LP ; vide si non classé.
+    pub tier: String,
+    pub division: u32,
+    pub lp: u32,
+    pub games: u64,
+    pub wins: u64,
+    pub kills: u64,
+    pub deaths: u64,
+    pub assists: u64,
 }
 
 /// Un champion dans le classement d'OP.GG d'un poste (sa « tier list »).
@@ -287,6 +350,67 @@ impl Client {
             return Err(format!("OP.GG a renvoyé les duels d'un autre champion ({id})"));
         }
         Ok(counters_from(&doc))
+    }
+
+    /// Tout ce qu'OP.GG sait d'un champion à un poste, pour sa page : build, stats à chaque poste, duels, partenaires.
+    pub async fn champion_page_doc(&mut self, champ: &Champ, position: &str) -> Result<Value, String> {
+        let fields: Vec<&str> = FIELDS.iter().chain(&PAGE_FIELDS).copied().collect();
+        let complete = |doc: &Value| analysis_from(doc).is_some() && doc["data"]["summary"]["positions"].is_array();
+        self.champion_doc(champ, position, "ranked", &fields, complete).await
+    }
+
+    /// Tous les champions (numéro, nom dans la langue de l'app, nom interne), quand le client est fermé.
+    pub async fn champion_list(&mut self) -> Result<Vec<(i64, String, String)>, String> {
+        let args = json!({ "lang": LANG, "client_app": APP, "desired_output_fields": ["data.champions[].{champion_id,key,name}"] });
+        let text = self.tool_text("lol_list_champions", args).await?;
+        let doc = to_json_doc(&text).ok_or_else(|| UNREADABLE.to_string())?;
+        let list: Vec<(i64, String, String)> = doc["data"]["champions"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|c| Some((c["champion_id"].as_i64()?, c["name"].as_str()?.to_string(), c["key"].as_str()?.to_string())))
+            // Sans les formes d'un mode de jeu (« Jade_Annie »… à partir de 60 000).
+            .filter(|(id, _, _)| (1..10_000).contains(id))
+            .collect();
+        if list.is_empty() {
+            return Err(UNREADABLE.to_string());
+        }
+        Ok(list)
+    }
+
+    /// Les joueurs qui ont le plus de parties avec ce champion dans cette région (« euw »…), du premier au dernier.
+    pub async fn leaderboard(&mut self, champ: &Champ, region: &str) -> Result<Vec<TopPlayer>, String> {
+        let args = json!({
+            "region": region.to_lowercase(), "champion": self.name_of(champ), "client_app": APP,
+            "desired_output_fields": LEADERBOARD_FIELDS,
+        });
+        let text = self.tool_text("lol_list_champion_leaderboard", args).await?;
+        let doc = to_json_doc(&text).ok_or_else(|| UNREADABLE.to_string())?;
+        let number = |v: &Value| v.as_u64().unwrap_or(0);
+        Ok(doc["leaderboard"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| {
+                let who = &entry["summoner"];
+                let name = who["game_name"].as_str().filter(|n| !n.is_empty())?;
+                let solo = who["league_stats"].as_array().into_iter().flatten().find(|l| l["game_type"] == "SOLORANKED");
+                let info = solo.map(|l| &l["tier_info"]);
+                let stat = &entry["most_champion_stat"];
+                Some(TopPlayer {
+                    rank: number(&entry["rank"]) as u32,
+                    riot_id: format!("{name}#{}", who["tagline"].as_str().unwrap_or_default()),
+                    tier: info.and_then(|i| i["tier"].as_str()).unwrap_or_default().to_string(),
+                    division: info.map_or(0, |i| number(&i["division"]) as u32),
+                    lp: info.map_or(0, |i| number(&i["lp"]) as u32),
+                    games: number(&stat["play"]),
+                    wins: number(&stat["win"]),
+                    kills: number(&stat["kill"]),
+                    deaths: number(&stat["death"]),
+                    assists: number(&stat["assist"]),
+                })
+            })
+            .collect())
     }
 
     /// Classement d'OP.GG de chaque poste ("top", "jungle", "mid", "adc", "support"), du premier au dernier :
@@ -579,7 +703,7 @@ fn opgg_name(raw: &str) -> String {
 // on s'en sert pour transformer le tout en JSON ordinaire.
 // L'outil des duels, lui, renvoie directement du JSON.
 
-fn analysis_from(doc: &Value) -> Option<Analysis> {
+pub(crate) fn analysis_from(doc: &Value) -> Option<Analysis> {
     let data = &doc["data"];
     let runes = build_runes(data["summary"]["id"].as_i64().unwrap_or(0), &data["runes"])?;
     Some(Analysis { runes, build: build_build(data) })
@@ -617,7 +741,7 @@ pub fn matchup_from(doc: &Value, opponent_id: i64, style: Option<&Style>) -> Opt
     let pick = |key: &str| best(list(key)).unwrap_or(&NULL);
     let ids = |e: &Value| -> Vec<i64> { e["ids"].as_array().into_iter().flatten().filter_map(Value::as_i64).collect() };
     let cores: Vec<&Value> = list("core_items").iter().filter(|c| style.is_none_or(|s| (s.core)(&ids(c)))).collect();
-    let core = if cores.is_empty() { pick("core_items") } else { best(cores).unwrap_or(&NULL) };
+    let core = if cores.is_empty() { pick("core_items") } else { best(cores.iter().copied()).unwrap_or(&NULL) };
     // Même forme que l'analyse générale, pour la lire de la même façon.
     let shaped = json!({
         "starter_items": pick("starter_items"),
@@ -631,6 +755,19 @@ pub fn matchup_from(doc: &Value, opponent_id: i64, style: Option<&Style>) -> Opt
         "skill_masteries": d["skill_masteries"][0],
     });
     let mut build = build_build(&shaped);
+    // Les sets d'objets du duel : les plus joués (OP.GG les donne dans cet ordre), le classique d'abord.
+    let all_cores = list("core_items");
+    let set_list: Vec<&Value> = if cores.is_empty() { all_cores.iter().collect() } else { cores };
+    let sets: Vec<CoreSet> = set_list
+        .into_iter()
+        .filter(|c| c["play"].as_u64().unwrap_or(0) >= MIN_SET_GAMES)
+        .take(SETS_SHOWN)
+        .map(core_set)
+        .filter(|set| !set.items.is_empty())
+        .collect();
+    if !sets.is_empty() {
+        build.sets = sets;
+    }
     // Autre choix pour le 1er (puis le 2e) objet : le meilleur des objets achetés à ce rang, hors ceux déjà retenus.
     let other = |depth: i64, taken: &[i64]| -> Option<Item> {
         let rank = d["single_items"].as_array()?.iter().find(|s| s["depth"] == depth)?;
@@ -801,7 +938,7 @@ fn best<'a>(entries: impl IntoIterator<Item = &'a Value>) -> Option<&'a Value> {
 }
 
 /// Objets d'une entrée « CoreItems » ; les doublons sont regroupés (2 potions = une ligne ×2).
-fn items_of(entry: &Value) -> Vec<Item> {
+pub(crate) fn items_of(entry: &Value) -> Vec<Item> {
     let mut out: Vec<Item> = Vec::new();
     let ids = entry["ids"].as_array().into_iter().flatten().enumerate();
     for (i, id) in ids.filter_map(|(i, v)| Some((i, v.as_i64()?))) {
@@ -834,10 +971,12 @@ fn build_build(data: &Value) -> Build {
     let texts = |v: &Value| -> Vec<String> {
         v.as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect()
     };
+    let sets = if core.is_empty() { Vec::new() } else { vec![core_set(&data["core_items"])] };
     Build {
         starter: items(&data["starter_items"]),
         core,
         boots,
+        sets,
         first_alt: None,
         second_alt: None,
         options,

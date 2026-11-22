@@ -1449,14 +1449,32 @@ function buildBlocks(panel, build, championId) {
     return i ? [el("span", "gb-arrow", "›"), step] : [step];
   });
   if (steps.length) blocks.push(el("div", "gb-row", [el("span", "gb-k", "ORDRE"), el("div", "gb-path", steps)]));
+  // Sets d'objets du duel (les 3 objets principaux) : le classique, puis 2 autres, avec leur % de victoires sur
+  // OP.GG ; celui de l'ordre des achats en bleu. Seulement ici, pas sur le panneau posé sur le jeu.
+  const sets = build.sets ?? [];
+  if (sets.length > 1) {
+    const rows = sets.map((set) => {
+      const box = el("div", `gb-set${set.current ? " on" : ""}`, [
+        el("span", "gb-set-icons", set.items.map((it) => buildIcon(it, "set"))),
+        el("span", "gb-set-rate", [
+          set.games ? number((set.wins / set.games) * 100, 1) : "–",
+          el("small", "", " %"),
+          el("span", "gb-set-games", ` · ${whole(set.games)}`),
+        ]),
+      ]);
+      box.title = `${set.items.map((it) => it.name).join(" → ")} : ${whole(set.games)} parties${set.current ? " (celui de l'ordre)" : ""}`;
+      return box;
+    });
+    blocks.push(el("div", "gb-row", [el("span", "gb-k", "SETS D'OBJETS"), el("div", "gb-sets", rows)]));
+  }
   // La suite et les objets contre l'équipe d'en face, côte à côte.
   const rate = (it) => (it.games ? `${Math.round((it.wins / it.games) * 100)} %` : "");
   const more = panel.find((row) => row.label === "+");
   const versus = panel.find((row) => row.label === "VS");
   const halves = [];
-  if (more) halves.push(el("div", "gb-half", [el("span", "gb-k", "ENSUITE"), el("div", "gb-icons", more.items.map((it) => buildIcon(it, "step", rate(it))))]));
+  if (more) halves.push(el("div", "gb-half", [el("span", "gb-k", "ENSUITE"), el("div", "gb-icons", more.items.map((it) => buildIcon(it, "mid", rate(it))))]));
   if (versus) {
-    const icons = versus.items.map((it) => buildIcon(it, "step", it.reason.toUpperCase()));
+    const icons = versus.items.map((it) => buildIcon(it, "mid", it.reason.toUpperCase()));
     halves.push(el("div", "gb-half", [el("span", "gb-k", "CONTRE EUX"), el("div", "gb-icons", icons)]));
   }
   if (halves.length) blocks.push(el("div", "gb-halves", halves));
@@ -1705,10 +1723,20 @@ function setupSearch() {
       // Pas de mémoire du navigateur : la région revient à EUW au prochain lancement.
     }
   });
-  $("search").addEventListener("submit", (event) => {
+  $("search").addEventListener("submit", async (event) => {
     event.preventDefault();
     closeFriends();
-    searchPlayer($("search-input").value.trim(), $("search-region").value);
+    const text = $("search-input").value.trim();
+    // Sans « # » : le premier champion proposé pour ce texte, s'il y en a un.
+    if (text && !text.includes("#")) {
+      await loadChampions();
+      const champ = championMatches(text)[0];
+      if (champ) {
+        $("search-input").value = champ.name;
+        return openChampion(champ.id);
+      }
+    }
+    searchPlayer(text, $("search-region").value);
   });
   $("search-input").addEventListener("click", openFriends);
   $("search-input").addEventListener("input", (event) => {
@@ -1735,11 +1763,12 @@ function setupSearch() {
   );
 }
 
-// ---------- Tes amis (sous la barre de recherche) ----------
+// ---------- Tes amis et les champions (sous la barre de recherche) ----------
 
 // Liste du client, ouverte d'un clic sur la barre : ceux qui jouent d'abord, puis ceux en ligne, puis les autres
 // (la molette la fait défiler). Le texte tapé après l'ouverture la filtre (pas le joueur déjà affiché dans la
 // barre) ; un clic sur un ami ouvre son profil. Relue toutes les 20 s tant qu'elle est ouverte, rien sinon.
+// Au-dessus, les champions dont le nom commence par le texte tapé (« da » : Darius) : un clic ouvre leur page.
 const FRIEND_STATUS = {
   game: "En partie",
   select: "En sélection",
@@ -1775,6 +1804,7 @@ function openFriends(typed = false) {
   friendsOpen = true;
   if (typed !== true) friendsQuery = "";
   renderFriends();
+  loadChampions();
   loadFriends();
   friendsTimer = setInterval(loadFriends, 20000);
 }
@@ -1789,14 +1819,19 @@ function closeFriends() {
 function renderFriends() {
   const box = $("friends");
   const query = friendsQuery;
+  const champions = championMatches(query);
   const shown = friendList.filter((f) => !query || f.riotId.toLowerCase().includes(query));
-  box.hidden = !friendsOpen || !shown.length;
-  // Rien à refaire si la liste, le filtre et la minute n'ont pas changé (les icônes ne sont pas rechargées).
-  const key = `${query}|${Math.floor(Date.now() / 60000)}|${JSON.stringify(shown)}`;
+  box.hidden = !friendsOpen || (!shown.length && !champions.length);
+  // Rien à refaire si les listes, le filtre et la minute n'ont pas changé (les icônes ne sont pas rechargées).
+  const key = `${query}|${champions.map((c) => c.id)}|${Math.floor(Date.now() / 60000)}|${JSON.stringify(shown)}`;
   if (box.dataset.key === key) return;
   if (!box.dataset.key?.startsWith(`${query}|`)) box.scrollTop = 0;
   box.dataset.key = key;
   const rows = [];
+  if (champions.length) {
+    rows.push(el("div", "friend-group", ["CHAMPIONS", el("small", "", String(champions.length))]));
+    rows.push(...champions.map(championRow));
+  }
   for (const [title, statuses] of FRIEND_GROUPS) {
     const group = shown.filter((f) => statuses.includes(f.status));
     if (!group.length) continue;
@@ -1830,6 +1865,60 @@ function friendRow(friend) {
   return row;
 }
 
+// Tous les champions (client, sinon OP.GG), lus une fois. Pour la recherche, leur nom sans accents ni signes
+// (« Kai'Sa » : « kaisa »), chacun de ses mots (« Maître Yi » : « yi ») et leur nom interne (« MonkeyKing »).
+let championList = [];
+const fold = (text) => (text ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const squash = (text) => fold(text).replace(/[^a-z0-9]/g, "");
+async function loadChampions() {
+  if (championList.length) return;
+  try {
+    const list = await invoke("champions");
+    championList = list.map((c) => ({
+      ...c,
+      key: squash(c.name),
+      words: fold(c.name).split(/[^a-z0-9]+/).filter(Boolean),
+      aliasKey: squash(c.alias),
+    }));
+  } catch {
+    // Client fermé et OP.GG sans réponse : réessayé à la prochaine ouverture de la liste.
+    championList = [];
+  }
+  if (friendsOpen) renderFriends();
+}
+
+// Champions proposés pour le texte tapé (pas pour un Riot ID) : ceux dont le nom commence par lui, puis ceux dont un
+// mot ou le nom interne commence par lui ; 6 au plus, par ordre alphabétique.
+const CHAMPIONS_SHOWN = 6;
+function championMatches(text) {
+  const query = squash(text);
+  if (!query || text.includes("#")) return [];
+  const score = (c) =>
+    c.key.startsWith(query) ? 0 : c.words.some((w) => w.startsWith(query)) ? 1 : c.aliasKey.startsWith(query) ? 2 : -1;
+  return championList
+    .map((c) => [score(c), c])
+    .filter(([rank]) => rank >= 0)
+    .sort((a, b) => a[0] - b[0] || a[1].name.localeCompare(b[1].name, "fr"))
+    .slice(0, CHAMPIONS_SHOWN)
+    .map(([, c]) => c);
+}
+
+function championRow(champ) {
+  const row = el("button", "friend champ-suggest");
+  row.type = "button";
+  row.title = `Voir la page de ${champ.name} : stats, build, duels et meilleurs joueurs`;
+  const icon = el("img", "friend-icon");
+  icon.alt = "";
+  setImage(icon, iconUrl(champ.id));
+  row.append(icon, el("span", "friend-name", champ.name));
+  row.addEventListener("click", () => {
+    closeFriends();
+    $("search-input").value = champ.name;
+    openChampion(champ.id);
+  });
+  return row;
+}
+
 // « En partie · Vayne · SOLO/DUO · 12 min », « Sur Valorant », « Hors ligne · il y a 3 jours »…
 function friendStatus(friend) {
   const parts = [friend.status === "other" ? `Sur ${friend.product}` : FRIEND_STATUS[friend.status]];
@@ -1848,18 +1937,46 @@ function friendStatus(friend) {
 // `region` vide : celle de ton client ; `puuid` : son compte, quand il est connu (joueur d'une de tes parties).
 async function searchPlayer(riotId, region, puuid = "") {
   if (!riotId && !puuid) return;
-  if (!puuid && !riotId.includes("#")) return searchMessage("Ajoute son tag : Pseudo#TAG (ex. Faker#KR1)", true);
+  if (!puuid && !riotId.includes("#")) {
+    return searchMessage("Ajoute son tag : Pseudo#TAG (ex. Faker#KR1), ou tape le nom d'un champion", true);
+  }
   const turn = ++searchTurn;
-  // Depuis le profil d'un joueur cherché, le retour mène toujours à l'écran de départ.
-  const from = viewing?.from ?? screenOf(lastState);
+  // Depuis le profil d'un joueur cherché (ou la page d'un champion), le retour mène toujours à l'écran de départ.
+  const from = viewing?.from ?? champView?.from ?? screenOf(lastState);
   $("search").classList.add("busy");
   searchMessage(`Recherche de ${riotId || "ce joueur"}${region ? ` en ${region}` : ""}…`);
   try {
     const found = await invoke("search_player", { riotId, region, puuid: puuid || null });
     if (turn !== searchTurn) return;
+    champView = null;
     viewing = { ...found, from };
     $("search-input").value = found.riotId;
     if (REGIONS.includes(found.region)) $("search-region").value = found.region;
+    searchMessage("");
+    closeMatch();
+    if (lastState) render(lastState);
+  } catch (error) {
+    if (turn === searchTurn) searchMessage(String(error), true);
+  } finally {
+    if (turn === searchTurn) $("search").classList.remove("busy");
+  }
+}
+
+// Page d'un champion à la place de l'écran du moment (comme le profil d'un joueur cherché) : à `position` (un de
+// ses onglets), sinon à son poste le plus joué. Lue sur OP.GG à la demande, gardée ensuite par l'app.
+let champView = null;
+async function openChampion(id, position = null) {
+  const turn = ++searchTurn;
+  const from = champView?.from ?? viewing?.from ?? screenOf(lastState);
+  const name = championList.find((c) => c.id === id)?.name ?? "ce champion";
+  $("search").classList.add("busy");
+  searchMessage(`Page de ${name} : lecture d'OP.GG…`);
+  try {
+    const page = await invoke("champion_page", { championId: id, position });
+    if (turn !== searchTurn) return;
+    viewing = null;
+    champView = { page, from };
+    $("search-input").value = page.name;
     searchMessage("");
     closeMatch();
     if (lastState) render(lastState);
@@ -1874,6 +1991,7 @@ async function searchPlayer(riotId, region, puuid = "") {
 function leaveSearch(redraw) {
   searchTurn++;
   viewing = null;
+  champView = null;
   $("search-input").value = "";
   $("search").classList.remove("busy");
   searchMessage("");
@@ -1905,16 +2023,17 @@ function render(state) {
   const found = state.clientFound;
   $("status-text").textContent = !found ? "CLIENT NON DÉTECTÉ" : (PHASES[state.phase] ?? upper(state.phase ?? "CLIENT CONNECTÉ"));
   $("status").className = `status ${!found ? "off" : state.game ? "game" : "on"}`;
-  // Joueur cherché : à la place de l'écran du moment, quel qu'il soit. Un nouvel écran (sélection qui commence,
-  // partie qui démarre ou se termine) le referme.
+  // Joueur ou champion cherché : à la place de l'écran du moment, quel qu'il soit. Un nouvel écran (sélection qui
+  // commence, partie qui démarre ou se termine) le referme.
   const screen = screenOf(state);
-  if (viewing && viewing.from !== screen) leaveSearch(false);
+  const searched = viewing ?? champView;
+  if (searched && searched.from !== screen) leaveSearch(false);
   const [back, title] = BACK[screen];
-  $("search-back").hidden = !viewing;
+  $("search-back").hidden = !viewing && !champView;
   $("search-back-text").textContent = back;
   $("search-back").title = title;
   document.body.classList.toggle("searching", Boolean(viewing));
-  $("hint").hidden = found || Boolean(viewing);
+  $("hint").hidden = found || Boolean(viewing || champView);
 
   $("update").hidden = !state.update;
   if (state.update && !$("update-button").disabled) {
@@ -1923,16 +2042,233 @@ function render(state) {
 
   // Salon : seulement hors sélection et hors partie (la place y sert à autre chose). Celui d'un joueur cherché
   // s'affiche sur tous les écrans, même client fermé (OP.GG), sans tes LP ni tes stats.
-  const lobby = Boolean(viewing) || (found && screen === "lobby");
+  const lobby = !champView && (Boolean(viewing) || (found && screen === "lobby"));
   if (!lobby && openGame) closeMatch();
   const shown = viewing ? { riotId: viewing.riotId, summonerLevel: viewing.level, profile: viewing.profile, searched: viewing } : state;
   renderPlayer(shown, lobby);
   renderHistory(shown, lobby);
   renderStats(state, lobby && !viewing);
   renderLp(state.profile, lobby && !viewing && Boolean(state.profile));
-  renderSelection(viewing ? null : state.runes);
-  renderGame(viewing ? null : state.game);
+  renderSelection(viewing || champView ? null : state.runes);
+  renderGame(viewing || champView ? null : state.game);
+  renderChampion(champView?.page ?? null);
   layout();
+}
+
+// ---------- Page d'un champion ----------
+
+// Comme sur DPM, d'après OP.GG : à gauche son illustration, ses stats à chacun de ses postes (un onglet chacun), sa
+// page de runes et ses compétences niveau par niveau ; au milieu son build (avec le % de victoires de chaque choix)
+// et ses duels ; à droite ses meilleurs partenaires et ses meilleurs joueurs. Un clic sur un champion ouvre sa page,
+// un clic sur un joueur son profil.
+const CHAMP_CARDS = ["champ-hero", "champ-stats", "champ-runes", "champ-build", "champ-duels", "champ-duos", "champ-players"];
+const DIVISIONS = ["", "I", "II", "III", "IV"];
+const percent = (rate) => [decimal(rate * 100), el("small", "", " %")];
+let shownChampion = "";
+function renderChampion(page) {
+  for (const id of CHAMP_CARDS) $(id).hidden = !page;
+  if (!page) {
+    shownChampion = "";
+    return;
+  }
+  // Une page ne change plus une fois lue : refaite seulement pour un autre champion ou un autre poste.
+  const key = `${page.id}|${page.position}`;
+  if (key === shownChampion) return;
+  shownChampion = key;
+  const here = page.positions.find((p) => p.position === page.position);
+  renderChampionHero(page, here);
+  renderChampionStats(page, here);
+  renderChampionRunes(page);
+  renderChampionBuild(page);
+  renderChampionDuels(page);
+  renderChampionDuos(page);
+  renderChampionPlayers(page);
+}
+
+function renderChampionHero(page, here) {
+  setArt($("champ-art"), page.id * 1000);
+  const title = upper(page.name);
+  $("champ-name").textContent = title;
+  $("champ-name").className = `name-box ${title.length > 12 ? "long" : title.length > 9 ? "mid" : ""}`;
+  $("champ-tag").textContent = POSITIONS[page.position] ?? upper(page.position);
+  $("champ-rank").hidden = !here?.tier;
+  $("champ-tier").textContent = here?.tier ? `TIER ${here.tier}` : "";
+  $("champ-place").textContent = here?.rank ? `${place(here.rank)} au classement` : "";
+}
+
+function renderChampionStats(page, here) {
+  // Ses postes (au moins 1 % de ses parties), le plus joué d'abord.
+  const tabs = page.positions
+    .filter((p) => p.roleRate >= 0.01 || p.position === page.position)
+    .map((p) => {
+      const on = p.position === page.position;
+      const label = POSITIONS[p.position] ?? upper(p.position);
+      const tab = el("button", `champ-tab${on ? " on" : ""}`, [label, el("small", "", `${whole(p.roleRate * 100)} %`)]);
+      tab.type = "button";
+      tab.title = `${page.name} ${label} : ${whole(p.roleRate * 100)} % de ses parties (${whole(p.games)})`;
+      if (!on) tab.addEventListener("click", () => openChampion(page.id, p.position));
+      return tab;
+    });
+  $("champ-tabs").replaceChildren(...tabs);
+  // Sans stats d'OP.GG à ce poste : des tirets.
+  const value = (show) => (here ? show(here) : "–");
+  $("champ-cells").replaceChildren(
+    ...[
+      ["VICTOIRES", value((s) => percent(s.winRate)), here ? (here.winRate >= 0.5 ? "win" : "loss") : ""],
+      ["CHOIX", value((s) => percent(s.pickRate))],
+      ["BANS", value((s) => percent(s.banRate))],
+      ["PARTIES", value((s) => whole(s.games))],
+      ["KDA", value((s) => decimal(s.kda))],
+      ["À CE POSTE", value((s) => [whole(s.roleRate * 100), el("small", "", " %")])],
+    ].map(cell),
+  );
+}
+
+function renderChampionRunes(page) {
+  const runes = page.runes;
+  const icon = (id, name, className) => {
+    const img = el("img", className);
+    img.alt = "";
+    img.title = name ?? "";
+    setImage(img, iconUrl(`perk-${id}`));
+    return img;
+  };
+  if (!runes) {
+    $("champ-page").replaceChildren(el("p", "muted small", "Pas de page de runes sur OP.GG à ce poste."));
+  } else {
+    // Ses 3 autres runes principales | ses 2 secondaires | ses 3 fragments.
+    const others = runes.perks.slice(1).flatMap((id, i) => [
+      i === 3 || i === 5 ? el("span", "rsep") : null,
+      icon(id, runes.runeNames[i + 1], i >= 5 ? "ricon shard" : "ricon"),
+    ]);
+    $("champ-page").replaceChildren(
+      el("div", "cp-rune-head", [
+        icon(runes.perks[0], runes.keystone, "cp-keystone"),
+        el("span", "cp-rune-text", [el("span", "cp-rune-name", runes.keystone), el("span", "muted small", `${runes.primary} · ${runes.secondary}`)]),
+        el("span", "rstat", [
+          el("span", "rpct", runes.games ? percent(runes.wins / runes.games) : "–"),
+          el("span", "rgames", `${whole(runes.games)} parties`),
+        ]),
+      ]),
+      el("div", "ricons cp-rune-icons", others.filter(Boolean)),
+    );
+  }
+  // Sa montée (Q › E › W), puis la compétence prise à chaque niveau.
+  const ability = (key) => keyIcon(iconUrl(`ability-${page.id}-${key.toLowerCase()}`), key, key);
+  const order = page.skillOrder;
+  const blocks = [];
+  if (page.skillMax.length) {
+    const keys = page.skillMax.flatMap((key, i) => (i ? [el("span", "gb-arrow", "›"), ability(key)] : [ability(key)]));
+    blocks.push(el("div", "sg-max", [el("span", "gb-k", "MONTÉE"), ...keys]));
+  }
+  if (order.length) {
+    for (const key of ["Q", "W", "E", "R"]) {
+      const cells = order.map((k, i) => el("span", `sg-cell${k === key ? " on" : ""}`, k === key ? String(i + 1) : ""));
+      blocks.push(el("div", `sg-row${key === "R" ? " ult" : ""}`, [ability(key), ...cells]));
+    }
+  }
+  $("champ-skills").replaceChildren(...blocks);
+}
+
+function renderChampionBuild(page) {
+  // % de victoires et parties d'un choix, à droite de sa ligne.
+  const rate = (games, wins) =>
+    el("span", "cp-rate", [...(games ? percent(wins / games) : ["–"]), el("span", "cp-games", ` · ${whole(games)}`)]);
+  const together = (items) => (items.length ? rate(items[0].games, items[0].wins) : null);
+  // 4e, 5e et 6e objet, côte à côte : les choix les plus joués, le % de victoires de chacun dessous.
+  const choices = (items) =>
+    items.length
+      ? el(
+          "div",
+          "gb-icons",
+          items.map((it) => {
+            const node = buildIcon(it, "mid", it.games ? `${Math.round((it.wins / it.games) * 100)} %` : "");
+            node.firstChild.title = `${it.name} : ${whole(it.games)} parties`;
+            return node;
+          }),
+        )
+      : null;
+  const spells = page.spells.length
+    ? el("span", "bicons", page.spells.map((id, i) => keyIcon(iconUrl(`spell-${id}`), "", page.spellNames[i] ?? "")))
+    : null;
+  const core = page.core;
+  const slots = [
+    ["4E OBJET", page.fourth],
+    ["5E OBJET", page.fifth],
+    ["6E OBJET", page.sixth],
+  ].filter(([, items]) => items.length);
+  const later = slots.length
+    ? el("div", "cp-later", slots.map(([label, items]) => el("div", "cp-slot", [el("span", "gb-k", label), choices(items)])))
+    : null;
+  const rows = [
+    ["SORTS", spells, spells && rate(page.spellGames, page.spellWins)],
+    ["DÉPART", page.starter.length ? itemIcons(page.starter) : null, together(page.starter)],
+    ["BOTTES", page.boots.length ? itemIcons(page.boots) : null, together(page.boots)],
+    ["CŒUR", core ? itemIcons(core.items, "→") : null, core && rate(core.games, core.wins)],
+    ["ENSUITE", later],
+  ].filter(([, value]) => value);
+  $("champ-build-empty").hidden = rows.length > 0;
+  $("champ-build-list").replaceChildren(
+    ...rows.map(([label, value, stat]) => el("div", "lrow", [el("span", "k", label), el("div", "", [value]), stat ?? el("span")])),
+  );
+}
+
+// Une ligne de champion : son icône, son nom, (son poste), son % de victoires et ses parties ; un clic ouvre sa page.
+function duelRow(duel, title, position = null) {
+  const row = el("button", "cd-row", [
+    champIcon(duel.championId, duel.name),
+    el("span", "cd-name", upper(duel.name)),
+    position ? el("span", "cd-pos", SHORT_POSITIONS[position] ?? "") : null,
+    el("span", "cd-stat", [
+      el("span", `cd-pct ${duel.winRate >= 0.5 ? "win" : "loss"}`, percent(duel.winRate)),
+      el("span", "cd-games", `${whole(duel.games)} parties`),
+    ]),
+  ]);
+  row.type = "button";
+  row.title = `${title} : ${decimal(duel.winRate * 100)} % de victoires (${whole(duel.games)} parties) · voir sa page`;
+  row.addEventListener("click", () => openChampion(duel.championId, position));
+  return row;
+}
+
+function renderChampionDuels(page) {
+  $("champ-duels-aside").textContent = `victoires de ${page.name} contre eux`;
+  const column = (title, list) =>
+    el("div", "cd-col", [
+      el("div", "sub-head", [el("span", "kicker", title)]),
+      ...list.map((d) => duelRow(d, `${page.name} contre ${d.name}`)),
+    ]);
+  $("champ-duel-lists").replaceChildren(column("LES PLUS FACILES", page.good), column("LES PLUS DURS", page.bad));
+}
+
+function renderChampionDuos(page) {
+  $("champ-duos-empty").hidden = page.synergies.length > 0;
+  $("champ-duo-list").replaceChildren(...page.synergies.map((d) => duelRow(d, `${page.name} avec ${d.name}`, d.position)));
+}
+
+function renderChampionPlayers(page) {
+  $("champ-players-aside").textContent = `${page.region} · OP.GG`;
+  $("champ-players-empty").hidden = page.players.length > 0;
+  const rows = page.players.map((p) => {
+    const cut = p.riotId.lastIndexOf("#");
+    const [name, tag] = cut >= 0 ? [p.riotId.slice(0, cut), p.riotId.slice(cut)] : [p.riotId, ""];
+    const division = APEX.includes(p.tier) ? "" : ` ${DIVISIONS[p.division] ?? p.division}`;
+    const rank = p.tier ? `${TIERS[p.tier] ?? p.tier}${division} · ${whole(p.lp)} LP` : "Non classé";
+    const rate = p.games ? p.wins / p.games : 0;
+    const row = el("button", "cd-row player-row", [
+      el("span", "cd-rank", String(p.rank)),
+      p.tier ? emblem(p.tier, "small") : el("span", "cd-noemblem"),
+      el("span", "cd-who", [el("span", "cd-player", [name, el("small", "", tag)]), el("span", "cd-sub", rank)]),
+      el("span", "cd-stat", [el("span", `cd-pct ${rate >= 0.5 ? "win" : "loss"}`, percent(rate)), el("span", "cd-games", `${whole(p.games)} parties`)]),
+    ]);
+    row.type = "button";
+    row.title = `${p.riotId} : ${whole(p.games)} parties avec ${page.name}, KDA ${kda(p.kills, p.deaths, p.assists)} · voir son profil`;
+    row.addEventListener("click", () => {
+      $("search-input").value = p.riotId;
+      searchPlayer(p.riotId, page.region);
+    });
+    return row;
+  });
+  $("champ-player-list").replaceChildren(...rows);
 }
 
 // ---------- Taille de la fenêtre ----------
@@ -1950,13 +2286,15 @@ const EDGE = 12;
 function layout() {
   const width = document.documentElement.clientWidth;
   const height = window.innerHeight;
-  const view = !$("player").hidden
-    ? "lobby"
-    : !$("duel-hero").hidden
-      ? "selection"
-      : !$("faceoff").hidden || !$("game-loading").hidden
-        ? "game"
-        : "";
+  const view = !$("champ-hero").hidden
+    ? "champion"
+    : !$("player").hidden
+      ? "lobby"
+      : !$("duel-hero").hidden
+        ? "selection"
+        : !$("faceoff").hidden || !$("game-loading").hidden
+          ? "game"
+          : "";
   let zoom = Math.min(width / STANDARD.width, height / STANDARD.height, 2);
   const board = Boolean(view) && zoom >= MIN_ZOOM;
   if (!board) zoom = Math.min(1, Math.max(0.8, width / (ONE_COLUMN + 2 * EDGE)));

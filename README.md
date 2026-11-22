@@ -297,6 +297,9 @@ Une fois la partie lancée :
     déjà sont déduits, comme dans la boutique) et ses composants, ceux que tu as cochés ;
   - ordre : départ › 1er objet (son autre choix en petit) › bottes › 2e › 3e, ce que tu as grisé, la
     prochaine étape cerclée d'or ;
+  - sets d'objets : les 3 objets principaux les plus joués dans ce duel (le classique, puis 2 autres, au moins
+    50 parties chacun), avec leur % de victoires et leurs parties ; celui de l'ordre en bleu. Seulement dans
+    l'app, pas sur le panneau posé sur le jeu ;
   - ensuite : les choix suivants avec leur % de victoires sur OP.GG ; contre eux : les objets contre l'équipe
     d'en face, avec la raison ;
   - la montée des compétences (icônes de ton champion), et ce que l'app voit en face (« 4 AD · 1 AP · 3 tanks ·
@@ -471,10 +474,10 @@ Fichiers, dans `%APPDATA%\com.perso.lol-companion\` :
 - `derniere-partie.json` : la dernière partie complète, telle que le client l'a donnée ;
 - `reglages.json` : tes réglages.
 
-## Rechercher un joueur
+## Rechercher un joueur ou un champion
 
 La barre en haut, alignée sur la colonne du milieu, sur tous les écrans : son Riot ID (`Pseudo#TAG`), sa
-région, puis Entrée.
+région, puis Entrée. Ou le nom d'un champion (voir plus bas).
 Son salon s'affiche alors à la place de l'écran du moment (rang, forme, champions du moment, 10 dernières
 parties, détail d'une partie d'un clic). Le bouton à gauche de la barre (« Mon profil », « La sélection »
 ou « La partie ») ou Échap dans la barre te ramènent à cet écran ; un nouvel écran (sélection qui commence,
@@ -503,6 +506,23 @@ ton salon si le client cachait aussi tes défaites.
 
 Ses LP gagnés ou perdus par partie ne sont pas connus : l'app ne les voit que pour tes parties.
 
+**Un champion** : en tapant, les champions dont le nom commence par ce texte s'affichent au-dessus de tes
+amis (« da » : Darius ; « s » : Samira, Sejuani, Senna, Séraphine…), 6 au plus, sans tenir compte des accents
+ni des signes (« kai » : Kai'Sa) ; un mot du nom marche aussi (« yi » : Maître Yi). Un clic, ou Entrée (le
+premier proposé), ouvre sa page, comme sur DPM, d'après OP.GG (parties classées du patch en cours) :
+- à gauche : son illustration, son tier et sa place au classement de son poste ; ses stats (victoires,
+  choix, bans, parties, KDA, part de ses parties à ce poste), un onglet par poste où il est joué (au moins 1 %
+  de ses parties) ; sa page de runes (avec son % de victoires) et ses compétences : sa montée, puis celle
+  prise à chaque niveau ;
+- au milieu : son build (sorts, départ, bottes, objets principaux, avec leur % de victoires et leurs
+  parties ; ses 4e, 5e et 6e objets les plus joués, le % de victoires de chacun dessous) et ses 5 duels les
+  plus faciles et les 5 plus durs à ce poste (son % de victoires contre eux) ;
+- à droite : ses meilleurs partenaires (2 par poste) et ses 5 meilleurs joueurs dans la région de ton client.
+
+Un clic sur un champion (duel, partenaire) ouvre sa page ; un clic sur un joueur, son profil. Sans poste
+choisi, la page s'ouvre à son poste le plus joué. Elle est lue sur OP.GG seulement à l'ouverture (3 ou 4
+petites demandes), puis gardée par l'app jusqu'à sa fermeture. OP.GG ne donne pas l'évolution par patch.
+
 ## Zone de notification
 
 L'app a une icône près de l'horloge : clic gauche pour afficher la fenêtre, clic droit pour
@@ -518,7 +538,8 @@ Quand une partie est trouvée, une notification Windows le signale. L'app n'acce
 - `src-tauri/src/lol.rs` : lecture du lockfile, appels au client (LCU) et à la partie (port 2999),
   imports, aide au choix, rangs, enregistrement des parties.
 - `src-tauri/src/opgg.rs` : appel au service d'OP.GG et lecture de sa réponse.
-- `src-tauri/src/search.rs` : recherche d'un joueur (client ou OP.GG) pour afficher son salon.
+- `src-tauri/src/search.rs` : recherche d'un joueur (client ou OP.GG) pour afficher son salon, et page d'un
+  champion (OP.GG).
 - `src-tauri/src/history.rs` : fichier d'historique et stats.
 - `src-tauri/src/settings.rs` : réglages.
 - `src-tauri/src/lib.rs` : fenêtre, icône près de l'horloge, mises à jour, boucle qui prévient

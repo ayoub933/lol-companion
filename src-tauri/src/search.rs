@@ -1,6 +1,9 @@
 //! Salon d'un autre joueur, cherché par son Riot ID et sa région. Dans la région de ton client, l'app le lit dans
 //! le client (comme ton salon, avec le détail des parties et le score carry) ; dans les autres régions, ou si le
 //! client ne le trouve pas, sur OP.GG (rangs, 20 dernières parties, détail des parties avec la note OP.GG).
+//!
+//! Page d'un champion, cherché par son nom : ses stats à chaque poste, son build, ses meilleurs et pires duels, ses
+//! meilleurs partenaires et ses joueurs, d'après OP.GG (comme sur DPM).
 
 use crate::{history, lol, opgg};
 use serde::Serialize;
@@ -20,6 +23,84 @@ pub struct Searched {
     pub profile: lol::Profile,
 }
 
+/// Un champion pour les suggestions de la barre de recherche.
+#[derive(Serialize, Clone, Default, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ChampionEntry {
+    pub id: i64,
+    /// Nom affiché (« Maître Yi ») et nom interne (« MasterYi ») : la recherche marche avec les deux.
+    pub name: String,
+    pub alias: String,
+    /// Rôles d'après le client (« fighter »…), pour deviner son poste ; vides sans le client.
+    #[serde(skip)]
+    pub roles: Vec<String>,
+}
+
+/// Page d'un champion à un poste (comme sur DPM), d'après OP.GG.
+#[derive(Serialize, Clone, Default, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ChampionPage {
+    pub id: i64,
+    pub name: String,
+    /// Poste affiché ("top", "jungle", "mid", "adc", "support"), et les postes où il est joué, le plus joué d'abord.
+    pub position: String,
+    pub positions: Vec<PagePosition>,
+    pub runes: Option<lol::RunePage>,
+    pub spells: Vec<i64>,
+    /// Leurs noms d'après le client (vides sans lui).
+    pub spell_names: Vec<String>,
+    pub spell_games: u64,
+    pub spell_wins: u64,
+    pub skill_max: Vec<String>,
+    pub skill_order: Vec<String>,
+    pub starter: Vec<opgg::Item>,
+    pub boots: Vec<opgg::Item>,
+    pub core: Option<opgg::CoreSet>,
+    /// Les plus achetés en 4e, 5e et 6e objet, avec leurs parties et victoires.
+    pub fourth: Vec<opgg::Item>,
+    pub fifth: Vec<opgg::Item>,
+    pub sixth: Vec<opgg::Item>,
+    /// Ses meilleurs et ses pires duels à ce poste (son % de victoires contre chacun), 5 au plus.
+    pub good: Vec<PageDuel>,
+    pub bad: Vec<PageDuel>,
+    /// Ses meilleurs partenaires, 2 par poste du partenaire.
+    pub synergies: Vec<PageDuel>,
+    /// Les joueurs qui ont le plus de parties avec lui dans la région de ton client (5 au plus).
+    pub players: Vec<opgg::TopPlayer>,
+    pub region: String,
+}
+
+/// Stats d'un champion à un poste.
+#[derive(Serialize, Clone, Default, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PagePosition {
+    pub position: String,
+    pub role_rate: f64,
+    pub games: u64,
+    pub win_rate: f64,
+    pub pick_rate: f64,
+    pub ban_rate: f64,
+    pub kda: f64,
+    /// Tier OP.GG (1 = le meilleur, 5) et rang dans le classement du poste (0 si inconnus).
+    pub tier: u8,
+    pub rank: u32,
+}
+
+/// Un autre champion face à lui (ou avec lui) : parties, et son % de victoires à lui. `position` : poste du
+/// partenaire (partenaires seulement).
+#[derive(Serialize, Clone, Default, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PageDuel {
+    pub champion_id: i64,
+    pub name: String,
+    pub games: u64,
+    pub win_rate: f64,
+    pub position: String,
+}
+
+/// Postes d'OP.GG, dans l'ordre de l'app.
+const PAGE_POSITIONS: [&str; 5] = ["top", "jungle", "mid", "adc", "support"];
+
 /// Une partie lue sur OP.GG : ce qu'il faut pour en demander le détail.
 struct OpggGame {
     region: String,
@@ -34,11 +115,116 @@ pub struct Search {
     games: Mutex<HashMap<i64, OpggGame>>,
     /// Celles déjà ouvertes en détail.
     details: Mutex<HashMap<i64, history::MatchDetails>>,
+    /// Tous les champions (client, sinon OP.GG), lus une fois.
+    champions: Mutex<Vec<ChampionEntry>>,
+    /// Pages de champion déjà ouvertes : (champion, poste demandé, vide = son poste principal).
+    pages: Mutex<HashMap<(i64, String), ChampionPage>>,
 }
 
 impl Search {
     pub fn new() -> Self {
-        Self { opgg: tokio::sync::Mutex::new(opgg::Client::new()), games: Mutex::default(), details: Mutex::default() }
+        Self {
+            opgg: tokio::sync::Mutex::new(opgg::Client::new()),
+            games: Mutex::default(),
+            details: Mutex::default(),
+            champions: Mutex::default(),
+            pages: Mutex::default(),
+        }
+    }
+
+    /// Tous les champions, pour les suggestions de la barre : ceux du client, sinon ceux d'OP.GG.
+    pub async fn champions(&self, assets: &lol::Assets) -> Result<Vec<ChampionEntry>, String> {
+        if !self.champions.lock().unwrap().is_empty() {
+            return Ok(self.champions.lock().unwrap().clone());
+        }
+        let mut list: Vec<ChampionEntry> = assets
+            .champion_entries()
+            .await
+            .into_iter()
+            .map(|(id, name, alias, roles)| ChampionEntry { id, name, alias, roles })
+            .collect();
+        if list.is_empty() {
+            let from_opgg = self.opgg.lock().await.champion_list().await?;
+            list = from_opgg.into_iter().map(|(id, name, alias)| ChampionEntry { id, name, alias, roles: Vec::new() }).collect();
+        }
+        list.sort_by(|a, b| a.name.cmp(&b.name));
+        eprintln!("[champions] {} champions pour la recherche", list.len());
+        *self.champions.lock().unwrap() = list.clone();
+        Ok(list)
+    }
+
+    /// Page d'un champion : à `position` (« top »…), sinon à son poste le plus joué. Gardée en mémoire.
+    pub async fn champion_page(&self, assets: &lol::Assets, id: i64, position: Option<String>) -> Result<ChampionPage, String> {
+        let wanted = position.clone().unwrap_or_default();
+        if let Some(page) = self.pages.lock().unwrap().get(&(id, wanted.clone())) {
+            return Ok(page.clone());
+        }
+        let champions = self.champions(assets).await?;
+        let entry = champions.iter().find(|c| c.id == id).cloned().ok_or("Champion inconnu")?;
+        let champ = opgg::Champ { id, name: entry.name.clone(), alias: entry.alias.clone(), ..Default::default() };
+        let mut opgg = self.opgg.lock().await;
+        // Sans poste demandé : deviné d'après ses rôles, puis son poste le plus joué si ce n'était pas lui. Son poste
+        // le plus joué aussi si OP.GG ne le voit pas joué au poste demandé (partenaire à un poste rare).
+        let first = position.clone().unwrap_or_else(|| guess_position(&entry.roles).to_string());
+        let mut doc = opgg.champion_page_doc(&champ, &first).await?;
+        let mut shown = first.clone();
+        let positions = page_positions(&doc);
+        if position.is_none() || !positions.iter().any(|p| p.position == first) {
+            let main = positions.into_iter().next().map(|p| p.position);
+            if let Some(main) = main.filter(|main| *main != first) {
+                doc = opgg.champion_page_doc(&champ, &main).await?;
+                shown = main;
+            }
+        }
+        let mut page = page_from(&doc, &entry, &shown);
+        // Ses 5 meilleurs et 5 pires duels : la liste complète vient avec un guide de couloir (contre un de ses
+        // adversaires courants) ; sinon les 3 de chaque que donne l'analyse.
+        let rival = page.bad.first().or(page.good.first()).map(|d| d.champion_id);
+        let rival = rival.and_then(|rid| champions.iter().find(|c| c.id == rid));
+        if let Some(rival) = rival {
+            let against = opgg::Champ { id: rival.id, name: rival.name.clone(), alias: rival.alias.clone(), ..Default::default() };
+            match opgg.counters(&champ, &against, &shown).await {
+                Ok(mut list) if list.len() >= 6 => {
+                    // Sans lui-même (le duel miroir).
+                    list.retain(|p| p.champion_id != id);
+                    let duel = |p: &opgg::Pick| PageDuel {
+                        champion_id: p.champion_id,
+                        name: p.name.clone(),
+                        games: p.games,
+                        win_rate: 1.0 - p.win_rate,
+                        position: String::new(),
+                    };
+                    page.bad = list.iter().take(5).map(duel).collect();
+                    page.good = list.iter().rev().take(5).map(duel).collect();
+                }
+                Ok(_) => {}
+                Err(e) => eprintln!("[champion] duels de {} : {e}", entry.name),
+            }
+        }
+        // Ses joueurs, dans la région de ton client.
+        let region = assets.client_region().await.unwrap_or_else(|| "EUW".to_string());
+        match opgg.leaderboard(&champ, &region).await {
+            Ok(mut players) => {
+                players.truncate(5);
+                page.players = players;
+            }
+            Err(e) => eprintln!("[champion] joueurs de {} : {e}", entry.name),
+        }
+        page.region = region;
+        drop(opgg);
+        let spells = assets.client_json("/lol-game-data/assets/v1/summoner-spells.json", false).await;
+        let name = |id: &i64| -> Option<String> {
+            let list = spells.as_ref()?.as_array()?;
+            let spell = list.iter().find(|s| s["id"].as_i64() == Some(*id))?;
+            spell["name"].as_str().map(str::to_string)
+        };
+        page.spell_names = page.spells.iter().map(|id| name(id).unwrap_or_default()).collect();
+        eprintln!("[champion] {} ({}) : page prête", entry.name, page.position);
+        // Gardée pour le poste demandé et pour celui affiché (son poste principal, demandé ensuite d'un clic).
+        let mut pages = self.pages.lock().unwrap();
+        pages.insert((id, page.position.clone()), page.clone());
+        pages.insert((id, wanted), page.clone());
+        Ok(page)
     }
 
     /// `region` vide : celle de ton client. `puuid` : son compte quand il est connu (un joueur d'une de tes parties),
@@ -419,4 +605,99 @@ fn encode(text: &str) -> String {
     text.bytes()
         .map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { char::from(b).to_string() } else { format!("%{b:02X}") })
         .collect()
+}
+
+
+/// Poste probable d'après ses rôles dans le client (avant de connaître celui qu'il joue le plus).
+fn guess_position(roles: &[String]) -> &'static str {
+    let has = |role: &str| roles.iter().any(|r| r == role);
+    if has("marksman") {
+        "adc"
+    } else if has("support") {
+        "support"
+    } else if has("mage") || has("assassin") {
+        "mid"
+    } else {
+        "top"
+    }
+}
+
+/// Ses postes, du plus joué au moins joué (OP.GG : "TOP", "JUNGLE", "MID", "ADC", "SUPPORT").
+fn page_positions(doc: &Value) -> Vec<PagePosition> {
+    let mut list: Vec<PagePosition> = doc["data"]["summary"]["positions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|p| {
+            let position = p["name"].as_str()?.to_lowercase();
+            let stats = &p["stats"];
+            let number = |key: &str| stats[key].as_f64().unwrap_or(0.0);
+            PAGE_POSITIONS.contains(&position.as_str()).then(|| PagePosition {
+                role_rate: number("role_rate"),
+                games: stats["play"].as_u64().unwrap_or(0),
+                win_rate: number("win_rate"),
+                pick_rate: number("pick_rate"),
+                ban_rate: number("ban_rate"),
+                kda: number("kda"),
+                tier: stats["tier_data"]["tier"].as_u64().unwrap_or(0) as u8,
+                rank: stats["tier_data"]["rank"].as_u64().unwrap_or(0) as u32,
+                position,
+            })
+        })
+        .collect();
+    list.sort_by(|a, b| b.role_rate.total_cmp(&a.role_rate));
+    list
+}
+
+/// La page d'après l'analyse d'OP.GG à ce poste (ses duels : les 3 de chaque que donne l'analyse).
+fn page_from(doc: &Value, entry: &ChampionEntry, position: &str) -> ChampionPage {
+    let data = &doc["data"];
+    let analysis = opgg::analysis_from(doc);
+    let slot = |key: &str| -> Vec<opgg::Item> { data[key].as_array().into_iter().flatten().flat_map(opgg::items_of).collect() };
+    let rate = |c: &Value| c["win"].as_f64().unwrap_or(0.0) / c["play"].as_f64().unwrap_or(0.0).max(1.0);
+    let duels = |list: &Value, id: &str, name: &str, position: &str| -> Vec<PageDuel> {
+        list.as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|c| {
+                Some(PageDuel {
+                    champion_id: c[id].as_i64()?,
+                    name: c[name].as_str().unwrap_or_default().to_string(),
+                    games: c["play"].as_u64().unwrap_or(0),
+                    win_rate: rate(c),
+                    position: position.to_string(),
+                })
+            })
+            .collect()
+    };
+    let synergies = PAGE_POSITIONS
+        .iter()
+        .flat_map(|p| duels(&data["synergies"][*p], "synergy_champion_id", "synergy_champion_name", p).into_iter().take(2))
+        .collect();
+    let core = &data["core_items"];
+    let spells = &data["summoner_spells"];
+    ChampionPage {
+        id: entry.id,
+        name: entry.name.clone(),
+        position: position.to_string(),
+        positions: page_positions(doc),
+        runes: analysis.as_ref().map(|a| lol::RunePage::of(&a.runes)),
+        spells: spells["ids"].as_array().into_iter().flatten().filter_map(Value::as_i64).collect(),
+        spell_names: Vec::new(),
+        spell_games: spells["play"].as_u64().unwrap_or(0),
+        spell_wins: spells["win"].as_u64().unwrap_or(0),
+        skill_max: analysis.as_ref().map(|a| a.build.skill_max.clone()).unwrap_or_default(),
+        skill_order: analysis.as_ref().map(|a| a.build.skill_order.clone()).unwrap_or_default(),
+        starter: opgg::items_of(&data["starter_items"]),
+        boots: opgg::items_of(&data["boots"]),
+        core: Some(opgg::core_set(core)).filter(|set| !set.items.is_empty()),
+        fourth: slot("fourth_items"),
+        fifth: slot("fifth_items"),
+        sixth: slot("sixth_items"),
+        good: duels(&data["strong_counters"], "champion_id", "champion_name", ""),
+        bad: duels(&data["weak_counters"], "champion_id", "champion_name", ""),
+        synergies,
+        players: Vec::new(),
+        region: String::new(),
+    }
 }

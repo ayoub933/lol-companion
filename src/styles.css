@@ -103,6 +103,13 @@ body:not(.board) .col {
 #game-build { order: 23; }
 #faceoff { order: 24; }
 #hint { order: 30; }
+#champ-hero { order: 40; }
+#champ-stats { order: 41; }
+#champ-runes { order: 42; }
+#champ-build { order: 43; }
+#champ-duels { order: 44; }
+#champ-duos { order: 45; }
+#champ-players { order: 46; }
 
 /* Tableau de bord : une grille par écran (en douzièmes de la largeur). */
 body.board main {
@@ -123,6 +130,10 @@ body[data-view="selection"] main {
 }
 body[data-view="game"] main {
   grid-template-columns: 4fr 8fr;
+}
+/* Page d'un champion cherché : les colonnes du salon. */
+body[data-view="champion"] main {
+  grid-template-columns: 4fr 5fr 3fr;
 }
 body.board .col {
   min-width: 0;
@@ -410,7 +421,8 @@ span.icon.slot {
 body.board .top {
   gap: 10px;
 }
-body.board[data-view="lobby"] .top {
+body.board[data-view="lobby"] .top,
+body.board[data-view="champion"] .top {
   grid-template-columns: 4fr 5fr 3fr;
 }
 body.board[data-view="selection"] .top {
@@ -2961,9 +2973,10 @@ body.board .me-hero {
 .card.me .cells {
   margin: 0 12px;
 }
-/* En partie : ta carte et ton build se partagent la colonne (un peu moins de la moitié pour ta carte). */
+/* En partie : ta carte et ton build se partagent la colonne (un gros tiers pour ta carte, le build a ses sets
+   d'objets en plus). */
 body.board[data-view="game"] #me-card:not([hidden]) {
-  flex: 0.85 1 0;
+  flex: 0.58 1 0;
   min-height: 0;
 }
 
@@ -2971,7 +2984,7 @@ body.board[data-view="game"] #me-card:not([hidden]) {
 .gb {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 6px;
   font-weight: 500;
   font-size: 13px;
   line-height: 1.3;
@@ -2988,7 +3001,7 @@ body.board[data-view="game"] #me-card:not([hidden]) {
 .gb-half {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
 }
 .gb-next-main {
@@ -3079,6 +3092,54 @@ body.board[data-view="game"] #me-card:not([hidden]) {
 .gb-icon.part {
   width: 26px;
   height: 26px;
+}
+.gb-icon.set {
+  width: 24px;
+  height: 24px;
+}
+/* Sets d'objets du duel (écran de l'app) : côte à côte, leur % et leurs parties dessous ; celui de l'ordre des
+   achats en bleu. */
+.gb-sets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.gb-set {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 4px 4px;
+  border-top: 2px solid transparent;
+  background: var(--panel);
+}
+.gb-set.on {
+  border-top-color: var(--accent);
+  background: var(--ally-bg);
+}
+.gb-set-icons {
+  display: flex;
+  gap: 3px;
+}
+.gb-set-rate {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 15px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.gb-set.on .gb-set-rate {
+  color: var(--accent-light);
+}
+.gb-set-rate small {
+  font-size: 11px;
+}
+.gb-set-games {
+  font-family: var(--body);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
 }
 /* Build de la sélection. */
 .gb-icon.mid {
@@ -3598,4 +3659,306 @@ body:not(.board) .worth .tag {
   font-family: var(--display);
   font-size: 16px;
   color: var(--text);
+}
+
+/* ---------- Page d'un champion (recherche) ---------- */
+
+/* Un peu moins haute que celle du salon : ses runes et ses compétences tiennent dessous. */
+.hero.champ {
+  height: clamp(160px, 42cqw, 220px);
+}
+/* Dans la liste sous la barre : une ligne chacun, l'icône biseautée comme les autres icônes de champion. */
+.champ-suggest {
+  grid-template-columns: 26px minmax(0, 1fr);
+  padding: 3px 6px;
+}
+.champ-suggest .friend-icon {
+  width: 26px;
+  height: 26px;
+  clip-path: polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%);
+}
+/* Ses postes : un onglet chacun, avec la part de ses parties ; celui affiché en bleu. */
+.champ-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.champ-tab {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px 0 12px;
+  border: none;
+  background: var(--panel);
+  color: var(--text-2);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
+}
+.champ-tab small {
+  font-family: var(--body);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+.champ-tab:hover {
+  background: var(--chip);
+  color: var(--text);
+}
+.champ-tab.on {
+  background: var(--accent);
+  color: #fff;
+  cursor: default;
+}
+.champ-tab.on small {
+  color: #dbe5ff;
+}
+#champ-cells .v small {
+  font-size: 15px;
+}
+/* Sa page de runes : la rune clé en grand, son nom et ses voies, son % à droite ; dessous, ses autres runes et ses
+   fragments (plus petits). */
+.cp-runes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cp-rune-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+.cp-keystone {
+  width: 40px;
+  height: 40px;
+}
+.cp-rune-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cp-rune-name {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 18px;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cp-rune-icons .ricon {
+  width: 24px;
+  height: 24px;
+}
+.cp-rune-icons .ricon.shard {
+  width: 18px;
+  height: 18px;
+}
+/* Ses compétences : sa montée, puis la grille des niveaux (la compétence prise à chaque niveau, en bleu ; son
+   ultime en bleu clair). */
+.skill-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sg-max {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+.sg-max .gb-k {
+  margin-right: 4px;
+}
+.sg-max .gb-icon {
+  width: 22px;
+  height: 22px;
+}
+.sg-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.sg-row .gb-icon {
+  width: 20px;
+  height: 20px;
+  margin-right: 4px;
+}
+.sg-cell {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  background: var(--panel);
+  color: #fff;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 12px;
+}
+.sg-cell.on {
+  background: var(--accent);
+}
+.sg-row.ult .sg-cell.on {
+  background: var(--accent-light);
+  color: var(--bg);
+}
+/* Son build : le % de victoires et les parties de chaque ligne à droite ; ses 4e, 5e et 6e objets côte à côte. */
+.cp-build .lrow {
+  grid-template-columns: 66px minmax(0, 1fr) auto;
+}
+.cp-later {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.cp-slot {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.cp-rate {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 17px;
+  white-space: nowrap;
+}
+.cp-rate small {
+  font-size: 12px;
+}
+.cp-games {
+  font-family: var(--body);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+/* Duels, partenaires, joueurs : une ligne chacun, un clic ouvre sa page (ou son profil). */
+.cd-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.cd-col,
+.cd-list {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cd-row {
+  flex: none;
+  min-width: 0;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 5px;
+  border: none;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cd-row:hover {
+  background: var(--chip);
+}
+.cd-row .icon {
+  width: 24px;
+  height: 24px;
+}
+.cd-name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cd-pos {
+  flex: none;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.cd-stat {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.cd-pct {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 15px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.cd-pct small {
+  font-size: 11px;
+}
+.cd-games {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.player-row {
+  height: 38px;
+}
+.cd-rank {
+  flex: none;
+  width: 16px;
+  text-align: center;
+  color: var(--muted);
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 14px;
+}
+.cd-noemblem {
+  flex: none;
+  width: 20px;
+}
+.cd-who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cd-player,
+.cd-sub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cd-player {
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.25;
+}
+.cd-player small {
+  margin-left: 1px;
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--faint);
+}
+.cd-sub {
+  font-size: 11px;
+  line-height: 1.25;
+  color: var(--muted);
 }
