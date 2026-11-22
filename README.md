@@ -380,7 +380,7 @@ plus bas), l'historique
 de tes 10 dernières parties (la plus récente en grand avec toutes ses stats, puis une ligne par
 partie : résultat, file, KDA, CS, durée, quand ; victoire en vert-bleu, défaite en rouge-rose ;
 adversaire et poste pour les parties suivies par l'app), et tes stats par champion (KDA, CS par
-minute, % de victoires) et par duel. L'ARAM est compté à part. Les stats de l'app commencent à la
+minute, % de victoires). L'ARAM est compté à part. Les stats de l'app commencent à la
 première partie jouée avec elle ; l'historique des 10 parties vient du client et les montre toutes.
 
 Le client renvoie parfois une liste de parties raccourcie, jusqu'à une seule (juste après une partie, ou pendant

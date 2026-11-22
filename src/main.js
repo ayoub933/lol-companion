@@ -574,10 +574,9 @@ function renderLp(profile, show) {
 }
 
 function renderStats(state, show) {
-  for (const id of ["stats", "duels"]) $(id).hidden = !show;
+  $("stats").hidden = !show;
   if (!show) return;
   const champions = state.history?.champions ?? [];
-  const duels = state.history?.duels ?? [];
   $("stats-empty").hidden = champions.length > 0;
   $("stats-champions").replaceChildren(
     ...champions.map((t) => {
@@ -594,15 +593,6 @@ function renderStats(state, show) {
         numCell("CS/MIN", csPerMinute),
       ]);
     }),
-  );
-  $("duels-empty").hidden = duels.length > 0;
-  $("stats-duels").replaceChildren(
-    ...duels.map((t) =>
-      el("div", "drow", [
-        el("span", "", [upper(t.champion), el("small", "", " VS "), upper(t.opponent)]),
-        el("span", "dscore", [...record(t.wins, t.games - t.wins), el("small", "", ` · ${plural(t.games, "partie")}`)]),
-      ]),
-    ),
   );
 }
 
@@ -1780,7 +1770,7 @@ function render(state) {
   }
 
   // Salon : seulement hors sélection et hors partie (la place y sert à autre chose). Celui d'un joueur cherché
-  // s'affiche sur tous les écrans, même client fermé (OP.GG), sans tes stats ni tes duels.
+  // s'affiche sur tous les écrans, même client fermé (OP.GG), sans tes LP ni tes stats.
   const lobby = Boolean(viewing) || (found && screen === "lobby");
   if (!lobby && openGame) closeMatch();
   const shown = viewing ? { riotId: viewing.riotId, summonerLevel: viewing.level, profile: viewing.profile, searched: viewing } : state;

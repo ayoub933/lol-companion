@@ -49,15 +49,12 @@ pub struct GameRecord {
     pub lp_change: Option<i64>,
 }
 
-/// Totaux d'un champion (ou d'un duel) : l'interface en tire les moyennes.
+/// Totaux d'un champion : l'interface en tire les moyennes.
 #[derive(Serialize, Clone, Default, PartialEq, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Totals {
     pub champion_id: i64,
     pub champion: String,
-    /// Duels seulement.
-    pub opponent_id: i64,
-    pub opponent: String,
     /// true = parties en ARAM, comptées à part (CS et KDA n'y sont pas comparables).
     pub aram: bool,
     pub games: u64,
@@ -70,13 +67,12 @@ pub struct Totals {
     pub duration: u64,
 }
 
-/// Ce que le salon affiche : la dernière partie, tes champions et tes duels les plus joués.
+/// Ce que le salon affiche : la dernière partie et tes champions les plus joués.
 #[derive(Serialize, Clone, Default, PartialEq, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Overview {
     pub last: GameRecord,
     pub champions: Vec<Totals>,
-    pub duels: Vec<Totals>,
 }
 
 pub struct History {
@@ -176,21 +172,15 @@ impl History {
     pub fn overview(&self, puuid: Option<&str>) -> Option<Overview> {
         let last = self.of(puuid).max_by_key(|g| g.date)?.clone();
         let mut champions: HashMap<(i64, bool), Totals> = HashMap::new();
-        let mut duels: HashMap<(i64, i64), Totals> = HashMap::new();
         // Faille de l'invocateur et ARAM seulement : les autres modes (Arena...) ne se comparent pas.
         for g in self.of(puuid).filter(|g| matches!(g.map_id, 11 | 12)) {
             let aram = g.map_id == 12;
             let new = || Totals { champion_id: g.champion_id, champion: g.champion.clone(), aram, ..Default::default() };
             champions.entry((g.champion_id, aram)).or_insert_with(new).add(g);
-            if !aram && g.opponent_id > 0 {
-                let new_duel = || Totals { opponent_id: g.opponent_id, opponent: g.opponent.clone(), ..new() };
-                duels.entry((g.champion_id, g.opponent_id)).or_insert_with(new_duel).add(g);
-            }
         }
         Some(Overview {
             last,
             champions: most_played(champions.into_values(), 5),
-            duels: most_played(duels.into_values(), 3),
         })
     }
 }
@@ -215,7 +205,6 @@ fn most_played(list: impl Iterator<Item = Totals>, count: usize) -> Vec<Totals> 
             .cmp(&a.games)
             .then(b.wins.cmp(&a.wins))
             .then(a.champion.cmp(&b.champion))
-            .then(a.opponent.cmp(&b.opponent))
     });
     list.truncate(count);
     list
