@@ -1156,7 +1156,9 @@ function renderRunes(runes) {
       applied = "Aperçu : verrouille ce champion pour les mettre dans ta page";
       appliedClass += " off";
     } else if (runes.pageApplied) {
-      applied = `Mises dans ta page sélectionnée${runes.matchup?.applied ? ` · duel contre ${runes.matchup.opponent}` : ""}`;
+      // Avec la liste des pages du duel, le duel se voit déjà : une ligne suffit.
+      const duel = runes.matchup?.applied && (runes.pages ?? []).length < 2;
+      applied = `Mises dans ta page sélectionnée${duel ? ` · duel contre ${runes.matchup.opponent}` : ""}`;
     } else {
       applied = runes.pageNote ?? "Import des runes coupé dans les réglages";
       appliedClass += " off";
@@ -1178,12 +1180,69 @@ function renderRunes(runes) {
     ...(normal ? [...tree(runes.primaryId, runes.primary), " · ", ...tree(runes.secondaryId, runes.secondary)] : [trees]),
   );
   $("runes-games").textContent = games;
+  // Plusieurs pages proposées : leur liste remplace la rune clé, son % et ses voies (la page mise y est en bleu).
+  const listed = renderPages(runes, normal);
+  for (const id of ["rune-main", "runes-rate", "runes-trees", "runes-games"]) $(id).hidden = listed;
   renderForms(runes);
   const line = $("runes-applied");
   line.className = appliedClass;
   line.hidden = !applied;
   line.innerHTML = appliedClass === "applied span" ? CHECK : "";
   line.append(applied);
+}
+
+// Pages de runes proposées pour le duel : la plus jouée puis jusqu'à 2 autres qui changent au moins une rune,
+// chacune avec son % de victoires à droite. Un clic en change : elle est mise dans ta page si ton champion est
+// verrouillé. Une seule page sans duel (OP.GG n'en donne qu'une hors duel) : pas de liste, une note.
+// Renvoie true si la liste est affichée.
+function renderPages(runes, normal) {
+  const box = $("rune-pages");
+  const pages = normal ? (runes.pages ?? []) : [];
+  box.hidden = pages.length < 2;
+  const note = $("rune-pages-note");
+  note.textContent = !normal || pages.length > 1 || !runes.laning
+    ? ""
+    : runes.matchup?.applied
+      ? `Une seule page assez jouée contre ${runes.matchup.opponent}`
+      : runes.matchup
+        ? ""
+        : "Autres pages : avec ton adversaire direct";
+  note.hidden = !note.textContent;
+  // Rien à refaire si les pages et celle choisie n'ont pas changé (les icônes ne sont pas rechargées).
+  // (La note du client compte : page refusée, la liste revient sur celle qui est mise.)
+  const key = `${pages.map((p) => `${p.perks.join(".")}:${p.games}:${p.wins}`).join("|")}#${runes.page}#${runes.pageNote ?? ""}`;
+  if (box.dataset.key !== key) {
+    box.dataset.key = key;
+    box.replaceChildren(...(pages.length > 1 ? pages.map((page, i) => pageRow(page, i === runes.page)) : []));
+  }
+  return !box.hidden;
+}
+
+function pageRow(page, on) {
+  const row = el("button", `rpage${on ? " on" : ""}`);
+  row.type = "button";
+  row.title = `${page.keystone} · ${page.primary} / ${page.secondary}`;
+  // Les 4 runes principales, puis les 2 secondaires ; le nom de chacune au survol.
+  const icons = el("span", "ricons");
+  page.perks.slice(0, 6).forEach((id, i) => {
+    if (i === 4) icons.append(el("span", "rsep"));
+    const img = el("img", i === 0 ? "ricon key" : "ricon");
+    img.alt = "";
+    img.title = page.runeNames[i] ?? "";
+    setImage(img, iconUrl(`perk-${id}`));
+    icons.append(img);
+  });
+  const rate = page.games > 0 ? number((page.wins / page.games) * 100, 1) : "–";
+  row.append(
+    icons,
+    el("span", "rstat", [el("span", "rpct", [rate, el("small", "", " %")]), el("span", "rgames", `${whole(page.games)} parties`)]),
+  );
+  row.addEventListener("click", () => {
+    if (row.classList.contains("on")) return;
+    for (const other of row.parentNode.children) other.classList.toggle("on", other === row);
+    invoke("set_rune_page", { perks: page.perks });
+  });
+  return row;
 }
 
 // Rune clé : son icône, avec son nom au survol ; le nom en texte tant que l'icône n'est pas là

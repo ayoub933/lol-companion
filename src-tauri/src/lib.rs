@@ -26,6 +26,8 @@ struct Latest(Mutex<lol::Snapshot>);
 struct Opponent(Mutex<Option<i64>>);
 /// Forme de Kayn choisie d'un clic (None = conseillée par l'app).
 struct ChosenForm(Mutex<Option<lol::Form>>);
+/// Page de runes choisie d'un clic dans la sélection (ses runes), pour la sélection en cours.
+struct ChosenPage(Mutex<Option<Vec<i64>>>);
 /// Réglages, et le fichier où ils sont gardés.
 struct Prefs {
     file: PathBuf,
@@ -48,6 +50,12 @@ fn set_opponent(opponent: tauri::State<'_, Opponent>, champion_id: Option<i64>) 
 #[tauri::command]
 fn set_form(chosen: tauri::State<'_, ChosenForm>, form: Option<String>) {
     *chosen.0.lock().unwrap() = form.as_deref().and_then(lol::Form::parse);
+}
+
+/// Runes de la page choisie parmi celles proposées ; null : retour à la première.
+#[tauri::command]
+fn set_rune_page(chosen: tauri::State<'_, ChosenPage>, perks: Option<Vec<i64>>) {
+    *chosen.0.lock().unwrap() = perks;
 }
 
 #[tauri::command]
@@ -188,6 +196,7 @@ pub fn run() {
         .manage(Latest(Mutex::new(lol::Snapshot::default())))
         .manage(Opponent(Mutex::new(None)))
         .manage(ChosenForm(Mutex::new(None)))
+        .manage(ChosenPage(Mutex::new(None)))
         .manage(PendingUpdate(Mutex::new(None)))
         .manage(assets.clone())
         .manage(search::Search::new())
@@ -195,6 +204,7 @@ pub fn run() {
             get_state,
             set_opponent,
             set_form,
+            set_rune_page,
             get_settings,
             set_settings,
             install_update,
@@ -322,13 +332,15 @@ pub fn run() {
                 loop {
                     let manual = *handle.state::<Opponent>().0.lock().unwrap();
                     let form = *handle.state::<ChosenForm>().0.lock().unwrap();
+                    let page = handle.state::<ChosenPage>().0.lock().unwrap().clone();
                     let settings = handle.state::<Prefs>().settings.lock().unwrap().clone();
-                    let mut snap = tracker.poll(manual, form, &settings).await;
+                    let mut snap = tracker.poll(manual, form, page, &settings).await;
                     snap.update = handle.state::<PendingUpdate>().0.lock().unwrap().as_ref().map(|u| u.version.clone());
                     if snap.runes.is_none() {
                         // Hors sélection des champions : le choix fait d'un clic est oublié.
                         *handle.state::<Opponent>().0.lock().unwrap() = None;
                         *handle.state::<ChosenForm>().0.lock().unwrap() = None;
+                        *handle.state::<ChosenPage>().0.lock().unwrap() = None;
                     }
                     // Le client LoL vient de s'ouvrir : on montre la fenêtre (sans lui voler le clavier).
                     if snap.client_found && !previous.client_found && settings.show_on_client_start {

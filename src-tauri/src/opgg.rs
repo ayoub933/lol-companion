@@ -14,6 +14,10 @@ const UNREADABLE: &str = "Réponse OP.GG illisible (format changé ?)";
 /// Objets d'un duel : on prend le meilleur % de victoires parmi les choix joués au moins autant de fois
 /// (en dessous, un % élevé peut n'être que du hasard), sinon le plus joué.
 const MIN_PLAY: u64 = 100;
+/// Pages de runes proposées pour un duel : la plus jouée, puis 2 autres (au moins 50 parties chacune, pour que
+/// leur % de victoires veuille dire quelque chose).
+const PAGES_SHOWN: usize = 3;
+const MIN_PAGE_GAMES: u64 = 50;
 static NULL: Value = Value::Null;
 /// Champs demandés à OP.GG, recopiés de la liste fermée donnée par leur outil.
 const FIELDS: [&str; 11] = [
@@ -155,6 +159,8 @@ pub struct Runes {
     pub keystone: String,
     pub primary_name: String,
     pub secondary_name: String,
+    /// Noms des 4 runes principales et des 2 secondaires (dans l'ordre de `perks`).
+    pub rune_names: Vec<String>,
     pub games: u64,
     pub wins: u64,
 }
@@ -172,6 +178,9 @@ pub struct Matchup {
     pub play_style: String,
     /// Conseil pour ce duel (OP.GG l'envoie en anglais, même en demandant le français).
     pub tip: String,
+    /// Pages de runes proposées : celle de `analysis` d'abord, puis jusqu'à 2 autres parmi les plus jouées qui
+    /// changent au moins une rune (pas seulement les fragments), du même style pour Kayn.
+    pub pages: Vec<Runes>,
 }
 
 /// Un champion conseillé, avec son % de victoires.
@@ -583,7 +592,16 @@ pub fn matchup_from(doc: &Value, opponent_id: i64, style: Option<&Style>) -> Opt
     let d = &doc["data"];
     let list = |key: &str| d[key].as_array().map(Vec::as_slice).unwrap_or_default();
     let page = style.and_then(|s| list("runes").iter().find(|p| (s.runes)(p))).or(list("runes").first())?;
-    let runes = build_runes(d["summary"]["id"].as_i64().unwrap_or(0), page)?;
+    let champion_id = d["summary"]["id"].as_i64().unwrap_or(0);
+    let runes = build_runes(champion_id, page)?;
+    // Autres pages : les plus jouées ensuite qui changent au moins une rune (les 6 premières de `perks`).
+    let mut pages = vec![runes.clone()];
+    let others = list("runes").iter().filter(|p| style.is_none_or(|s| (s.runes)(p))).filter_map(|p| build_runes(champion_id, p));
+    for other in others.filter(|r| r.games >= MIN_PAGE_GAMES) {
+        if pages.len() < PAGES_SHOWN && !pages.iter().any(|p| p.perks[..6] == other.perks[..6]) {
+            pages.push(other);
+        }
+    }
     let fits = |e: &Value| e["ids"][0].as_i64().is_some_and(|id| style.is_none_or(|s| (s.item)(id)));
     // 4e, 5e et 6e objets : les 3 plus achetés à chaque étape (au moins 10 parties).
     let step = |depth: i64| -> Vec<Value> {
@@ -633,6 +651,7 @@ pub fn matchup_from(doc: &Value, opponent_id: i64, style: Option<&Style>) -> Opt
         advantage: text(&d["lane_advantage_champion"]),
         play_style: text(&d["recommended_play_style"]),
         tip: text(&d["opponent_champion_tip"]),
+        pages,
     })
 }
 
@@ -749,6 +768,9 @@ fn build_runes(champion_id: i64, r: &Value) -> Option<Runes> {
         return None;
     }
     let text = |k: &str| r[k].as_str().unwrap_or_default().to_string();
+    let names = |k: &str| -> Vec<String> { r[k].as_array().into_iter().flatten().map(|n| n.as_str().unwrap_or_default().to_string()).collect() };
+    let mut rune_names = names("primary_rune_names");
+    rune_names.extend(names("secondary_rune_names"));
     Some(Runes {
         champion_id,
         primary_style: r["primary_page_id"].as_i64()?,
@@ -757,6 +779,7 @@ fn build_runes(champion_id: i64, r: &Value) -> Option<Runes> {
         keystone: r["primary_rune_names"][0].as_str().unwrap_or_default().to_string(),
         primary_name: text("primary_page_name"),
         secondary_name: text("secondary_page_name"),
+        rune_names,
         games: r["play"].as_u64().unwrap_or(0),
         wins: r["win"].as_u64().unwrap_or(0),
     })

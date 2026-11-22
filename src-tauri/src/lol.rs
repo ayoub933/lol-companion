@@ -270,6 +270,62 @@ pub struct RuneImport {
     /// Dégâts de ton équipe (champions choisis ou survolés) et de celle d'en face.
     pub ally_damage: TeamDamage,
     pub enemy_damage: TeamDamage,
+    /// Pages de runes proposées : avec un duel, la plus jouée puis jusqu'à 2 autres qui changent au moins une
+    /// rune ; sans duel, une seule (l'analyse générale d'OP.GG n'en donne qu'une). `page` : celle affichée (et
+    /// importée), choisie d'un clic ou la première.
+    pub pages: Vec<RunePage>,
+    pub page: usize,
+}
+
+/// Une page de runes proposée.
+#[derive(Serialize, Clone, Default, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct RunePage {
+    /// 4 runes principales, 2 secondaires, 3 fragments (numéros du client : icônes et import).
+    pub perks: Vec<i64>,
+    /// Noms des 4 runes principales et des 2 secondaires.
+    pub rune_names: Vec<String>,
+    pub keystone: String,
+    pub primary: String,
+    pub secondary: String,
+    pub primary_id: i64,
+    pub secondary_id: i64,
+    pub games: u64,
+    pub wins: u64,
+}
+
+impl RunePage {
+    fn of(runes: &opgg::Runes) -> Self {
+        Self {
+            perks: runes.perks.clone(),
+            rune_names: runes.rune_names.clone(),
+            keystone: runes.keystone.clone(),
+            primary: runes.primary_name.clone(),
+            secondary: runes.secondary_name.clone(),
+            primary_id: runes.primary_style,
+            secondary_id: runes.sub_style,
+            games: runes.games,
+            wins: runes.wins,
+        }
+    }
+}
+
+impl RuneImport {
+    /// Montre la page `index` des pages proposées (rune clé, voies, parties).
+    fn show_page(&mut self, index: usize) {
+        let Some(page) = self.pages.get(index).cloned() else {
+            return;
+        };
+        self.page = index;
+        self.keystone = page.keystone;
+        self.primary = page.primary;
+        self.secondary = page.secondary;
+        self.keystone_id = page.perks.first().copied().unwrap_or(0);
+        self.primary_id = page.primary_id;
+        self.secondary_id = page.secondary_id;
+        self.games = page.games;
+        self.wins = page.wins;
+    }
 }
 
 /// Dégâts d'une équipe en sélection, d'après la fiche de chaque champion dans le client : physiques ou magiques (un
@@ -1230,6 +1286,10 @@ pub struct Tracker {
     summoner_level: Option<u64>,
     /// Import fait pendant cette sélection : (champion, poste, mode, adversaire) et son résultat.
     rune_import: Option<(ImportKey, RuneImport)>,
+    /// Page de runes choisie d'un clic dans la sélection (ses runes), sinon la première proposée.
+    picked_page: Option<Vec<i64>>,
+    /// Dernière page choisie qu'on a essayé de mettre : pas de nouvel essai à chaque tour si le client la refuse.
+    page_tried: Option<Vec<i64>>,
     /// Aperçu du champion cliqué mais pas verrouillé (rien d'importé), même forme que `rune_import`.
     rune_preview: Option<(ImportKey, RuneImport)>,
     /// Réponses OP.GG déjà récupérées, pour ne pas redemander à chaque partie.
@@ -1287,6 +1347,8 @@ impl Tracker {
             riot_id: None,
             summoner_level: None,
             rune_import: None,
+            picked_page: None,
+            page_tried: None,
             rune_preview: None,
             cache: HashMap::new(),
             matchups: HashMap::new(),
@@ -1313,8 +1375,12 @@ impl Tracker {
     }
 
     /// `manual` = adversaire direct choisi d'un clic dans l'interface ; `form` : forme de Kayn choisie d'un clic.
-    pub async fn poll(&mut self, manual: Option<i64>, form: Option<Form>, settings: &Settings) -> Snapshot {
+    pub async fn poll(&mut self, manual: Option<i64>, form: Option<Form>, page: Option<Vec<i64>>, settings: &Settings) -> Snapshot {
         self.settings = settings.clone();
+        if page.is_none() {
+            self.page_tried = None;
+        }
+        self.picked_page = page;
         self.refresh_lockfile();
         // Client fermé (ou en train de démarrer) : l'historique de l'app reste consultable
         // (celui du compte de la dernière partie, tant que le compte n'est pas connu).
@@ -1499,6 +1565,9 @@ impl Tracker {
             ));
             self.locked_import(base, password, champion_id, position, mode, map_id, opponent.as_ref(), form).await
         };
+        if let Some(wanted) = self.picked_page.clone() {
+            self.pick_page(base, password, &mut result, &wanted).await;
+        }
 
         if laning && champion_id <= 0 {
             // Pas encore verrouillé : qui battrait ton adversaire, qui irait bien avec ton partenaire.
@@ -1662,6 +1731,51 @@ impl Tracker {
         };
         self.help_cache.insert(key, found.clone());
         Some(found)
+    }
+
+    /// Page de runes choisie d'un clic parmi les pages proposées : montrée, et mise dans le client si ton champion
+    /// est verrouillé (même si tu avais changé ta page depuis l'import : c'est ton choix). L'import (ou l'aperçu)
+    /// gardé en mémoire la retient pour les tours suivants.
+    async fn pick_page(&mut self, base: &str, password: &str, result: &mut RuneImport, wanted: &[i64]) {
+        let Some(index) = result.pages.iter().position(|p| p.perks == wanted) else {
+            return;
+        };
+        if index == result.page || result.pending || result.error.is_some() {
+            return;
+        }
+        let mut shown = Some(index);
+        if !result.preview && self.settings.import_runes {
+            if self.page_tried.as_deref() == Some(wanted) {
+                return;
+            }
+            self.page_tried = Some(wanted.to_vec());
+            let page = result.pages[index].clone();
+            match self.apply_page(base, password, &page, true).await {
+                Ok(_) => {
+                    eprintln!("[runes] page choisie : {} ({} / {}), {} parties", page.keystone, page.primary, page.secondary, page.games);
+                    result.page_applied = true;
+                    result.page_note = None;
+                }
+                Err(e) => {
+                    eprintln!("[runes] page choisie refusée : {e}");
+                    result.page_note = Some(e);
+                    shown = None;
+                }
+            }
+        }
+        if let Some(index) = shown {
+            result.show_page(index);
+        }
+        // Gardée pour les tours suivants (l'import n'est pas refait).
+        for (_, kept) in self.rune_import.iter_mut().chain(self.rune_preview.iter_mut()) {
+            if kept.champion_id == result.champion_id && kept.pages == result.pages {
+                if let Some(index) = shown {
+                    kept.show_page(index);
+                }
+                kept.page_applied = result.page_applied;
+                kept.page_note.clone_from(&result.page_note);
+            }
+        }
     }
 
     /// Ton champion est verrouillé : import des runes et du build (une fois par champion, poste, mode et adversaire).
@@ -1855,6 +1969,7 @@ impl Tracker {
             }
         };
         let mut versus = String::new();
+        let mut pages: Vec<opgg::Runes> = Vec::new();
         if let Some(opponent) = opponent {
             let mut info = MatchupInfo { opponent: opponent.name.clone(), ..Default::default() };
             match self.matchup(me, opponent, position, form).await {
@@ -1874,6 +1989,7 @@ impl Tracker {
                     info.tip = m.tip;
                     if info.applied {
                         chosen = m.analysis;
+                        pages = m.pages;
                         versus = format!(" vs {}", opponent.name);
                     }
                 }
@@ -1891,26 +2007,26 @@ impl Tracker {
                 Ok(m) if m.analysis.runes.games > 0 && !m.analysis.build.is_empty() => {
                     eprintln!("[forme] {} {} : page {} ({} parties contre Lee Sin)", me.name, form.name(), m.analysis.runes.keystone, m.analysis.runes.games);
                     chosen = m.analysis;
+                    pages = m.pages;
                 }
                 Ok(_) => eprintln!("[forme] {} {} : rien contre Lee Sin, runes générales gardées", me.name, form.name()),
                 Err(e) => eprintln!("[forme] duel de référence introuvable : {e}"),
             }
         }
 
-        // Runes affichées dans tous les cas ; mises dans le client seulement si l'import est activé.
-        let runes = &chosen.runes;
-        result.keystone = runes.keystone.clone();
-        result.primary = runes.primary_name.clone();
-        result.secondary = runes.secondary_name.clone();
-        result.keystone_id = runes.perks.first().copied().unwrap_or(0);
-        result.primary_id = runes.primary_style;
-        result.secondary_id = runes.sub_style;
-        result.games = runes.games;
-        result.wins = runes.wins;
+        // Runes affichées dans tous les cas ; mises dans le client seulement si l'import est activé. La page
+        // choisie d'un clic si elle fait partie des pages proposées, sinon la première.
+        if pages.is_empty() {
+            pages.push(chosen.runes.clone());
+        }
+        result.pages = pages.iter().map(RunePage::of).collect();
+        let wanted = self.picked_page.as_ref().and_then(|perks| result.pages.iter().position(|p| p.perks == *perks));
+        result.show_page(wanted.unwrap_or(0));
+        let page = result.pages[result.page].clone();
         if apply && self.settings.import_runes {
-            match self.apply_page(base, password, runes).await {
+            match self.apply_page(base, password, &page, false).await {
                 Ok(true) => {
-                    eprintln!("[runes] page appliquée{versus} : {} ({} / {})", runes.keystone, runes.primary_name, runes.secondary_name);
+                    eprintln!("[runes] page appliquée{versus} : {} ({} / {}), {} parties", page.keystone, page.primary, page.secondary, page.games);
                     result.page_applied = true;
                 }
                 Ok(false) => {
@@ -2299,24 +2415,29 @@ impl Tracker {
     /// modifier une page : elle est supprimée puis recréée à sa place (si la recréation échoue, l'ancienne est
     /// remise). Page sélectionnée par défaut (qui ne se supprime pas) : une page « LoL Companion » à part.
     /// Ok(false) : tu as changé de page ou de runes depuis l'import précédent, l'app n'y touche plus.
-    async fn apply_page(&mut self, base: &str, password: &str, runes: &opgg::Runes) -> Result<bool, String> {
+    /// `force` : page choisie d'un clic, mise même si tu avais changé ta page depuis l'import.
+    async fn apply_page(&mut self, base: &str, password: &str, runes: &RunePage, force: bool) -> Result<bool, String> {
         let pages_url = format!("{base}/lol-perks/v1/pages");
         let current = self.get(&format!("{base}/lol-perks/v1/currentpage"), Some(password)).await;
         let current_id = current.as_ref().and_then(|p| p["id"].as_i64());
-        if let Some((id, perks)) = &self.page_set {
+        if let Some((id, perks)) = self.page_set.as_ref().filter(|_| !force) {
             let unchanged = current_id == Some(*id) && current.as_ref().is_some_and(|p| sorted_perks(p) == sorted(perks));
             if !unchanged {
                 return Ok(false);
             }
         }
-        // La page à remplacer : la tienne si elle peut l'être, sinon l'ancienne page « LoL Companion ».
-        let mine = current.filter(|p| p["isDeletable"] == true && current_id.is_some());
+        // La page à remplacer : la tienne si elle peut l'être, sinon l'ancienne page « LoL Companion ». Page choisie
+        // d'un clic : celle que l'app a mise, jamais une des tiennes que tu aurais sélectionnée depuis.
+        let ours = self.page_set.as_ref().map(|(id, _)| *id).filter(|_| force);
+        let mine = current.filter(|p| p["isDeletable"] == true && current_id.is_some() && ours.is_none_or(|id| current_id == Some(id)));
         let target = match &mine {
             Some(page) => Some(page.clone()),
             None => {
                 let pages = self.get(&pages_url, Some(password)).await.unwrap_or(Value::Null);
                 let list = pages.as_array().cloned().unwrap_or_default();
-                list.into_iter().find(|p| p["name"] == PAGE_NAME && p["isDeletable"] == true)
+                let named = |p: &&Value| p["name"] == PAGE_NAME && p["isDeletable"] == true;
+                let set = list.iter().find(|p| ours.is_some_and(|id| p["id"] == id) && p["isDeletable"] == true);
+                set.or_else(|| list.iter().find(named)).cloned()
             }
         };
         if let Some(id) = target.as_ref().and_then(|p| p["id"].as_i64()) {
@@ -2324,8 +2445,8 @@ impl Tracker {
         }
         let page = json!({
             "name": PAGE_NAME,
-            "primaryStyleId": runes.primary_style,
-            "subStyleId": runes.sub_style,
+            "primaryStyleId": runes.primary_id,
+            "subStyleId": runes.secondary_id,
             "selectedPerkIds": runes.perks,
             "current": true,
         });

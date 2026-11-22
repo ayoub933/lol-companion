@@ -339,13 +339,16 @@
             <button class="form-btn blue" type="button" data-form="blue">BLEUE</button>
             <span class="muted small" id="forms-note"></span>
           </div>
-          <div class="rune-main">
+          <div class="rune-main" id="rune-main">
             <img class="keystone-icon" id="keystone-icon" alt="" hidden />
             <span class="keystone" id="keystone"></span>
           </div>
           <span class="rate me" id="runes-rate"></span>
           <span class="trees" id="runes-trees"></span>
           <span class="muted small right" id="runes-games"></span>
+          <!-- Pages proposées pour le duel, leur % de victoires à droite ; un clic en change (main.js, renderPages()). -->
+          <div class="rune-pages span" id="rune-pages" hidden></div>
+          <span class="muted small span" id="rune-pages-note" hidden></span>
           <span class="applied span" id="runes-applied"></span>
         </section>
 

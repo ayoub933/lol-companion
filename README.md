@@ -172,7 +172,7 @@ joués pour ce champion et ton poste, puis :
   échoue, ta page est remise telle qu'elle était. Si la page sélectionnée est une page par défaut de Riot
   (qui ne se supprime pas), l'app remplace sa page « LoL Companion », ou en crée une s'il reste de la
   place. Si tu changes de page ou de runes après l'import, l'app n'y touche plus jusqu'à la fin de la
-  sélection.
+  sélection (sauf si tu choisis d'un clic une autre page du duel, voir plus bas).
 - Sorts : si tu les changes toi-même pendant la sélection, l'app n'y touche plus. Avec « sa touche
   actuelle », le Saut éclair reste là où tu l'avais mis ; si le client donne des sorts illisibles au
   moment de l'import, l'app prend ceux qu'elle a lus juste avant, et n'y touche pas si elle n'en a aucun.
@@ -190,6 +190,13 @@ joués pour ce champion et ton poste, puis :
 - Runes, build et set d'objets passent alors à ceux du duel (« vs Sett »), avec tes stats contre lui
   et le conseil d'OP.GG (en anglais, OP.GG ne le traduit pas). Moins de 50 parties pour la page de
   runes du duel : les runes générales restent.
+- Pages de runes du duel : la plus jouée, puis jusqu'à 2 autres (au moins 50 parties chacune) qui changent
+  au moins une rune (pas seulement les fragments), chacune avec ses runes en icônes (nom au survol), son
+  % de victoires et ses parties à droite. Celle mise dans le client est en bleu (au départ, la plus jouée).
+  Un clic sur une autre la met à sa place, dans la page « LoL Companion » de l'app, jamais dans une de tes
+  pages que tu aurais sélectionnée depuis ; choisie pendant l'aperçu, elle est importée au verrouillage.
+  Sans adversaire direct connu, OP.GG ne donne qu'une page (son analyse générale) : les autres arrivent
+  avec lui.
 - Objets du duel (départ, objets principaux, bottes) : le meilleur % de victoires parmi les choix
   joués au moins 100 fois (en dessous, un % élevé peut être du hasard), sinon le plus joué. L'autre choix
   du 1er et du 2e objet n'est jamais un des 3 objets principaux.
