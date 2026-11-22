@@ -9,7 +9,11 @@ use overlay::Overlay;
 use settings::Settings;
 use std::{
     path::PathBuf,
-    sync::{atomic::Ordering, Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    time::{Duration, Instant},
 };
 use tauri::{
     menu::{Menu, MenuItem},
@@ -33,8 +37,24 @@ struct Prefs {
     file: PathBuf,
     settings: Mutex<Settings>,
 }
-/// Nouvelle version trouvée au démarrage, prête à installer.
+/// Nouvelle version trouvée, prête à installer.
 struct PendingUpdate(Mutex<Option<tauri_plugin_updater::Update>>);
+
+/// Mises à jour : vérifiées au démarrage puis toutes les 3 h ; 5 min après un échec (au démarrage de Windows,
+/// internet n'est pas toujours là).
+const UPDATE_EVERY: Duration = Duration::from_secs(3 * 60 * 60);
+const UPDATE_RETRY: Duration = Duration::from_secs(5 * 60);
+/// Installation automatique : après une minute ni en sélection ni en partie, fenêtre pas au premier plan ;
+/// 3 essais au plus, à 30 min d'écart (le bouton du bandeau reste là).
+const UPDATE_QUIET: Duration = Duration::from_secs(60);
+const UPDATE_TRIES: u32 = 3;
+const UPDATE_GAP: Duration = Duration::from_secs(30 * 60);
+/// Fenêtre cachée ou affichée juste avant une mise à jour, relu au redémarrage (s'il a moins de 5 min) pour la
+/// remettre pareil : l'installateur relance l'app avec les options de son lancement, pas son état du moment.
+const UPDATE_MARK: &str = "maj-fenetre.txt";
+const UPDATE_MARK_AGE: Duration = Duration::from_secs(5 * 60);
+/// Une seule installation à la fois (bouton du bandeau ou installation automatique).
+static INSTALLING: AtomicBool = AtomicBool::new(false);
 
 #[tauri::command]
 fn get_state(latest: tauri::State<'_, Latest>) -> lol::Snapshot {
@@ -113,15 +133,63 @@ async fn searched_match_details(
 /// (sous Windows, l'installateur ferme l'app et la relance lui-même).
 #[tauri::command]
 async fn install_update(app: AppHandle) -> Result<(), String> {
+    if INSTALLING.swap(true, Ordering::SeqCst) {
+        return Err("Mise à jour déjà en cours…".to_string());
+    }
     let update = app.state::<PendingUpdate>().0.lock().unwrap().clone();
     let Some(update) = update else {
+        INSTALLING.store(false, Ordering::SeqCst);
         return Err("Aucune mise à jour à installer.".to_string());
     };
-    update
-        .download_and_install(|_, _| {}, || {})
-        .await
-        .map_err(|e| format!("Mise à jour impossible : {e}"))?;
+    let mark = remember_window(&app);
+    if let Err(e) = update.download_and_install(|_, _| {}, || {}).await {
+        if let Some(file) = mark {
+            let _ = std::fs::remove_file(file);
+        }
+        INSTALLING.store(false, Ordering::SeqCst);
+        return Err(format!("Mise à jour impossible : {e}"));
+    }
     app.restart()
+}
+
+/// Note si la fenêtre est cachée (ou réduite) juste avant une mise à jour.
+fn remember_window(app: &AppHandle) -> Option<PathBuf> {
+    let window = app.get_webview_window("main")?;
+    let hidden = !window.is_visible().unwrap_or(true) || window.is_minimized().unwrap_or(false);
+    let file = app.path().app_config_dir().ok()?.join(UPDATE_MARK);
+    std::fs::write(&file, if hidden { "cachee" } else { "visible" }).ok()?;
+    Some(file)
+}
+
+/// Fenêtre cachée au lancement ? Comme juste avant la mise à jour qui vient de relancer l'app, sinon seulement au
+/// lancement avec Windows (--minimized).
+fn start_hidden(app: &AppHandle) -> bool {
+    let minimized = std::env::args().any(|arg| arg == "--minimized");
+    let Some(file) = app.path().app_config_dir().ok().map(|dir| dir.join(UPDATE_MARK)) else {
+        return minimized;
+    };
+    let Ok(text) = std::fs::read_to_string(&file) else {
+        return minimized;
+    };
+    let age = std::fs::metadata(&file).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok());
+    let _ = std::fs::remove_file(&file);
+    if !age.is_some_and(|age| age < UPDATE_MARK_AGE) {
+        return minimized;
+    }
+    let hidden = text == "cachee";
+    eprintln!("[maj] relancée après la mise à jour : fenêtre {}", if hidden { "cachée" } else { "affichée" });
+    hidden
+}
+
+/// Ni sélection, ni partie, ni file d'attente, ni fin de partie : une mise à jour peut relancer l'app.
+fn quiet(snap: &lol::Snapshot) -> bool {
+    let phase = !snap.client_found || matches!(snap.phase.as_deref(), Some("None" | "Lobby"));
+    phase && snap.runes.is_none() && snap.game.is_none() && !snap.recording
+}
+
+/// Fenêtre au premier plan : tu t'en sers, on ne la ferme pas pour une mise à jour.
+fn focused(app: &AppHandle) -> bool {
+    app.get_webview_window("main").and_then(|w| w.is_focused().ok()).unwrap_or(false)
 }
 
 /// Montre la fenêtre (cachée dans la zone de notification, ou réduite).
@@ -297,26 +365,44 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 fit_to_screen(&window);
             }
-            // Fenêtre cachée au lancement avec Windows (--minimized), affichée sinon.
-            if !std::env::args().any(|arg| arg == "--minimized") {
+            // Fenêtre cachée au lancement avec Windows (--minimized), affichée sinon ; après une mise à jour,
+            // comme elle était avant.
+            if !start_hidden(app.handle()) {
                 show_window(app.handle(), true);
             }
 
-            // Mises à jour : vérifiées au démarrage de la version installée (pas pendant le développement).
-            if !cfg!(debug_assertions) {
+            // Mises à jour de la version installée : au démarrage puis toutes les 3 h (pas pendant le
+            // développement, sauf avec UPDATE_URL pour les tests). Installées plus bas, hors sélection et hors partie.
+            let test_url = std::env::var("UPDATE_URL").ok().filter(|_| cfg!(debug_assertions));
+            if !cfg!(debug_assertions) || test_url.is_some() {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    let found = match handle.updater() {
-                        Ok(updater) => updater.check().await,
-                        Err(e) => Err(e),
-                    };
-                    match found {
-                        Ok(Some(update)) => {
-                            eprintln!("[maj] version {} disponible", update.version);
-                            *handle.state::<PendingUpdate>().0.lock().unwrap() = Some(update);
-                        }
-                        Ok(None) => eprintln!("[maj] l'app est à jour"),
-                        Err(e) => eprintln!("[maj] vérification impossible : {e}"),
+                    loop {
+                        let builder = handle.updater_builder();
+                        let builder = match test_url.as_deref().map(str::parse) {
+                            Some(Ok(url)) => builder.endpoints(vec![url]),
+                            _ => Ok(builder),
+                        };
+                        let found = match builder.and_then(|b| b.build()) {
+                            Ok(updater) => updater.check().await,
+                            Err(e) => Err(e),
+                        };
+                        let wait = match found {
+                            Ok(Some(update)) => {
+                                eprintln!("[maj] version {} disponible", update.version);
+                                *handle.state::<PendingUpdate>().0.lock().unwrap() = Some(update);
+                                UPDATE_EVERY
+                            }
+                            Ok(None) => {
+                                eprintln!("[maj] l'app est à jour");
+                                UPDATE_EVERY
+                            }
+                            Err(e) => {
+                                eprintln!("[maj] vérification impossible : {e}");
+                                UPDATE_RETRY
+                            }
+                        };
+                        tokio::time::sleep(wait).await;
                     }
                 });
             }
@@ -329,6 +415,10 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 let mut tracker = lol::Tracker::new(assets, data_dir);
                 let mut previous = lol::Snapshot::default();
+                // Installation automatique : calme depuis quand, essais faits, dernier essai.
+                let mut quiet_since: Option<Instant> = None;
+                let mut tries = 0;
+                let mut last_try: Option<Instant> = None;
                 loop {
                     let manual = *handle.state::<Opponent>().0.lock().unwrap();
                     let form = *handle.state::<ChosenForm>().0.lock().unwrap();
@@ -336,6 +426,26 @@ pub fn run() {
                     let settings = handle.state::<Prefs>().settings.lock().unwrap().clone();
                     let mut snap = tracker.poll(manual, form, page, &settings).await;
                     snap.update = handle.state::<PendingUpdate>().0.lock().unwrap().as_ref().map(|u| u.version.clone());
+                    // Nouvelle version : installée toute seule après une minute ni en sélection ni en partie,
+                    // fenêtre pas au premier plan (rien n'est coupé pendant que tu t'en sers).
+                    if snap.update.is_some() && !INSTALLING.load(Ordering::SeqCst) {
+                        let calm = quiet(&snap) && !focused(&handle);
+                        quiet_since = if calm { quiet_since.or_else(|| Some(Instant::now())) } else { None };
+                        let due = quiet_since.is_some_and(|t| t.elapsed() >= UPDATE_QUIET)
+                            && tries < UPDATE_TRIES
+                            && last_try.is_none_or(|t| t.elapsed() >= UPDATE_GAP);
+                        if due {
+                            tries += 1;
+                            last_try = Some(Instant::now());
+                            let app = handle.clone();
+                            tauri::async_runtime::spawn(async move {
+                                eprintln!("[maj] installation automatique (ni sélection ni partie)");
+                                if let Err(e) = install_update(app).await {
+                                    eprintln!("[maj] {e}");
+                                }
+                            });
+                        }
+                    }
                     if snap.runes.is_none() {
                         // Hors sélection des champions : le choix fait d'un clic est oublié.
                         *handle.state::<Opponent>().0.lock().unwrap() = None;

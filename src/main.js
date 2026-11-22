@@ -1776,7 +1776,7 @@ function render(state) {
 
   $("update").hidden = !state.update;
   if (state.update && !$("update-button").disabled) {
-    $("update-text").textContent = `Nouvelle version ${state.update} disponible`;
+    $("update-text").textContent = `Nouvelle version ${state.update} : installée toute seule hors sélection et hors partie`;
   }
 
   // Salon : seulement hors sélection et hors partie (la place y sert à autre chose). Celui d'un joueur cherché

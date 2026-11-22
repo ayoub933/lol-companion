@@ -9,7 +9,8 @@ Aucune clé API Riot n'est nécessaire.
 ## Installer (avec mises à jour automatiques)
 
 L'installateur Windows est fabriqué par GitHub à chaque nouvelle version ; l'app
-installée vérifie au démarrage s'il y en a une plus récente et propose de l'installer.
+installée vérifie au démarrage puis toutes les 3 h s'il y en a une plus récente, et l'installe
+toute seule quand tu n'es ni en sélection ni en partie.
 Mise en place, une seule fois :
 
 1. **Dépôt GitHub public** : crée un dépôt vide `lol-companion`, puis depuis le dossier du projet :
@@ -61,8 +62,13 @@ Versions suivantes (ex. 0.9.1), depuis le dossier `lol-companion` :
    git push origin v0.9.1
    ```
 4. L'onglet Actions du dépôt montre la construction (10 à 15 minutes), puis la page Releases a le
-   nouvel installateur. L'app installée affiche un bandeau « Nouvelle version disponible » à son
-   démarrage suivant ; le bouton installe et relance l'app.
+   nouvel installateur. L'app installée la voit à son démarrage ou dans les 3 h (5 min après un échec,
+   par exemple internet pas encore là au démarrage de Windows) et affiche un bandeau « Nouvelle
+   version disponible » ; son bouton installe et relance l'app tout de suite.
+   Sinon, elle s'installe toute seule après une minute sans sélection ni partie (ni file d'attente, ni
+   fin de partie), quand la fenêtre n'est pas au premier plan : une petite fenêtre de progression
+   apparaît quelques secondes, puis l'app revient comme elle était (cachée près de l'horloge, ou
+   affichée). 3 essais au plus par lancement, à 30 min d'écart ; ensuite, le bouton.
 
 Installateur fabriqué sur ton PC plutôt que sur GitHub (dans `src-tauri\target\release\bundle\nsis\`) :
 
@@ -88,7 +94,8 @@ cargo run
 ```
 
 La première compilation prend quelques minutes, les suivantes quelques secondes.
-En développement, l'app ne cherche pas de mise à jour. Évite d'y cocher « Lancer avec
+En développement, l'app ne cherche pas de mise à jour (sauf avec la variable `UPDATE_URL`, adresse
+d'un `latest.json` de test). Évite d'y cocher « Lancer avec
 Windows » : c'est l'exe de développement qui serait lancé au démarrage.
 
 ## Réglages (roue ⚙ en haut à droite)
