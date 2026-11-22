@@ -107,6 +107,12 @@ async fn match_details(
     assets.match_details(game_id, champion_id).await
 }
 
+/// Tes amis d'après le client (barre de recherche), ceux qui jouent d'abord.
+#[tauri::command]
+async fn friends(assets: tauri::State<'_, lol::Assets>) -> Result<Vec<lol::Friend>, String> {
+    assets.friends().await.ok_or_else(|| "Liste d'amis indisponible : client fermé ?".to_string())
+}
+
 /// Salon d'un autre joueur, cherché par son Riot ID (Nom#TAG) et sa région (vide : celle de ton client), ou par
 /// son compte (un joueur d'une de tes parties).
 #[tauri::command]
@@ -274,12 +280,13 @@ pub fn run() {
             install_update,
             match_details,
             search_player,
-            searched_match_details
+            searched_match_details,
+            friends
         ])
         // Images lues dans le client : lcu://localhost/<numéro du champion>, lcu://localhost/item-<numéro de l'objet>,
         // lcu://localhost/splash-<numéro du skin> (illustration), lcu://localhost/perk-<numéro de la rune ou de la voie>,
         // lcu://localhost/spell-<numéro du sort>, lcu://localhost/rank-<rang en minuscules> (emblème),
-        // lcu://localhost/gold (icône de l'or).
+        // lcu://localhost/gold (icône de l'or), lcu://localhost/profile-<numéro de l'icône de profil>.
         .register_asynchronous_uri_scheme_protocol("lcu", move |_ctx, request, responder| {
             let icons = icons.clone();
             let path = request.uri().path().trim_start_matches('/').to_string();
@@ -304,6 +311,11 @@ pub fn run() {
                     icons.rank_emblem(tier).await.map(|png| (png, "image/png"))
                 } else if path == "gold" {
                     icons.gold_icon().await.map(|png| (png, "image/png"))
+                } else if let Some(icon) = path.strip_prefix("profile-") {
+                    match number(icon) {
+                        Some(id) => icons.profile_icon(id).await.map(|jpg| (jpg, "image/jpeg")),
+                        None => None,
+                    }
                 } else if let Some(skin) = path.strip_prefix("splash-") {
                     match number(skin).filter(|id| *id > 0) {
                         Some(id) => icons.splash(id).await.map(|jpg| (jpg, "image/jpeg")),

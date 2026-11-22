@@ -482,6 +482,41 @@ struct English {
     asked: Option<Instant>,
 }
 
+/// Un ami de ta liste dans le client, pour la barre de recherche.
+#[derive(Serialize, Clone, Default, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Friend {
+    /// « Pseudo#TAG ».
+    pub riot_id: String,
+    pub puuid: String,
+    /// Icône de profil.
+    pub icon: i64,
+    /// Voir `FRIEND_ORDER`.
+    pub status: String,
+    /// Son champion en partie ou en sélection (0 sinon).
+    pub champion_id: i64,
+    pub champion: String,
+    /// File de la partie (numéro du client, voir QUEUES dans main.js) ; -1 si inconnue.
+    pub queue_id: i64,
+    /// Mode de jeu (« CLASSIC », « ARAM », « TFT »…).
+    pub mode: String,
+    /// Début de sa partie (ms), 0 si inconnu.
+    pub since: i64,
+    /// Dernière connexion (ms), 0 si inconnue.
+    pub last_seen: i64,
+    /// Autre jeu Riot où il joue (« Valorant »).
+    pub product: String,
+}
+
+/// Ordre des amis : en partie, en sélection, en file, sur un autre jeu Riot, dans un salon, en ligne, absent,
+/// sur mobile, hors ligne.
+const FRIEND_ORDER: [&str; 9] = ["game", "select", "queue", "other", "lobby", "online", "away", "mobile", "offline"];
+
+/// Nombre du client, écrit en nombre ou en texte (« 157 ») ; 0 sinon.
+fn text_number(value: &Value) -> i64 {
+    value.as_i64().or_else(|| value.as_str().and_then(|s| s.parse().ok())).unwrap_or(0)
+}
+
 /// Rangs dont le client a un emblème (images/ranked-emblem/emblem-<rang>.png).
 const TIERS: [&str; 10] =
     ["iron", "bronze", "silver", "gold", "platinum", "emerald", "diamond", "master", "grandmaster", "challenger"];
@@ -925,6 +960,66 @@ impl Assets {
     pub async fn client_region(&self) -> Option<String> {
         let locale = self.client_json("/riotclient/region-locale", false).await?;
         locale["region"].as_str().filter(|r| !r.is_empty()).map(str::to_uppercase)
+    }
+
+    /// Icône de profil (liste d'amis), lue dans le client à chaque fois : il y en a trop pour les garder.
+    pub async fn profile_icon(&self, id: i64) -> Option<Vec<u8>> {
+        self.client_file(&format!("/lol-game-data/assets/v1/profile-icons/{id}.jpg")).await
+    }
+
+    /// Tes amis d'après le client, ceux qui jouent d'abord (voir `Friend`) ; None si le client est fermé.
+    pub async fn friends(&self) -> Option<Vec<Friend>> {
+        let list = self.client_json("/lol-chat/v1/friends", false).await?;
+        let mut friends = Vec::new();
+        for f in list.as_array()?.iter() {
+            let name = f["gameName"].as_str().unwrap_or_default();
+            if name.is_empty() {
+                continue;
+            }
+            let lol = &f["lol"];
+            let product = match f["product"].as_str().unwrap_or_default() {
+                "valorant" => "Valorant",
+                "bacon" => "Legends of Runeterra",
+                _ => "",
+            };
+            let status = match (f["availability"].as_str().unwrap_or("offline"), lol["gameStatus"].as_str().unwrap_or_default()) {
+                ("offline", _) => "offline",
+                ("mobile", _) => "mobile",
+                _ if !product.is_empty() => "other",
+                (_, "inGame" | "spectating") => "game",
+                (_, "championSelect" | "champSelect") => "select",
+                (_, "inQueue" | "matchmaking" | "readyCheck") => "queue",
+                (_, game) if game == "lobby" || game.starts_with("hosting") => "lobby",
+                ("away", _) => "away",
+                _ => "online",
+            };
+            let champion_id = text_number(&lol["championId"]);
+            let champion = if champion_id > 0 && matches!(status, "game" | "select") {
+                self.champion_name(champion_id).await
+            } else {
+                String::new()
+            };
+            friends.push(Friend {
+                riot_id: format!("{name}#{}", f["gameTag"].as_str().unwrap_or_default()),
+                puuid: f["puuid"].as_str().unwrap_or_default().to_string(),
+                icon: text_number(&f["icon"]),
+                status: status.to_string(),
+                champion_id: if champion.is_empty() { 0 } else { champion_id },
+                champion,
+                queue_id: lol["queueId"].as_str().and_then(|q| q.parse().ok()).unwrap_or(-1),
+                mode: lol["gameMode"].as_str().unwrap_or_default().to_string(),
+                since: if status == "game" { text_number(&lol["timeStamp"]) } else { 0 },
+                last_seen: text_number(&f["lastSeenOnlineTimestamp"]),
+                product: product.to_string(),
+            });
+        }
+        // Ceux qui jouent, puis en ligne, puis hors ligne (vus le plus récemment d'abord) ; sinon par nom.
+        let rank = |f: &Friend| FRIEND_ORDER.iter().position(|s| *s == f.status).unwrap_or(FRIEND_ORDER.len());
+        friends.sort_by(|a, b| {
+            let seen = if a.status == "offline" { b.last_seen.cmp(&a.last_seen) } else { std::cmp::Ordering::Equal };
+            rank(a).cmp(&rank(b)).then(seen).then_with(|| a.riot_id.to_lowercase().cmp(&b.riot_id.to_lowercase()))
+        });
+        Some(friends)
     }
 
     /// Nom d'un champion d'après le client (la liste est lue une fois) ; son numéro s'il est inconnu.

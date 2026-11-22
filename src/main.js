@@ -1682,15 +1682,142 @@ function setupSearch() {
   });
   $("search").addEventListener("submit", (event) => {
     event.preventDefault();
+    closeFriends();
     searchPlayer($("search-input").value.trim(), $("search-region").value);
   });
-  $("search-input").addEventListener("input", () => searchMessage(""));
+  $("search-input").addEventListener("click", openFriends);
+  $("search-input").addEventListener("input", (event) => {
+    searchMessage("");
+    friendsQuery = event.target.value.trim().toLowerCase();
+    if (friendsOpen) renderFriends();
+    else openFriends(true);
+  });
   $("search-input").addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
+    // Échap ferme d'abord la liste d'amis.
+    if (friendsOpen) return closeFriends();
     event.target.value = "";
     leaveSearch(true);
   });
   $("search-back").addEventListener("click", () => leaveSearch(true));
+  // Un clic ailleurs que sur la barre ou la liste la ferme.
+  document.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (friendsOpen && !event.target.closest("#search, #friends")) closeFriends();
+    },
+    true,
+  );
+}
+
+// ---------- Tes amis (sous la barre de recherche) ----------
+
+// Liste du client, ouverte d'un clic sur la barre : ceux qui jouent d'abord, puis ceux en ligne, puis les autres
+// (la molette la fait défiler). Le texte tapé après l'ouverture la filtre (pas le joueur déjà affiché dans la
+// barre) ; un clic sur un ami ouvre son profil. Relue toutes les 20 s tant qu'elle est ouverte, rien sinon.
+const FRIEND_STATUS = {
+  game: "En partie",
+  select: "En sélection",
+  queue: "En file",
+  lobby: "Dans un salon",
+  online: "En ligne",
+  away: "Absent",
+  mobile: "Sur mobile",
+  offline: "Hors ligne",
+};
+const FRIEND_GROUPS = [
+  ["EN JEU", ["game", "select", "queue", "other"]],
+  ["EN LIGNE", ["lobby", "online", "away", "mobile"]],
+  ["HORS LIGNE", ["offline"]],
+];
+let friendList = [];
+let friendsOpen = false;
+let friendsTimer = 0;
+let friendsQuery = "";
+
+async function loadFriends() {
+  try {
+    friendList = await invoke("friends");
+  } catch {
+    friendList = [];
+  }
+  if (friendsOpen) renderFriends();
+}
+
+// `typed` : ouverte en tapant (le texte tapé filtre déjà) ; sinon d'un clic, toute la liste.
+function openFriends(typed = false) {
+  if (friendsOpen) return;
+  friendsOpen = true;
+  if (typed !== true) friendsQuery = "";
+  renderFriends();
+  loadFriends();
+  friendsTimer = setInterval(loadFriends, 20000);
+}
+
+function closeFriends() {
+  if (!friendsOpen) return;
+  friendsOpen = false;
+  clearInterval(friendsTimer);
+  $("friends").hidden = true;
+}
+
+function renderFriends() {
+  const box = $("friends");
+  const query = friendsQuery;
+  const shown = friendList.filter((f) => !query || f.riotId.toLowerCase().includes(query));
+  box.hidden = !friendsOpen || !shown.length;
+  // Rien à refaire si la liste, le filtre et la minute n'ont pas changé (les icônes ne sont pas rechargées).
+  const key = `${query}|${Math.floor(Date.now() / 60000)}|${JSON.stringify(shown)}`;
+  if (box.dataset.key === key) return;
+  if (!box.dataset.key?.startsWith(`${query}|`)) box.scrollTop = 0;
+  box.dataset.key = key;
+  const rows = [];
+  for (const [title, statuses] of FRIEND_GROUPS) {
+    const group = shown.filter((f) => statuses.includes(f.status));
+    if (!group.length) continue;
+    rows.push(el("div", "friend-group", [title, el("small", "", String(group.length))]));
+    rows.push(...group.map(friendRow));
+  }
+  box.replaceChildren(...rows);
+}
+
+function friendRow(friend) {
+  const row = el("button", `friend ${friend.status}`);
+  row.type = "button";
+  row.title = `Voir le profil de ${friend.riotId}`;
+  const icon = el("img", "friend-icon");
+  icon.alt = "";
+  icon.loading = "lazy";
+  if (friend.icon > 0) setImage(icon, iconUrl(`profile-${friend.icon}`));
+  const [name, tag] = friend.riotId.split("#");
+  row.append(
+    icon,
+    el("span", "friend-main", [
+      el("span", "friend-name", [name, el("small", "", `#${tag}`)]),
+      el("span", "friend-status", [el("i", "friend-dot"), el("span", "friend-text", friendStatus(friend))]),
+    ]),
+  );
+  row.addEventListener("click", () => {
+    closeFriends();
+    $("search-input").value = friend.riotId;
+    searchPlayer(friend.riotId, "", friend.puuid);
+  });
+  return row;
+}
+
+// « En partie · Vayne · SOLO/DUO · 12 min », « Sur Valorant », « Hors ligne · il y a 3 jours »…
+function friendStatus(friend) {
+  const parts = [friend.status === "other" ? `Sur ${friend.product}` : FRIEND_STATUS[friend.status]];
+  if (friend.champion) parts.push(friend.champion);
+  if (["game", "select", "queue"].includes(friend.status)) {
+    const queue = QUEUES[friend.queueId] ?? (["TFT", "ARAM"].includes(friend.mode) ? friend.mode : "");
+    if (queue) parts.push(queue);
+  }
+  if (friend.status === "game" && friend.since > 0) {
+    parts.push(`${Math.max(1, Math.round((Date.now() - friend.since) / 60000))} min`);
+  }
+  if (friend.status === "offline" && friend.lastSeen > 0) parts.push(ago(friend.lastSeen));
+  return parts.join(" · ");
 }
 
 // `region` vide : celle de ton client ; `puuid` : son compte, quand il est connu (joueur d'une de tes parties).

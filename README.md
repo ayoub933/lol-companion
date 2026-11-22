@@ -463,11 +463,20 @@ Fichiers, dans `%APPDATA%\com.perso.lol-companion\` :
 
 ## Rechercher un joueur
 
-La barre au milieu en haut, sur tous les écrans : son Riot ID (`Pseudo#TAG`), sa région, puis Entrée.
+La barre en haut, alignée sur la colonne du milieu, sur tous les écrans : son Riot ID (`Pseudo#TAG`), sa
+région, puis Entrée.
 Son salon s'affiche alors à la place de l'écran du moment (rang, forme, champions du moment, 10 dernières
 parties, détail d'une partie d'un clic). Le bouton à gauche de la barre (« Mon profil », « La sélection »
 ou « La partie ») ou Échap dans la barre te ramènent à cet écran ; un nouvel écran (sélection qui commence,
 partie qui démarre ou se termine) aussi.
+
+**Tes amis** : un clic sur la barre ouvre ta liste d'amis du client juste en dessous (rien au salon sinon).
+D'abord ceux qui jouent (en partie avec leur champion, leur file et depuis combien de minutes, en
+sélection, en file, sur un autre jeu Riot), puis ceux en ligne (dans un salon, en ligne, absent, sur
+mobile), puis les autres (hors ligne, vus le plus récemment d'abord) ; la molette fait défiler. Ce que tu
+tapes ensuite la filtre ; un clic sur un ami ouvre son profil. Un clic ailleurs ou Échap la referme. Elle
+n'est lue dans le client qu'à l'ouverture puis toutes les 20 s tant qu'elle est ouverte ; les icônes de
+profil ne se chargent qu'en arrivant à l'écran.
 
 Un clic sur un joueur ouvre aussi son profil : sur son nom dans le détail d'une partie (y compris celles
 d'un joueur cherché), ou sur sa case dans l'écran de la partie en cours (sauf les joueurs en mode streamer).
