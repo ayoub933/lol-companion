@@ -358,6 +358,9 @@ pub fn run() {
                     for (wanted, which) in [(build, Overlay::Build), (gold, Overlay::Gold)] {
                         if wanted {
                             overlay::prepare(&handle, which);
+                        } else if snap.game.is_none() {
+                            // Plus de partie : la fenêtre est fermée, sa page ne garde plus de mémoire.
+                            overlay::close(&handle, which);
                         }
                     }
                     ready.build.store(build, Ordering::Relaxed);

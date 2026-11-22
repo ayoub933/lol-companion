@@ -454,6 +454,125 @@ function historyRow(game) {
 }
 
 // Moyennes par champion, et bilan par duel, sur les parties enregistrées par l'app.
+// ---------- Courbe de tes LP ----------
+
+// Repères de division sur la courbe : initiale du rang et division (« É II ») ; le survol donne le nom entier.
+const TIER_KEYS = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND"];
+const SVG_NS = "http://www.w3.org/2000/svg";
+// Dessin en pixels de la carte (sa largeur mesurée, redessiné si elle change) : marge à gauche pour les repères.
+const LP_VIEW = { height: 110, left: 34, right: 8, top: 8, bottom: 8 };
+let lpDrawn = "";
+let lpProfile = null;
+new ResizeObserver(() => {
+  if (lpProfile && !$("lp").hidden) renderLp(lpProfile, true);
+}).observe($("lp-chart"));
+
+function svgEl(tag, attrs) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+  return node;
+}
+
+// Repère d'une limite de division (une place de l'échelle classée, 100 par division, Maître dès 2 800).
+function lpTick(value) {
+  if (value >= 2800) return value === 2800 ? "M" : `M ${value - 2800}`;
+  const tier = TIERS[TIER_KEYS[Math.floor(value / 400)]] ?? "";
+  return `${tier.charAt(0)} ${["IV", "III", "II", "I"][Math.floor((value % 400) / 100)]}`;
+}
+
+const lpRank = (p) => `${TIERS[p.tier] ?? p.tier}${p.division ? ` ${p.division}` : ""} · ${p.lp} LP`;
+
+// Tes LP en solo/duo, partie après partie, retrouvés par l'app (lol.rs, lp_curve) : la courbe des dernières
+// classées qu'elle a suivies, avec le total gagné ou perdu. Au survol, la partie et ton rang après elle.
+function renderLp(profile, show) {
+  $("lp").hidden = !show;
+  if (!show) return;
+  lpProfile = profile;
+  const points = profile?.lpCurve ?? [];
+  const games = points.filter((p) => p.gameId);
+  $("lp-empty").hidden = games.length > 0;
+  $("lp-body").hidden = games.length === 0;
+  const width = $("lp-chart").clientWidth;
+  // Rien de neuf (ni la courbe ni la largeur) : elle reste telle quelle, survol en cours compris.
+  const key = `${width}|${JSON.stringify(points)}`;
+  if (key === lpDrawn || !width) return;
+  lpDrawn = key;
+  if (!games.length) {
+    $("lp-chart").replaceChildren();
+    return;
+  }
+  const net = games.reduce((sum, p) => sum + p.change, 0);
+  $("lp-net").replaceChildren(net > 0 ? `+${net}` : net < 0 ? `−${-net}` : "±0", el("small", "", " LP"));
+  $("lp-sub").textContent = `sur tes ${games.length} ${games.length > 1 ? "dernières classées" : "dernière classée"}`;
+
+  const { height, left, right, top, bottom } = LP_VIEW;
+  const values = points.map((p) => p.value);
+  const low = Math.floor((Math.min(...values) - 15) / 100) * 100;
+  const high = Math.ceil((Math.max(...values) + 15) / 100) * 100;
+  const x = (i) => left + (i * (width - left - right)) / (points.length - 1);
+  const y = (v) => top + ((high - v) * (height - top - bottom)) / (high - low);
+  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, height, role: "img" });
+  svg.setAttribute("aria-label", `Tes LP en solo/duo sur tes ${games.length} dernières classées : ${net > 0 ? "+" : ""}${net} LP`);
+  // Une limite de division tous les 100 ; repères un sur deux si la courbe en traverse beaucoup.
+  const lines = [];
+  for (let v = low; v <= high; v += 100) lines.push(v);
+  const every = lines.length > 5 ? 2 : 1;
+  lines.forEach((v, i) => {
+    svg.append(svgEl("line", { class: "lp-grid", x1: left, x2: width - right, y1: y(v), y2: y(v) }));
+    if (i % every === 0) {
+      const tick = svgEl("text", { class: "lp-tick", x: left - 6, y: y(v) + 3.5, "text-anchor": "end" });
+      tick.textContent = lpTick(v);
+      svg.append(tick);
+    }
+  });
+  const path = points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
+  const floor = (height - bottom).toFixed(1);
+  svg.append(svgEl("path", { class: "lp-area", d: `${path} L${x(points.length - 1).toFixed(1)},${floor} L${x(0).toFixed(1)},${floor} Z` }));
+  svg.append(svgEl("path", { class: "lp-line", d: path }));
+  const cross = svgEl("line", { class: "lp-cross", y1: top, y2: height - bottom, visibility: "hidden" });
+  svg.append(cross);
+  points.forEach((p, i) => {
+    const kind = p.gameId ? (p.win ? "win" : "loss") : "start";
+    svg.append(svgEl("circle", { class: `lp-dot ${kind}`, cx: x(i), cy: y(p.value), r: p.gameId ? 4 : 3 }));
+  });
+  // Survol : la ligne verticale va au point le plus proche, la bulle dit la partie et le rang après elle.
+  const hit = svgEl("rect", { class: "lp-hit", x: left, y: 0, width: width - left - right, height });
+  svg.append(hit);
+  const tip = el("div", "lp-tip");
+  tip.hidden = true;
+  const hover = (event) => {
+    const matrix = svg.getScreenCTM();
+    if (!matrix) return;
+    const at = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
+    const step = (width - left - right) / (points.length - 1);
+    const i = Math.max(0, Math.min(points.length - 1, Math.round((at.x - left) / step)));
+    const p = points[i];
+    cross.setAttribute("x1", x(i));
+    cross.setAttribute("x2", x(i));
+    cross.setAttribute("visibility", "visible");
+    const rows = p.gameId
+      ? [
+          el("strong", "", `${p.change > 0 ? "+" : p.change < 0 ? "−" : "±"}${Math.abs(p.change)} LP`),
+          el("span", "", `${p.win ? "Victoire" : "Défaite"} · ${p.champion}`),
+          el("span", "", lpRank(p)),
+          el("span", "muted", ago(p.date)),
+        ]
+      : [el("strong", "", "Départ"), el("span", "", lpRank(p))];
+    tip.replaceChildren(...rows);
+    tip.hidden = false;
+    // Bulle au-dessus du point, sans sortir de la carte.
+    const share = x(i) / width;
+    tip.style.left = `${share * 100}%`;
+    tip.style.transform = `translateX(${share > 0.6 ? "-100%" : share < 0.3 ? "0" : "-50%"})`;
+  };
+  hit.addEventListener("pointermove", hover);
+  hit.addEventListener("pointerleave", () => {
+    cross.setAttribute("visibility", "hidden");
+    tip.hidden = true;
+  });
+  $("lp-chart").replaceChildren(svg, tip);
+}
+
 function renderStats(state, show) {
   for (const id of ["stats", "duels"]) $(id).hidden = !show;
   if (!show) return;
@@ -1609,6 +1728,7 @@ function render(state) {
   renderPlayer(shown, lobby);
   renderHistory(shown, lobby);
   renderStats(state, lobby && !viewing);
+  renderLp(state.profile, lobby && !viewing && Boolean(state.profile));
   renderSelection(viewing ? null : state.runes);
   renderGame(viewing ? null : state.game);
   layout();

@@ -148,6 +148,27 @@ pub struct Profile {
     pub recent_champions: Vec<RecentChampion>,
     /// Tes 10 dernières parties, de la plus récente à la plus ancienne (adversaire et poste si l'app les a suivies).
     pub matches: Vec<history::GameRecord>,
+    /// Ta courbe de LP en solo/duo (voir `lp_curve`) ; vide pour un joueur cherché.
+    pub lp_curve: Vec<LpPoint>,
+}
+
+/// Un point de ta courbe de LP : ton rang après une partie classée solo/duo (ou juste avant la plus ancienne).
+#[derive(Serialize, Clone, Default, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct LpPoint {
+    /// Place sur l'échelle classée (voir `ladder`) : 100 par division.
+    pub value: i64,
+    pub tier: String,
+    pub division: String,
+    pub lp: i64,
+    /// La partie qui t'y a mené ; 0 pour le point de départ.
+    pub game_id: i64,
+    pub date: i64,
+    pub champion_id: i64,
+    pub champion: String,
+    pub win: bool,
+    /// LP gagnés (positif) ou perdus pendant cette partie.
+    pub change: i64,
 }
 
 #[derive(Serialize, Clone, Default, PartialEq, Debug)]
@@ -2839,7 +2860,12 @@ impl Tracker {
         let records = self.complete_records(fresh);
         let solo = ranked.as_ref().map(|r| rank_in(r, "RANKED_SOLO_5x5"));
         let flex = ranked.as_ref().map(|r| rank_in(r, "RANKED_FLEX_SR"));
+        let mut curve = lp_curve(solo.as_ref(), &records, |r| self.history.get(r.game_id, &r.puuid).and_then(|k| k.lp_change));
+        for point in curve.iter_mut().filter(|p| p.champion_id > 0) {
+            point.champion = self.champ(base, password, point.champion_id).await.name;
+        }
         let mut profile = summarize(solo, flex, records);
+        profile.lp_curve = curve;
         if profile.solo.iter().chain(&profile.flex).any(|r| r.losses_hidden) {
             self.fill_records(&mut profile).await;
         }
@@ -3361,6 +3387,7 @@ pub fn summarize(solo: Option<Rank>, flex: Option<Rank>, records: Vec<history::G
         last_champion_id: records.first().map_or(0, |r| r.champion_id),
         recent_champions,
         matches: records.into_iter().take(MATCHES_SHOWN).collect(),
+        lp_curve: Vec::new(),
     }
 }
 
@@ -3433,16 +3460,71 @@ fn smurf_like(rank: &Rank, level: Option<u64>, form: Option<&RecentForm>) -> boo
     games >= 10 && (few_games || young)
 }
 
+/// Rangs à divisions, du plus bas au plus haut.
+const BELOW_MASTER: [&str; 7] = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND"];
+
 /// Position d'un rang sur l'échelle classée, en LP depuis Fer IV 0 LP : 400 par rang, 100 par division ;
 /// à partir de Maître, les LP s'ajoutent sans division. None hors classement (ou en placement).
 fn ladder(rank: &Rank) -> Option<i64> {
-    const BELOW_MASTER: [&str; 7] = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND"];
     if matches!(rank.tier.as_str(), "MASTER" | "GRANDMASTER" | "CHALLENGER") {
         return Some(7 * 400 + rank.lp);
     }
     let tier = BELOW_MASTER.iter().position(|t| *t == rank.tier)? as i64;
     let division = ["IV", "III", "II", "I"].iter().position(|d| *d == rank.division)? as i64;
     Some(tier * 400 + division * 100 + rank.lp)
+}
+
+/// Rang d'une place sur l'échelle classée (l'inverse de `ladder`) : (rang, division, LP). Au-delà de Diamant,
+/// l'échelle ne distingue pas Maître, Grand Maître et Challenger : le rang `apex` s'il en est un, sinon Maître.
+fn rank_at(value: i64, apex: &str) -> (String, String, i64) {
+    if value >= 7 * 400 {
+        let tier = if matches!(apex, "MASTER" | "GRANDMASTER" | "CHALLENGER") { apex } else { "MASTER" };
+        return (tier.to_string(), String::new(), value - 7 * 400);
+    }
+    let value = value.max(0);
+    let division = ["IV", "III", "II", "I"][((value % 400) / 100) as usize];
+    (BELOW_MASTER[(value / 400) as usize].to_string(), division.to_string(), value % 100)
+}
+
+/// Ta courbe de LP en solo/duo, de la plus ancienne partie à la plus récente : ton rang après chacune de tes
+/// dernières parties classées solo/duo, retrouvé à rebours depuis ton rang actuel avec les LP gagnés ou perdus
+/// que l'app a vus (`lp_change`), plus un point de départ juste avant la plus ancienne. S'arrête à la première
+/// partie dont l'app ne connaît pas les LP (jouée sans elle, LP pas encore comptés) : au-delà, la courbe serait
+/// fausse. `records` : de la plus récente à la plus ancienne. Vide sans partie connue.
+fn lp_curve(
+    solo: Option<&Rank>,
+    records: &[history::GameRecord],
+    lp_change: impl Fn(&history::GameRecord) -> Option<i64>,
+) -> Vec<LpPoint> {
+    let Some(rank) = solo else {
+        return Vec::new();
+    };
+    let Some(mut value) = ladder(rank) else {
+        return Vec::new();
+    };
+    let at = |value: i64, game_id: i64| {
+        let (tier, division, lp) = rank_at(value, &rank.tier);
+        LpPoint { value, tier, division, lp, game_id, ..Default::default() }
+    };
+    let mut points = Vec::new();
+    for record in records.iter().filter(|r| r.queue_id == 420 && r.duration >= REMAKE_SECONDS) {
+        let Some(change) = lp_change(record) else {
+            break;
+        };
+        points.push(LpPoint {
+            date: record.date,
+            champion_id: record.champion_id,
+            win: record.win,
+            change,
+            ..at(value, record.game_id)
+        });
+        value -= change;
+    }
+    if !points.is_empty() {
+        points.push(at(value, 0));
+    }
+    points.reverse();
+    points
 }
 
 /// LP gagnés (ou perdus) d'un rang à l'autre, montées et descentes de division comprises.

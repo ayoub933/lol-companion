@@ -291,7 +291,9 @@ Une fois la partie lancée :
   « Rang masqué » : joueur en mode streamer.
 
 Deux choses s'affichent par-dessus le jeu : le panneau des objets (en tenant Tab, ou toute la partie
-selon le réglage) et les écarts d'or (en tenant Tab, avec le tableau des scores).
+selon le réglage) et les écarts d'or (en tenant Tab, avec le tableau des scores). Leurs fenêtres sont créées
+au début de la partie et fermées une fois la partie finie (« [panneau] fenêtre … fermée » dans le terminal) :
+entre deux parties, elles ne gardent pas de mémoire.
 
 **Panneau des objets à acheter**, collé au bord gauche de l'écran, à mi-hauteur : juste les icônes,
 une rangée par étape, de haut en bas :
@@ -371,6 +373,13 @@ Le client renvoie parfois une liste de parties raccourcie, jusqu'à une seule (j
 qu'il recharge ton historique chez Riot) : l'app la complète avec les parties déjà vues (lecture précédente,
 parties qu'elle a suivies), sans jamais en perdre ; le terminal le note (« [profil] le client n'a donné que
 1 partie(s) : complété… »).
+
+**Tes LP** (colonne de droite) : la courbe de tes LP en solo/duo sur tes dernières classées suivies par l'app,
+avec le total gagné ou perdu (« +45 LP sur tes 5 dernières classées »). Un point par partie (vert-bleu :
+victoire, rouge-rose : défaite), les limites de division en repère (« É II » : Émeraude II), et au survol la
+partie (LP, champion, quand) et ton rang après elle. Elle est retrouvée à rebours depuis ton rang actuel avec
+les LP que l'app a vus après chaque partie, et s'arrête à la première classée dont elle ne connaît pas les LP
+(jouée sans l'app, par exemple) : au-delà, elle serait fausse. Rien à charger en plus.
 
 **Champions du moment** : tes 3 champions les plus joués sur tes 20 dernières parties, avec ton bilan, et leur
 place dans le classement d'OP.GG (« tier list ») du patch : tier en couleur (T1, le meilleur, en or ; T2 en

@@ -4,6 +4,8 @@
 //! - Le panneau des objets à acheter, sur le bord gauche de l'écran du jeu, à mi-hauteur : en tenant Tab, ou
 //!   toute la partie (réglage).
 //! - Les écarts d'or, juste à gauche du tableau des scores : en tenant Tab (avec le tableau des scores).
+//!
+//! Créées au début de la partie, cachées entre deux appuis sur Tab, fermées une fois la partie finie.
 
 use std::{
     sync::{
@@ -89,6 +91,18 @@ pub fn prepare(app: &AppHandle, overlay: Overlay) {
     }
     if let Err(e) = create(app, overlay) {
         eprintln!("[panneau] fenêtre impossible : {e}");
+    }
+}
+
+/// Ferme la fenêtre une fois la partie finie : sa page ne reste pas en mémoire jusqu'à la prochaine partie, où
+/// `prepare` la recrée. `destroy` et non `close` : la croix de l'app peut cacher une fenêtre au lieu de la fermer.
+pub fn close(app: &AppHandle, overlay: Overlay) {
+    let Some(window) = app.get_webview_window(overlay.label()) else {
+        return;
+    };
+    match window.destroy() {
+        Ok(()) => eprintln!("[panneau] fenêtre « {} » fermée (partie finie)", overlay.label()),
+        Err(e) => eprintln!("[panneau] fermeture impossible : {e}"),
     }
 }
 

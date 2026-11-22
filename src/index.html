@@ -307,6 +307,16 @@
 
       <div class="col" id="col-c">
         <!-- Salon -->
+        <!-- Courbe de tes LP en solo/duo (main.js, renderLp()). -->
+        <section class="card" id="lp" hidden>
+          <h2><span class="mark" aria-hidden="true"></span>TES LP<span class="aside">solo/duo · parties suivies par l'app</span></h2>
+          <div class="lp-body" id="lp-body">
+            <div class="lp-head"><span class="lp-net" id="lp-net"></span><span class="muted small" id="lp-sub"></span></div>
+            <div class="lp-chart" id="lp-chart"></div>
+          </div>
+          <p class="empty-msg" id="lp-empty" hidden>Ta courbe de LP arrive avec tes parties classées solo/duo jouées avec l'app ouverte.</p>
+        </section>
+
         <section class="card" id="stats" hidden>
           <h2><span class="mark" aria-hidden="true"></span>TES STATS<span class="aside">parties suivies par l'app</span></h2>
           <div class="rows" id="stats-champions"></div>
