@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "LoL Companion",
-  "version": "0.10.16",
+  "version": "0.10.17",
   "identifier": "com.perso.lol-companion",
   "build": {
     "frontendDist": "../src"
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "LoL Companion 0.10.16",
+        "title": "LoL Companion 0.10.17",
         "width": 1280,
         "height": 720,
         "minWidth": 400,
