@@ -66,8 +66,8 @@ Versions suivantes (ex. 0.9.1), depuis le dossier `lol-companion` :
    par exemple internet pas encore là au démarrage de Windows) et affiche un bandeau « Nouvelle
    version disponible » ; son bouton installe et relance l'app tout de suite.
    Sinon, elle s'installe toute seule après une minute sans sélection ni partie (ni file d'attente, ni
-   fin de partie), quand la fenêtre n'est pas au premier plan : une petite fenêtre de progression
-   apparaît quelques secondes, puis l'app revient comme elle était (cachée près de l'horloge, ou
+   fin de partie), fenêtre au premier plan ou non : une petite fenêtre de progression apparaît quelques
+   secondes, puis l'app revient comme elle était (cachée près de l'horloge, ou
    affichée). 3 essais au plus par lancement, à 30 min d'écart ; ensuite, le bouton.
 
 Installateur fabriqué sur ton PC plutôt que sur GitHub (dans `src-tauri\target\release\bundle\nsis\`) :

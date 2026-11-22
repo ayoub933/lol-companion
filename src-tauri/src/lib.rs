@@ -44,7 +44,7 @@ struct PendingUpdate(Mutex<Option<tauri_plugin_updater::Update>>);
 /// internet n'est pas toujours là).
 const UPDATE_EVERY: Duration = Duration::from_secs(3 * 60 * 60);
 const UPDATE_RETRY: Duration = Duration::from_secs(5 * 60);
-/// Installation automatique : après une minute ni en sélection ni en partie, fenêtre pas au premier plan ;
+/// Installation automatique : après une minute ni en sélection ni en partie (fenêtre au premier plan ou non) ;
 /// 3 essais au plus, à 30 min d'écart (le bouton du bandeau reste là).
 const UPDATE_QUIET: Duration = Duration::from_secs(60);
 const UPDATE_TRIES: u32 = 3;
@@ -187,10 +187,6 @@ fn quiet(snap: &lol::Snapshot) -> bool {
     phase && snap.runes.is_none() && snap.game.is_none() && !snap.recording
 }
 
-/// Fenêtre au premier plan : tu t'en sers, on ne la ferme pas pour une mise à jour.
-fn focused(app: &AppHandle) -> bool {
-    app.get_webview_window("main").and_then(|w| w.is_focused().ok()).unwrap_or(false)
-}
 
 /// Montre la fenêtre (cachée dans la zone de notification, ou réduite).
 fn show_window(app: &AppHandle, focus: bool) {
@@ -427,10 +423,9 @@ pub fn run() {
                     let mut snap = tracker.poll(manual, form, page, &settings).await;
                     snap.update = handle.state::<PendingUpdate>().0.lock().unwrap().as_ref().map(|u| u.version.clone());
                     // Nouvelle version : installée toute seule après une minute ni en sélection ni en partie,
-                    // fenêtre pas au premier plan (rien n'est coupé pendant que tu t'en sers).
+                    // fenêtre au premier plan ou non.
                     if snap.update.is_some() && !INSTALLING.load(Ordering::SeqCst) {
-                        let calm = quiet(&snap) && !focused(&handle);
-                        quiet_since = if calm { quiet_since.or_else(|| Some(Instant::now())) } else { None };
+                        quiet_since = if quiet(&snap) { quiet_since.or_else(|| Some(Instant::now())) } else { None };
                         let due = quiet_since.is_some_and(|t| t.elapsed() >= UPDATE_QUIET)
                             && tries < UPDATE_TRIES
                             && last_try.is_none_or(|t| t.elapsed() >= UPDATE_GAP);
