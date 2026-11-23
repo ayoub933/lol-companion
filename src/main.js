@@ -1880,7 +1880,8 @@ function panelInfo(player) {
     node.title = `${c.name} : ${whole(c.games)} parties, ${Math.round((c.wins / Math.max(c.games, 1)) * 100)} % de victoires, KDA ${kda(c.kills, c.deaths, c.assists)}`;
     return node;
   });
-  return [rank, onChamp, all, el("div", "pb-favs", [glyph("star", "Ses champions les plus joués cette saison"), ...favs])];
+  // Centrés dans la carte, l'étoile à gauche.
+  return [rank, onChamp, all, el("div", "pb-favs", [glyph("star", "Ses champions les plus joués cette saison"), el("div", "pb-favs-list", favs)])];
 }
 
 // ---------- Ensemble ----------

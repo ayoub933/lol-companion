@@ -4273,16 +4273,22 @@ body[data-view="panel"] main {
 .rate-few {
   color: var(--faint);
 }
+/* Ses préférés : l'étoile à gauche, les 3 champions au milieu de la carte. */
 .pb-favs {
-  display: flex;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 16px;
   align-items: center;
-  gap: 7px;
   min-width: 0;
 }
 .pb-favs > .glyph {
   width: 16px;
   height: 16px;
-  margin-right: auto;
+}
+.pb-favs-list {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  min-width: 0;
 }
 .pb-fav {
   flex: none;
