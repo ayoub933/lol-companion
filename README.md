@@ -168,7 +168,7 @@ duel contre ton adversaire (« Aperçu ») : rien n'est mis dans le client tant 
 
 **Dès que ton champion est verrouillé**, l'app demande à OP.GG les runes et le build les plus
 joués pour ce champion et ton poste, puis :
-1. écrit les runes dans ta page de runes sélectionnée, qui prend le nom « LoL Companion » ;
+1. écrit les runes dans ta page de runes sélectionnée, qui prend le nom « LOLC - <champion> » ;
 2. met les sorts d'invocateur conseillés, le Saut éclair sur ta touche ;
 3. affiche le build en icônes (leur nom au survol) : sorts d'invocateur (leur touche D ou F dans le coin),
    objets de départ (le nombre dans le coin), 3 objets principaux dans l'ordre d'achat, bottes, choix
@@ -179,8 +179,8 @@ joués pour ce champion et ton poste, puis :
 - Runes : pas besoin de page libre, ce que contenait ta page sélectionnée est remplacé. Le client ne
   laisse pas modifier une page : l'app la supprime et la recrée à la même place ; si la recréation
   échoue, ta page est remise telle qu'elle était. Si la page sélectionnée est une page par défaut de Riot
-  (qui ne se supprime pas), l'app remplace sa page « LoL Companion », ou en crée une s'il reste de la
-  place. Si tu changes de page ou de runes après l'import, l'app n'y touche plus jusqu'à la fin de la
+  (qui ne se supprime pas), l'app remplace sa page « LOLC - … » (ou « LoL Companion » d'avant la 0.10.24), ou en
+  crée une s'il reste de la place. Si tu changes de page ou de runes après l'import, l'app n'y touche plus jusqu'à la fin de la
   sélection (sauf si tu choisis d'un clic une autre page du duel, voir plus bas).
 - Sorts : si tu les changes toi-même pendant la sélection, l'app n'y touche plus. Avec « sa touche
   actuelle », le Saut éclair reste là où tu l'avais mis ; si le client donne des sorts illisibles au
@@ -202,7 +202,7 @@ joués pour ce champion et ton poste, puis :
 - Pages de runes du duel : la plus jouée, puis jusqu'à 2 autres (au moins 50 parties chacune) qui changent
   au moins une rune (pas seulement les fragments), chacune avec ses runes en icônes (nom au survol), son
   % de victoires et ses parties à droite. Celle mise dans le client est en bleu (au départ, la plus jouée).
-  Un clic sur une autre la met à sa place, dans la page « LoL Companion » de l'app, jamais dans une de tes
+  Un clic sur une autre la met à sa place, dans la page « LOLC - … » de l'app, jamais dans une de tes
   pages que tu aurais sélectionnée depuis ; choisie pendant l'aperçu, elle est importée au verrouillage.
   Sans adversaire direct connu, OP.GG ne donne qu'une page (son analyse générale) : les autres arrivent
   avec lui.

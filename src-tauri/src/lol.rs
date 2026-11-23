@@ -16,8 +16,10 @@ use std::{
 
 /// API officielle de Riot pour la partie en cours (disponible seulement en jeu).
 const LIVE_CLIENT: &str = "https://127.0.0.1:2999/liveclientdata";
-/// Nom de la page de runes que l'app remplace à chaque import,
-/// et début du titre de son set d'objets (« LoL Companion · Ahri »).
+/// Début du nom de la page de runes que l'app remplace à chaque import, suivi de ton champion (« LOLC - Ahri »).
+const RUNE_PAGE: &str = "LOLC - ";
+/// Début du titre du set d'objets de l'app (« LoL Companion · Ahri ») ; aussi l'ancien nom de sa page de runes
+/// (jusqu'à la 0.10.23), encore reconnue pour être remplacée plutôt que gardée en double.
 const PAGE_NAME: &str = "LoL Companion";
 /// Part minimale des parties à ton poste pour deviner qu'un champion adverse est ton adversaire direct.
 const MIN_ROLE_RATE: f64 = 0.15;
@@ -1933,7 +1935,7 @@ impl Tracker {
             }
             self.page_tried = Some(wanted.to_vec());
             let page = result.pages[index].clone();
-            match self.apply_page(base, password, &page, true).await {
+            match self.apply_page(base, password, &page, &result.champion, true).await {
                 Ok(_) => {
                     eprintln!("[runes] page choisie : {} ({} / {}), {} parties", page.keystone, page.primary, page.secondary, page.games);
                     result.page_applied = true;
@@ -2207,7 +2209,7 @@ impl Tracker {
         result.show_page(wanted.unwrap_or(0));
         let page = result.pages[result.page].clone();
         if apply && self.settings.import_runes {
-            match self.apply_page(base, password, &page, false).await {
+            match self.apply_page(base, password, &page, &me.name, false).await {
                 Ok(true) => {
                     eprintln!("[runes] page appliquée{versus} : {} ({} / {}), {} parties", page.keystone, page.primary, page.secondary, page.games);
                     result.page_applied = true;
@@ -2593,13 +2595,13 @@ impl Tracker {
         Ok(())
     }
 
-    /// Remplace la page « LoL Companion » (ou en crée une) et la rend active.
-    /// Met les runes dans ta page de runes sélectionnée, renommée « LoL Companion ». Le client ne laisse pas
+    /// Remplace la page « LOLC - <champion> » (ou en crée une) et la rend active.
+    /// Met les runes dans ta page de runes sélectionnée, renommée « LOLC - <champion> ». Le client ne laisse pas
     /// modifier une page : elle est supprimée puis recréée à sa place (si la recréation échoue, l'ancienne est
-    /// remise). Page sélectionnée par défaut (qui ne se supprime pas) : une page « LoL Companion » à part.
+    /// remise). Page sélectionnée par défaut (qui ne se supprime pas) : une page « LOLC - … » à part.
     /// Ok(false) : tu as changé de page ou de runes depuis l'import précédent, l'app n'y touche plus.
     /// `force` : page choisie d'un clic, mise même si tu avais changé ta page depuis l'import.
-    async fn apply_page(&mut self, base: &str, password: &str, runes: &RunePage, force: bool) -> Result<bool, String> {
+    async fn apply_page(&mut self, base: &str, password: &str, runes: &RunePage, champion: &str, force: bool) -> Result<bool, String> {
         let pages_url = format!("{base}/lol-perks/v1/pages");
         let current = self.get(&format!("{base}/lol-perks/v1/currentpage"), Some(password)).await;
         let current_id = current.as_ref().and_then(|p| p["id"].as_i64());
@@ -2609,8 +2611,9 @@ impl Tracker {
                 return Ok(false);
             }
         }
-        // La page à remplacer : la tienne si elle peut l'être, sinon l'ancienne page « LoL Companion ». Page choisie
-        // d'un clic : celle que l'app a mise, jamais une des tiennes que tu aurais sélectionnée depuis.
+        // La page à remplacer : la tienne si elle peut l'être, sinon l'ancienne page de l'app (« LOLC - … », ou
+        // « LoL Companion » d'avant). Page choisie d'un clic : celle que l'app a mise, jamais une des tiennes que tu
+        // aurais sélectionnée depuis.
         let ours = self.page_set.as_ref().map(|(id, _)| *id).filter(|_| force);
         let mine = current.filter(|p| p["isDeletable"] == true && current_id.is_some() && ours.is_none_or(|id| current_id == Some(id)));
         let target = match &mine {
@@ -2618,7 +2621,8 @@ impl Tracker {
             None => {
                 let pages = self.get(&pages_url, Some(password)).await.unwrap_or(Value::Null);
                 let list = pages.as_array().cloned().unwrap_or_default();
-                let named = |p: &&Value| p["name"] == PAGE_NAME && p["isDeletable"] == true;
+                let ours_by_name = |name: &str| name.starts_with(RUNE_PAGE) || name == PAGE_NAME;
+                let named = |p: &&Value| p["name"].as_str().is_some_and(ours_by_name) && p["isDeletable"] == true;
                 let set = list.iter().find(|p| ours.is_some_and(|id| p["id"] == id) && p["isDeletable"] == true);
                 set.or_else(|| list.iter().find(named)).cloned()
             }
@@ -2627,7 +2631,7 @@ impl Tracker {
             let _ = self.send(Method::DELETE, &format!("{pages_url}/{id}"), Some(password), None).await;
         }
         let page = json!({
-            "name": PAGE_NAME,
+            "name": format!("{RUNE_PAGE}{champion}"),
             "primaryStyleId": runes.primary_id,
             "subStyleId": runes.secondary_id,
             "selectedPerkIds": runes.perks,
