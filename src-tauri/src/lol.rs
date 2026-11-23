@@ -25,6 +25,9 @@ const PAGE_NAME: &str = "LoL Companion";
 const MIN_ROLE_RATE: f64 = 0.15;
 /// En dessous de ce nombre de parties pour la page de runes du duel, on garde les runes générales.
 const MIN_MATCHUP_GAMES: u64 = 50;
+/// Essais pour la saison d'un joueur sur OP.GG, et la pause avant de redemander celles qui ont raté.
+const SEASON_TRIES: u32 = 3;
+const SEASON_PAUSE: Duration = Duration::from_secs(15);
 /// Atlas, l'objet de départ de tous les supports (OP.GG ne le compte pas dans les départs).
 const ATLAS: i64 = 3865;
 /// Saut éclair.
@@ -1302,6 +1305,8 @@ pub struct Player {
     pub skin_id: i64,
     /// Sa saison en classée d'après OP.GG ; None tant qu'elle n'est pas lue (ou s'il est en mode streamer).
     pub season: Option<opgg::Season>,
+    /// Pourquoi sa saison manque, quand OP.GG ne l'a pas donnée après tous les essais (« introuvable sur OP.GG »…).
+    pub season_error: Option<String>,
 }
 
 /// Ce que ses dernières parties disent d'un joueur (lues pendant le chargement, comme pour les duos).
@@ -1414,6 +1419,8 @@ struct CurrentGame {
     skins: HashMap<i64, i64>,
     /// Saison de chaque joueur d'après OP.GG, par champion : lue à part (voir `ask_seasons`), une fois par partie.
     seasons: Arc<Mutex<HashMap<i64, opgg::Season>>>,
+    /// Saisons qu'OP.GG n'a pas données après tous les essais, par champion : ce que sa carte montre à la place.
+    season_errors: Arc<Mutex<HashMap<i64, String>>>,
     /// Champions dont la saison est demandée.
     seasons_asked: HashSet<i64>,
 }
@@ -2675,11 +2682,13 @@ impl Tracker {
         self.ask_seasons(&game).await;
         if let Some(current) = &self.game {
             let seasons = current.seasons.lock().unwrap();
+            let errors = current.season_errors.lock().unwrap();
             for player in game.allies.iter_mut().chain(game.enemies.iter_mut()) {
                 if player.skin_id == 0 {
                     player.skin_id = current.skins.get(&player.champion_id).copied().unwrap_or(0);
                 }
                 player.season = seasons.get(&player.champion_id).cloned();
+                player.season_error = errors.get(&player.champion_id).cloned();
             }
         }
         game
@@ -2704,19 +2713,37 @@ impl Tracker {
             return;
         };
         let seasons = current.seasons.clone();
+        let errors = current.season_errors.clone();
         tauri::async_runtime::spawn(async move {
             let mut opgg = opgg::Client::new();
-            for (champion_id, riot_id) in wanted {
-                let Some((name, tag)) = riot_id.rsplit_once('#') else {
-                    continue;
-                };
-                match opgg.season(name, tag, &region).await {
-                    Ok(season) => {
-                        eprintln!("[saison] {riot_id} : {} parties classées, {} champions", season.games, season.champions.len());
-                        seasons.lock().unwrap().insert(champion_id, season);
+            // Un tour pour tous, puis les ratés (OP.GG lent, saturé…) encore, après une pause.
+            let mut pending = wanted;
+            for attempt in 1..=SEASON_TRIES {
+                let mut failed = Vec::new();
+                for (champion_id, riot_id) in pending {
+                    let Some((name, tag)) = riot_id.rsplit_once('#') else {
+                        continue;
+                    };
+                    match opgg.season(name, tag, &region).await {
+                        Ok(season) => {
+                            eprintln!("[saison] {riot_id} : {} parties classées, {} champions", season.games, season.champions.len());
+                            seasons.lock().unwrap().insert(champion_id, season);
+                        }
+                        Err(e) => {
+                            eprintln!("[saison] {riot_id} : {e} (essai {attempt}/{SEASON_TRIES})");
+                            if attempt == SEASON_TRIES {
+                                errors.lock().unwrap().insert(champion_id, season_failure(&e));
+                            } else {
+                                failed.push((champion_id, riot_id));
+                            }
+                        }
                     }
-                    Err(e) => eprintln!("[saison] {riot_id} : {e}"),
                 }
+                if failed.is_empty() {
+                    break;
+                }
+                pending = failed;
+                tokio::time::sleep(SEASON_PAUSE).await;
             }
         });
     }
@@ -2811,6 +2838,7 @@ impl Tracker {
                 // Numéro du skin chez ce champion → numéro du client.
                 skin_id: player["skinID"].as_i64().filter(|n| id > 0 && *n > 0).map_or(0, |n| id * 1000 + n),
                 season: None,
+                season_error: None,
             };
             if player["team"] == p["team"] {
                 allies.push(entry);
@@ -3852,6 +3880,15 @@ fn smurf_like(rank: &Rank, level: Option<u64>, form: Option<&RecentForm>) -> boo
     let few_games = few && rate_at_least(65) && margin >= 2.0 * spread;
     let young = level.is_some_and(|level| level < YOUNG_ACCOUNT) && rate_at_least(60) && margin >= spread;
     games >= 10 && (few_games || young)
+}
+
+/// Ce que la carte d'un joueur montre quand OP.GG n'a pas donné sa saison après tous les essais.
+fn season_failure(error: &str) -> String {
+    if error.to_lowercase().contains("not found") {
+        "Saison : introuvable sur OP.GG".to_string()
+    } else {
+        "Saison : OP.GG ne répond pas".to_string()
+    }
 }
 
 /// Rangs à divisions, du plus bas au plus haut.

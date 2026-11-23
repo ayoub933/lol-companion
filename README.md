@@ -387,8 +387,10 @@ bas, sur une ligne : l'or en objets de chaque équipe et l'écart, en bleu quand
 quand c'est l'autre.
 
 Consommation : la saison de chaque joueur est demandée une fois par partie à OP.GG (une petite réponse par
-joueur, l'une après l'autre, à part de la lecture de la partie) ; les 10 illustrations (~50 Ko chacune) sont
-gardées pour la partie en cours seulement. Aucune fenêtre en plus : c'est celle de l'app.
+joueur, l'une après l'autre, à part de la lecture de la partie) ; si OP.GG ne la donne pas, elle est redemandée
+jusqu'à 2 fois, 15 s plus tard, puis sa carte le dit (« introuvable sur OP.GG » ou « OP.GG ne répond pas ») au
+lieu d'attendre. Les 10 illustrations (~50 Ko chacune) sont gardées pour la partie en cours seulement. Aucune
+fenêtre en plus : c'est celle de l'app.
 
 CS : pendant la partie, l'API de Riot ne les donne que par paliers de 10 (0, 10, 20…).
 L'app affiche une fourchette (« 80–89 ») et un rythme par minute estimé ; le compte exact

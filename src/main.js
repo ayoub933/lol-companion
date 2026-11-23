@@ -1834,7 +1834,7 @@ function panelInfo(player) {
       : [player.rank ? "Non classé" : "—"],
   );
   const season = player.season;
-  if (!season) return [rank, el("p", "pb-wait", "Saison : lecture d'OP.GG…")];
+  if (!season) return [rank, el("p", "pb-wait", player.seasonError || "Saison : lecture d'OP.GG…")];
   if (!season.games) return [rank, el("p", "pb-wait", "Pas de classée cette saison")];
   // Une ligne : un dessin (ou l'icône du champion), son % de victoires et ses parties, son KDA : en ratio à droite
   // (2,6), ou par partie dessous (4,5 / 7,1 / 8) selon le réglage. `played` : les parties dont viennent ses
