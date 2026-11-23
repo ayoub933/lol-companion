@@ -4022,14 +4022,45 @@ body[data-view="panel"] main {
   min-height: 0;
   display: grid;
   grid-template-rows: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 14px;
+}
+/* Une équipe : son nom à sa couleur (bleu : la tienne ; orange : en face) et un trait jusqu'au bout, ses 5 cartes
+   dessous, bien espacées. */
+.pb-team {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pb-team-head {
+  flex: none;
+  gap: 8px;
+  font-size: 15px;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  color: var(--accent-light);
+}
+.pb-team-head::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.35;
+}
+.pb-team.enemy .pb-team-head {
+  color: var(--enemy-text);
+}
+.pb-team.enemy .pb-team-head .mark {
+  background: var(--enemy);
 }
 .pb-row {
+  flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 7px;
+  gap: 11px;
 }
 /* Dessins des stats (traits de la couleur du texte). */
 .glyph {
@@ -4072,12 +4103,18 @@ body[data-view="panel"] main {
   overflow: hidden;
   cursor: default;
 }
+/* Le fond des stats, à peine teinté de la couleur de l'équipe. */
+.pb-card.ally {
+  background: linear-gradient(rgba(36, 86, 214, 0.1), rgba(36, 86, 214, 0.1)), var(--card);
+}
 .pb-card.enemy {
   border-top-color: var(--enemy);
+  background: linear-gradient(rgba(255, 122, 47, 0.07), rgba(255, 122, 47, 0.07)), var(--card);
 }
+/* Ta carte : un cadre bleu clair tout autour, qui se repère d'un coup d'œil parmi les 10. */
 .pb-card.me {
   border-color: var(--accent-light);
-  border-top-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-light), 0 0 14px rgba(142, 174, 240, 0.3);
 }
 .pb-card.profile-link {
   cursor: pointer;
@@ -4167,6 +4204,18 @@ body[data-view="panel"] main {
 .pb-card.enemy .pb-champ {
   color: var(--enemy-text);
 }
+/* « TOI » après ton champion. */
+.pb-me {
+  margin-left: 7px;
+  padding: 2px 5px 1px;
+  background: var(--accent);
+  color: #fff;
+  font-style: normal;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  vertical-align: 3px;
+}
 .pb-name {
   font-size: 12px;
   font-weight: 600;
@@ -4180,8 +4229,8 @@ body[data-view="panel"] main {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 4px;
-  padding: 6px 8px 7px;
+  gap: 3px;
+  padding: 5px 6px;
   overflow: hidden;
 }
 .pb-rank {

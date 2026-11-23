@@ -1794,7 +1794,7 @@ function fillCard(card, player, ready, everyone) {
   live.textContent = ready ? `niv. ${player.level} · ${player.kills}/${player.deaths}/${player.assists}` : "";
   const name = player.riotId ? player.riotId.split("#")[0] : player.rankHidden ? "Joueur masqué" : "";
   card.querySelector(".pb-who").replaceChildren(
-    el("span", "pb-champ", `${upper(player.champion)}${player.me ? " · TOI" : ""}`),
+    el("span", "pb-champ", [upper(player.champion), player.me && el("span", "pb-me", "TOI")]),
     el("span", "pb-name", name),
   );
   card.querySelector(".pb-info").replaceChildren(...panelInfo(player));

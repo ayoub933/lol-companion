@@ -365,8 +365,10 @@ prend le clavier. Ctrl+X encore (l'app ou le jeu au premier plan) : elle revient
 remet aussi à sa place. Les touches sont seulement lues (comme Tab) : Ctrl+X reste « couper » dans les autres
 apps, et arrive aussi au jeu. Il faut LoL en « Sans bordure », comme pour les panneaux.
 
-Par-dessus le jeu, l'app montre les 10 joueurs en cartes, comme l'écran de chargement : ton équipe en haut,
-celle d'en face en bas, chacune rangée par poste. Chaque carte :
+Par-dessus le jeu, l'app montre les 10 joueurs en cartes espacées, comme l'écran de chargement : ton équipe en
+haut, sous « TON ÉQUIPE » en bleu, celle d'en face en bas, sous « EN FACE » en orange, chacune rangée par poste ;
+le fond des cartes est à peine teinté de la couleur de l'équipe. Ta carte a un cadre bleu clair et « TOI » après
+ton champion. Chaque carte :
 - l'illustration de chargement de son skin (chroma compris), son champion, son pseudo ; ses pastilles (venu en
   groupe, déjà croisé, smurf, OTP, série de 3 ou plus) ; en partie, son niveau et son score ;
 - son rang (« Émeraude II · 45 LP ») ;

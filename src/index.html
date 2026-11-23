@@ -425,8 +425,14 @@
            (main.js, renderPanel()). -->
       <section class="panel-board" id="panel-board" hidden aria-label="Joueurs de la partie">
         <div class="pb-teams">
-          <div class="pb-row" id="pb-allies"></div>
-          <div class="pb-row" id="pb-enemies"></div>
+          <section class="pb-team ally" aria-label="Ton équipe">
+            <h2 class="pb-team-head"><span class="mark" aria-hidden="true"></span>TON ÉQUIPE</h2>
+            <div class="pb-row" id="pb-allies"></div>
+          </section>
+          <section class="pb-team enemy" aria-label="En face">
+            <h2 class="pb-team-head"><span class="mark" aria-hidden="true"></span>EN FACE</h2>
+            <div class="pb-row" id="pb-enemies"></div>
+          </section>
         </div>
         <section class="card pb-build" id="pb-build">
           <h2><span class="mark" aria-hidden="true"></span>TON BUILD<span class="aside" id="pb-build-aside"></span></h2>
