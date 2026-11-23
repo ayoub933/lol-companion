@@ -4341,3 +4341,49 @@ body[data-view="panel"] main {
   font-size: 13px;
   -webkit-line-clamp: 4;
 }
+/* En bas de ton build : l'or en objets de chaque équipe (ton équipe en bleu, l'autre en orange) et l'écart, bleu
+   quand ton équipe est devant, rouge quand c'est l'autre. */
+.pb-gold {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 16px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.pb-gold .glyph {
+  width: 16px;
+  height: 16px;
+  color: #e8bc4f;
+}
+.pb-gold-k {
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.pb-gold-mine {
+  color: var(--accent-light);
+}
+.pb-gold-vs {
+  color: var(--faint);
+}
+.pb-gold-theirs {
+  color: var(--enemy-text);
+}
+.pb-gold-gap {
+  margin-left: auto;
+  font-size: 18px;
+  color: var(--muted);
+}
+.pb-gold-gap.pos {
+  color: var(--accent-light);
+}
+.pb-gold-gap.neg {
+  color: var(--defeat);
+}

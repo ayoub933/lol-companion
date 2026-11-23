@@ -1730,6 +1730,23 @@ function renderPanel(game) {
     : "Ton build arrive au début de la partie.";
   if (build) fillBuild($("pb-gb"), $("pb-build-aside"), game);
   else $("pb-build-aside").textContent = "";
+  // En bas : l'or en objets de chaque équipe et l'écart (bleu : ton équipe devant ; rouge : eux).
+  const [ours, theirs] = [teamValue(game.allies), teamValue(game.enemies)];
+  const known = game.ready && ours != null && theirs != null;
+  $("pb-gold").hidden = !known;
+  if (known) {
+    const gap = ours - theirs;
+    const line = $("pb-gold");
+    line.replaceChildren(
+      glyph("gold"),
+      el("span", "pb-gold-k", "OR"),
+      el("span", "pb-gold-mine", whole(ours)),
+      el("span", "pb-gold-vs", "–"),
+      el("span", "pb-gold-theirs", whole(theirs)),
+      el("span", `pb-gold-gap ${gapClass(gap)}`, signed(gap)),
+    );
+    line.title = "Valeur des objets achetés par chaque équipe (au prix de la boutique) et l'écart";
+  }
 }
 
 // Une carte par joueur, gardée d'un tour à l'autre : son illustration ne se recharge pas.
@@ -1785,8 +1802,9 @@ function fillCard(card, player, ready, everyone) {
 }
 
 // Petits dessins fixes (aucune donnée extérieure) pour lire les stats d'un coup d'œil, sans libellés : épées (KDA),
-// coupe (la saison), étoile (ses préférés).
+// coupe (la saison), étoile (ses préférés), pièces (l'or).
 const GLYPHS = {
+  gold: `<ellipse cx="12" cy="6.5" rx="7" ry="3"/><path d="M5 6.5v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5"/><path d="M5 11.5v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5"/>`,
   kills: `<path d="M4 4l10.5 10.5"/><path d="M12.5 17.5l5-5"/><path d="M16 16l4 4"/><path d="M20 4L9.5 14.5"/><path d="M6.5 12.5l5 5"/><path d="M8 16l-4 4"/>`,
   season: `<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5c0 2.5 1.5 4 3.5 4M16 6h3c0 2.5-1.5 4-3.5 4"/><path d="M12 13v4"/><path d="M8.5 21h7l-.8-4H9.3z"/>`,
   star: `<path d="M12 3l2.7 5.6 6.1.8-4.4 4.3 1 6.1L12 17l-5.4 2.8 1-6.1-4.4-4.3 6.1-.8z"/>`,

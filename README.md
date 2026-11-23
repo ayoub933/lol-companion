@@ -379,7 +379,9 @@ celle d'en face en bas, chacune rangée par poste. Chaque carte :
 
 À droite, ton build : le même que sur l'écran de partie, en plus grand et réparti sur toute la hauteur
 (prochain achat et l'or qu'il te manque, ordre des achats, sets d'objets du duel, suite, objets contre eux,
-montée des compétences, ce qu'il y a en face, astuce du duel en entier). Il arrive au début de la partie.
+montée des compétences, ce qu'il y a en face, astuce du duel en entier). Il arrive au début de la partie. En
+bas, sur une ligne : l'or en objets de chaque équipe et l'écart, en bleu quand ton équipe est devant, en rouge
+quand c'est l'autre.
 
 Consommation : la saison de chaque joueur est demandée une fois par partie à OP.GG (une petite réponse par
 joueur, l'une après l'autre, à part de la lecture de la partie) ; les 10 illustrations (~50 Ko chacune) sont
