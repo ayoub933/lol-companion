@@ -88,7 +88,8 @@ pub struct Ready {
     pub build_always: AtomicBool,
     /// Partie en cours (écran de chargement compris) : Ctrl+X met l'app par-dessus le jeu.
     pub in_game: AtomicBool,
-    /// L'app est par-dessus le jeu (Ctrl+X) : elle montre les 10 joueurs en cartes (événement « panel » à sa page).
+    /// L'app est par-dessus le jeu (Ctrl+X) : elle montre les 10 joueurs en cartes et ton build (événement « panel »
+    /// à sa page).
     pub panel: AtomicBool,
 }
 

@@ -377,15 +377,13 @@ celle d'en face en bas, chacune rangée par poste. Chaque carte :
   à partir de 3,5, en rouge sous 2 ;
 - un clic : son profil (« LA PARTIE » pour revenir aux cartes).
 
-À droite, la partie en un coup d'œil : le chrono en grand, puis chaque stat sur une ligne, ta valeur à gauche
-(bleu) et la leur à droite (orange) de part et d'autre de son dessin, un 0 effacé : kills, or en objets (et
-l'écart), tours, dragons (une pastille de la couleur de chacun), larves, héraut, Nashor, inhibiteurs, rang moyen
-et % de victoires moyen de la saison de chaque équipe. Pendant le chargement : le niveau des équipes.
+À droite, ton build : le même que sur l'écran de partie, en plus grand et réparti sur toute la hauteur
+(prochain achat et l'or qu'il te manque, ordre des achats, sets d'objets du duel, suite, objets contre eux,
+montée des compétences, ce qu'il y a en face, astuce du duel en entier). Il arrive au début de la partie.
 
 Consommation : la saison de chaque joueur est demandée une fois par partie à OP.GG (une petite réponse par
 joueur, l'une après l'autre, à part de la lecture de la partie) ; les 10 illustrations (~50 Ko chacune) sont
-gardées pour la partie en cours seulement ; les objectifs ne sont lus que tant que l'app est par-dessus le jeu.
-Aucune fenêtre en plus : c'est celle de l'app.
+gardées pour la partie en cours seulement. Aucune fenêtre en plus : c'est celle de l'app.
 
 CS : pendant la partie, l'API de Riot ne les donne que par paliers de 10 (0, 10, 20…).
 L'app affiche une fourchette (« 80–89 ») et un rythme par minute estimé ; le compte exact

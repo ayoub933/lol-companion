@@ -466,7 +466,6 @@ pub fn run() {
                     let form = *handle.state::<ChosenForm>().0.lock().unwrap();
                     let page = handle.state::<ChosenPage>().0.lock().unwrap().clone();
                     let settings = handle.state::<Prefs>().settings.lock().unwrap().clone();
-                    tracker.panel_open = ready.panel.load(Ordering::Relaxed);
                     let mut snap = tracker.poll(manual, form, page, &settings).await;
                     snap.update = handle.state::<PendingUpdate>().0.lock().unwrap().as_ref().map(|u| u.version.clone());
                     // Nouvelle version : installée toute seule après une minute ni en sélection ni en partie,

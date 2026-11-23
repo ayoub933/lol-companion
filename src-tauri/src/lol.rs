@@ -1153,22 +1153,6 @@ pub struct Game {
     pub panel: Vec<PanelRow>,
     /// Le même build en détail, pour l'écran de l'app ; None sans build.
     pub build: Option<GameBuild>,
-    /// Objectifs pris par chaque équipe ; lus seulement quand l'app est par-dessus le jeu (Ctrl+X).
-    pub objectives: Option<Objectives>,
-}
-
-/// Objectifs pris par chaque équipe, ton équipe d'abord, d'après les événements de la partie.
-#[derive(Serialize, Clone, Default, PartialEq, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct Objectives {
-    pub towers: [u32; 2],
-    pub inhibitors: [u32; 2],
-    /// Les dragons de chaque équipe, dans l'ordre : "Fire", "Water", "Earth", "Air", "Hextech", "Chemtech", "Elder".
-    pub dragons: [Vec<String>; 2],
-    /// Larves du Néant, Héraut, Nashor.
-    pub grubs: [u32; 2],
-    pub heralds: [u32; 2],
-    pub barons: [u32; 2],
 }
 
 /// Ce que l'écran de l'app ajoute au panneau posé sur le jeu.
@@ -1510,8 +1494,6 @@ pub struct Tracker {
     spell_names: HashMap<i64, String>,
     /// Dernière ligne écrite dans le terminal par sujet, pour ne pas la répéter.
     last_log: HashMap<&'static str, String>,
-    /// L'app est par-dessus le jeu (Ctrl+X) : les objectifs de la partie sont lus.
-    pub panel_open: bool,
 }
 
 /// Ce qui déclenche un nouvel import : (champion, poste, mode, adversaire direct).
@@ -1541,7 +1523,6 @@ impl Tracker {
             owners_skip: 0,
             last_pick: None,
             game: None,
-            panel_open: false,
             finished: None,
             lockfile: String::new(),
             lcu: None,
@@ -2915,7 +2896,6 @@ impl Tracker {
             _ => (Vec::new(), None),
         };
 
-        let objectives = if self.panel_open { self.objectives(&players, p).await } else { None };
         let score = |key: &str| p["scores"][key].as_u64().unwrap_or(0);
         Game {
             ready: true,
@@ -2933,53 +2913,7 @@ impl Tracker {
             enemies,
             panel,
             build: details,
-            objectives,
         }
-    }
-
-    /// Objectifs pris par chaque équipe (ton équipe d'abord), d'après les événements de la partie. Tour et
-    /// inhibiteur : leur nom dit à quelle équipe ils étaient (T1 : ORDER, T2 : CHAOS) ; monstres : l'équipe de celui
-    /// qui les a tués.
-    async fn objectives(&self, players: &[Value], me: &Value) -> Option<Objectives> {
-        let events = self.get(&format!("{LIVE_CLIENT}/eventdata"), None).await?;
-        let mine = me["team"].as_str().unwrap_or("ORDER");
-        // Équipe du tueur : 0 = la tienne, 1 = l'autre (son pseudo, avec ou sans tag).
-        let side_of = |killer: &str| {
-            let name = |p: &Value, key: &str| p[key].as_str().is_some_and(|n| n == killer || n.split('#').next() == Some(killer));
-            let player = players.iter().find(|p| ["riotIdGameName", "riotId", "summonerName"].iter().any(|key| name(p, key)))?;
-            Some(usize::from(player["team"].as_str() != Some(mine)))
-        };
-        // Bâtiment d'une équipe détruit : point pour l'autre.
-        let building = |name: &str| {
-            let owner = if name.contains("_T1_") { "ORDER" } else if name.contains("_T2_") { "CHAOS" } else { return None };
-            Some(usize::from(owner == mine))
-        };
-        let mut done = Objectives::default();
-        for event in events["Events"].as_array().into_iter().flatten() {
-            let killer = event["KillerName"].as_str().unwrap_or_default();
-            match event["EventName"].as_str().unwrap_or_default() {
-                "TurretKilled" => {
-                    if let Some(side) = event["TurretKilled"].as_str().and_then(building) {
-                        done.towers[side] += 1;
-                    }
-                }
-                "InhibKilled" => {
-                    if let Some(side) = event["InhibKilled"].as_str().and_then(building) {
-                        done.inhibitors[side] += 1;
-                    }
-                }
-                "DragonKill" => {
-                    if let Some(side) = side_of(killer) {
-                        done.dragons[side].push(event["DragonType"].as_str().unwrap_or_default().to_string());
-                    }
-                }
-                "HordeKill" => side_of(killer).into_iter().for_each(|side| done.grubs[side] += 1),
-                "HeraldKill" => side_of(killer).into_iter().for_each(|side| done.heralds[side] += 1),
-                "BaronKill" => side_of(killer).into_iter().for_each(|side| done.barons[side] += 1),
-                _ => {}
-            }
-        }
-        Some(done)
     }
 
     /// Note depuis quand chaque objet est dans ton inventaire : gardé 30 s, il est acheté pour de bon (et reste

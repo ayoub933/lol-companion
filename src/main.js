@@ -1392,24 +1392,27 @@ function renderGame(game) {
 
 // Ton build en détail, sous ta carte : le prochain achat avec l'or qu'il te manque, l'ordre des achats, la suite
 // avec les % de victoires OP.GG, les objets contre l'équipe d'en face et la montée des compétences.
-// Refait seulement quand le build change ; l'or en poche, lui, change chaque seconde : juste la barre et le texte.
-let shownBuild = "";
 function renderGameBuild(game) {
-  const build = game.build;
   $("game-build").hidden = false;
-  $("gb-empty").hidden = Boolean(build);
-  $("gb-body").hidden = !build;
-  if (!build) return;
+  $("gb-empty").hidden = Boolean(game.build);
+  $("gb-body").hidden = !game.build;
+  if (game.build) fillBuild($("gb-body"), $("gb-aside"), game);
+}
+
+// Le build dans `body` (et son titre dans `aside`), refait seulement quand il change ; l'or en poche, lui, change
+// chaque seconde : juste la barre et le texte. Sert à l'écran de partie et à l'app par-dessus le jeu.
+function fillBuild(body, aside, game) {
+  const build = game.build;
   const key = JSON.stringify([game.panel, build]);
-  if (key !== shownBuild) {
-    shownBuild = key;
+  if (body.dataset.key !== key) {
+    body.dataset.key = key;
     const form = build.form ? ` · ${FORMS[build.form]}` : "";
-    $("gb-aside").textContent = `OP.GG${build.versus ? ` · vs ${build.versus}` : ""}${form}`;
+    aside.textContent = `OP.GG${build.versus ? ` · vs ${build.versus}` : ""}${form}`;
     const me = game.allies.find((p) => p.me);
-    $("gb-body").replaceChildren(...buildBlocks(game.panel, build, me?.championId ?? 0));
+    body.replaceChildren(...buildBlocks(game.panel, build, me?.championId ?? 0));
   }
   const next = build.next;
-  const gold = $("gb-gold");
+  const gold = body.querySelector(".gb-gold");
   if (!next || !gold) return;
   const missing = next.left - game.gold;
   gold.querySelector(".fill").style.width = `${next.left ? Math.min(100, (game.gold / next.left) * 100) : 100}%`;
@@ -1434,7 +1437,6 @@ function buildBlocks(panel, build, championId) {
   if (next) {
     const names = next.items.map((it) => (it.count > 1 ? `${it.name} ×${it.count}` : it.name)).join(", ");
     const gold = el("div", "gb-gold", [el("span", "bar", [el("span", "fill")]), el("span", "text")]);
-    gold.id = "gb-gold";
     const parts = next.components.length
       ? el("div", "gb-parts", next.components.map((c) => buildIcon(c, "part")))
       : null;
@@ -1705,7 +1707,7 @@ function faceCell(player, ready, enemy, opponent, mates) {
 
 // Les 10 joueurs en cartes, ton équipe en haut, chaque équipe rangée par poste : l'illustration de leur skin, puis
 // leur saison en classée d'après OP.GG (% de victoires et KDA, en tout et sur le champion joué) et leurs champions
-// préférés. À droite, la partie en un coup d'œil. Un clic sur une carte : le profil du joueur.
+// préférés. À droite, ton build (le même que sur l'écran de partie). Un clic sur une carte : le profil du joueur.
 let panelOpen = false;
 // % de victoires : bleu clair à partir de 55 %, rouge à 45 % ou moins ; gris en dessous de 10 parties (trop peu).
 const rateClass = (wins, games) => (games < 10 ? "rate-few" : wins >= 0.55 * games ? "rate-hi" : wins <= 0.45 * games ? "rate-lo" : "");
@@ -1719,7 +1721,15 @@ function renderPanel(game) {
   const everyone = [...game.allies, ...game.enemies];
   fillTeam($("pb-allies"), game.allies, false, game.ready, everyone);
   fillTeam($("pb-enemies"), game.enemies, true, game.ready, everyone);
-  renderPanelSide(game);
+  // Ton build : dès le début de la partie (pendant le chargement, rien encore).
+  const build = game.ready && game.build;
+  $("pb-gb").hidden = !build;
+  $("pb-gb-empty").hidden = Boolean(build);
+  $("pb-gb-empty").textContent = game.ready
+    ? "Pas de build pour cette partie : mode sans postes, ou OP.GG sans réponse."
+    : "Ton build arrive au début de la partie.";
+  if (build) fillBuild($("pb-gb"), $("pb-build-aside"), game);
+  else $("pb-build-aside").textContent = "";
 }
 
 // Une carte par joueur, gardée d'un tour à l'autre : son illustration ne se recharge pas.
@@ -1774,18 +1784,11 @@ function fillCard(card, player, ready, everyone) {
   card.onclick = card.classList.contains("profile-link") ? () => searchPlayer(player.riotId, "", player.puuid) : null;
 }
 
-// Petits dessins fixes (aucune donnée extérieure) pour lire les stats d'un coup d'œil, sans libellés.
+// Petits dessins fixes (aucune donnée extérieure) pour lire les stats d'un coup d'œil, sans libellés : épées (KDA),
+// coupe (la saison), étoile (ses préférés).
 const GLYPHS = {
   kills: `<path d="M4 4l10.5 10.5"/><path d="M12.5 17.5l5-5"/><path d="M16 16l4 4"/><path d="M20 4L9.5 14.5"/><path d="M6.5 12.5l5 5"/><path d="M8 16l-4 4"/>`,
-  gold: `<ellipse cx="12" cy="6.5" rx="7" ry="3"/><path d="M5 6.5v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5"/><path d="M5 11.5v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5"/>`,
-  tower: `<path d="M7.5 21l1.5-10h6l1.5 10z"/><path d="M6 11h12"/><path d="M6.5 11V5.5H9v2h2v-3h2v3h2v-2h2.5V11"/>`,
-  dragon: `<path d="M3 13l6-1.5 3-4 8-4-3 5 4 2.5-3 6-4.5-2-5.5 2.5-4-1.5 2.5-2z"/><circle cx="12.2" cy="10" r="1" fill="currentColor" stroke="none"/>`,
-  grubs: `<circle cx="5.5" cy="15.5" r="2.5"/><circle cx="10.5" cy="14" r="3"/><circle cx="16.5" cy="12" r="4"/><circle cx="17.7" cy="11" r="0.9" fill="currentColor"/>`,
-  herald: `<path d="M2 12c2.5-4 6-6 10-6s7.5 2 10 6c-2.5 4-6 6-10 6S4.5 16 2 12z"/><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="0.8" fill="currentColor"/>`,
-  baron: `<path d="M6 3c0 3 1.5 5 3.5 5.5M18 3c0 3-1.5 5-3.5 5.5"/><path d="M7 10.5C7 9 9 8 12 8s5 1 5 2.5v5l-2 2.5v3H9v-3l-2-2.5z"/><path d="M9.5 13.5h1.5M13 13.5h1.5"/>`,
-  inhibitor: `<path d="M12 2l6 7-6 13-6-13z"/><path d="M6 9h12"/><path d="M12 9v13"/>`,
   season: `<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5c0 2.5 1.5 4 3.5 4M16 6h3c0 2.5-1.5 4-3.5 4"/><path d="M12 13v4"/><path d="M8.5 21h7l-.8-4H9.3z"/>`,
-  rank: `<path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>`,
   star: `<path d="M12 3l2.7 5.6 6.1.8-4.4 4.3 1 6.1L12 17l-5.4 2.8 1-6.1-4.4-4.3 6.1-.8z"/>`,
 };
 
@@ -1818,8 +1821,10 @@ function panelInfo(player) {
     const value = ratio(kills, deaths, assists);
     const row = el("div", `pb-line${big ? " big" : ""}`, [
       mark,
-      el("span", `pb-rate ${games ? rateClass(wins, games) : "rate-few"}`, games ? `${Math.round((wins / games) * 100)} %` : "—"),
-      el("span", "pb-games", games ? `${whole(games)} p.` : "0 p."),
+      el("span", "pb-rate-box", [
+        el("span", `pb-rate ${games ? rateClass(wins, games) : "rate-few"}`, games ? `${Math.round((wins / games) * 100)} %` : "—"),
+        el("span", "pb-games", games ? `${whole(games)} parties` : "0 partie"),
+      ]),
       el("span", `pb-kda ${games ? kdaClass(value) : "rate-few"}`, [glyph("kills"), games ? decimal(value) : "—"]),
     ]);
     row.title = title;
@@ -1858,109 +1863,6 @@ function panelInfo(player) {
     return node;
   });
   return [rank, onChamp, all, el("div", "pb-favs", [glyph("star", "Ses champions les plus joués cette saison"), ...favs])];
-}
-
-// La partie en un coup d'œil : le chrono en grand, puis chaque stat sur une ligne, ta valeur à gauche (bleu) et la
-// leur à droite (orange) de part et d'autre de son dessin ; un 0 s'efface pour que le reste ressorte.
-const DRAGONS = {
-  Fire: "Infernal",
-  Water: "Océan",
-  Earth: "Montagne",
-  Air: "Nuages",
-  Hextech: "Hextech",
-  Chemtech: "Chemtech",
-  Elder: "Ancestral",
-};
-const TIER_ORDER = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER"];
-
-// Rang moyen d'une équipe (joueurs classés seulement) : chaque division compte pour un cran.
-function averageRank(team) {
-  const steps = team
-    .map((p) => p.rank)
-    .filter((rank) => rank?.tier && TIER_ORDER.includes(rank.tier))
-    .map((rank) => TIER_ORDER.indexOf(rank.tier) * 4 + (APEX.includes(rank.tier) ? 0 : 4 - (DIVISIONS.indexOf(rank.division) || 4)));
-  if (!steps.length) return null;
-  const mean = Math.round(steps.reduce((a, b) => a + b, 0) / steps.length);
-  const tier = TIER_ORDER[Math.min(Math.floor(mean / 4), TIER_ORDER.length - 1)];
-  return { tier, division: APEX.includes(tier) ? "" : DIVISIONS[4 - (mean % 4)], lp: 0 };
-}
-
-// % de victoires moyen d'une équipe cette saison (joueurs dont OP.GG a donné la saison).
-function averageSeason(team) {
-  const rates = team.filter((p) => p.season?.games).map((p) => p.season.wins / p.season.games);
-  return rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : null;
-}
-
-function renderPanelSide(game) {
-  const { allies, enemies, ready } = game;
-  // Une ligne : ta valeur, le dessin de la stat, la leur. `big` : kills et or, en plus gros.
-  const versus = (name, title, mine, theirs, big = false) => {
-    const side = (value, who) => {
-      const empty = value === 0 || value === "0";
-      return el("span", `pb-side-v ${who}${empty ? " zero" : ""}`, [typeof value === "number" ? String(value) : value]);
-    };
-    const row = el("div", `pb-row-vs${big ? " big" : ""}`, [side(mine, "mine"), glyph(name), side(theirs, "theirs")]);
-    row.title = title;
-    return row;
-  };
-  const head = () => el("div", "pb-teams-head", [el("span", "mine", "TOI"), el("span", "theirs", "EUX")]);
-  const blocks = [el("div", "pb-block pb-clock-block", [el("span", "pb-clock", ready ? clock(game.gameTime) : "CHARGEMENT")])];
-  if (ready) {
-    const kills = (team) => team.reduce((sum, p) => sum + p.kills, 0);
-    const [mine, theirs] = [teamValue(allies), teamValue(enemies)];
-    const rows = [head(), versus("kills", "Kills de chaque équipe", kills(allies), kills(enemies), true)];
-    if (mine != null && theirs != null) {
-      rows.push(versus("gold", "Valeur des objets achetés, au prix de la boutique", kilo(mine), kilo(theirs), true));
-      const gap = mine - theirs;
-      rows.push(el("div", `pb-gap ${gapClass(gap)}`, [gap === 0 ? "À égalité" : `${signed(gap)} d'or`]));
-    }
-    blocks.push(el("div", "pb-block", rows));
-  }
-  const goals = game.objectives;
-  if (ready && goals) {
-    // Dragons : leur nombre, puis une pastille de la couleur de chacun (vers le centre).
-    const drakes = (list, who) => {
-      const dots = list.map((type) => {
-        const dot = el("span", `drake ${type.toLowerCase()}`);
-        dot.title = `Dragon ${DRAGONS[type] ?? type}`;
-        return dot;
-      });
-      const count = String(list.length);
-      return el("span", "pb-drakes", who === "mine" ? [count, ...dots] : [...dots, count]);
-    };
-    blocks.push(
-      el("div", "pb-block", [
-        versus("tower", "Tours détruites", goals.towers[0], goals.towers[1]),
-        versus("dragon", "Dragons", drakes(goals.dragons[0], "mine"), drakes(goals.dragons[1], "theirs")),
-        versus("grubs", "Larves du Néant", goals.grubs[0], goals.grubs[1]),
-        versus("herald", "Héraut de la Faille", goals.heralds[0], goals.heralds[1]),
-        versus("baron", "Baron Nashor", goals.barons[0], goals.barons[1]),
-        versus("inhibitor", "Inhibiteurs détruits", goals.inhibitors[0], goals.inhibitors[1]),
-      ]),
-    );
-  }
-  // Niveau des équipes : rang moyen (emblème) et % de victoires moyen de la saison.
-  const rankCell = (team) => {
-    const rank = averageRank(team);
-    if (!rank) return "—";
-    const node = el("span", "pb-avg-rank", [emblem(rank.tier, "small", true), rank.division]);
-    node.title = `Rang moyen : ${TIERS[rank.tier] ?? rank.tier}${rank.division ? ` ${rank.division}` : ""}`;
-    return node;
-  };
-  const seasonCell = (team) => {
-    const rate = averageSeason(team);
-    return rate == null ? "—" : el("span", rateClass(rate * 100, 100), `${Math.round(rate * 100)} %`);
-  };
-  // Pendant le chargement, seul bloc sous le chrono : il dit qui est qui.
-  blocks.push(
-    el("div", "pb-block pb-level", [
-      ready ? null : head(),
-      versus("rank", "Rang moyen des joueurs classés de chaque équipe", rankCell(allies), rankCell(enemies)),
-      versus("season", "% de victoires moyen des joueurs cette saison (OP.GG)", seasonCell(allies), seasonCell(enemies)),
-    ]),
-  );
-  $("pb-side").classList.toggle("waiting", !ready);
-  $("pb-side").replaceChildren(...blocks);
 }
 
 // ---------- Ensemble ----------
