@@ -18,7 +18,7 @@ use std::{
     },
     time::Duration,
 };
-use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 /// Rectangle en pixels de l'écran : (x, y, largeur, hauteur).
 type Rect = (i32, i32, i32, i32);
@@ -88,6 +88,8 @@ pub struct Ready {
     pub build_always: AtomicBool,
     /// Partie en cours (écran de chargement compris) : Ctrl+X met l'app par-dessus le jeu.
     pub in_game: AtomicBool,
+    /// L'app est par-dessus le jeu (Ctrl+X) : elle montre les 10 joueurs en cartes (événement « panel » à sa page).
+    pub panel: AtomicBool,
 }
 
 /// Fenêtre de l'app juste avant Ctrl+X, pour la remettre pareil.
@@ -147,6 +149,9 @@ pub fn watch_tab(app: AppHandle, ready: Arc<Ready>) {
             // Partie finie : l'app revient à sa place.
             if let Some(before) = saved.take_if(|_| !in_game) {
                 close_panel(&app, before);
+            }
+            if ready.panel.swap(saved.is_some(), Ordering::Relaxed) != saved.is_some() {
+                let _ = app.emit("panel", saved.is_some());
             }
             let wanted = [ready.build.load(Ordering::Relaxed), ready.gold.load(Ordering::Relaxed)];
             let always = [ready.build_always.load(Ordering::Relaxed), false];

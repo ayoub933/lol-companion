@@ -365,6 +365,26 @@ prend le clavier. Ctrl+X encore (l'app ou le jeu au premier plan) : elle revient
 remet aussi à sa place. Les touches sont seulement lues (comme Tab) : Ctrl+X reste « couper » dans les autres
 apps, et arrive aussi au jeu. Il faut LoL en « Sans bordure », comme pour les panneaux.
 
+Par-dessus le jeu, l'app montre les 10 joueurs en cartes, comme l'écran de chargement : ton équipe en haut,
+celle d'en face en bas, chacune rangée par poste. Chaque carte :
+- l'illustration de chargement de son skin (chroma compris), son champion, son pseudo ; ses pastilles (venu en
+  groupe, déjà croisé, smurf, OTP, série de 3 ou plus) ; en partie, son niveau et son score ;
+- son rang (« Émeraude II · 45 LP ») ;
+- sa saison en classée (solo et flexible ensemble) d'après OP.GG : % de victoires et parties, KDA moyen, puis
+  les mêmes sur le champion qu'il joue ; ses 3 champions les plus joués avec leur % de victoires. % de victoires
+  en bleu clair à partir de 55 %, en rouge à 45 % ou moins, en gris sous 10 parties ; KDA en bleu clair à partir
+  de 3,5, en rouge sous 2 ;
+- un clic : son profil (« LA PARTIE » pour revenir aux cartes).
+
+À droite, la partie en un coup d'œil : le chrono, les kills et l'or en objets de chaque équipe et l'écart, les
+objectifs (tours, dragons avec leur type, larves, héraut, Nashor, inhibiteurs), le rang moyen et le % de
+victoires moyen de la saison de chaque équipe.
+
+Consommation : la saison de chaque joueur est demandée une fois par partie à OP.GG (une petite réponse par
+joueur, l'une après l'autre, à part de la lecture de la partie) ; les 10 illustrations (~50 Ko chacune) sont
+gardées pour la partie en cours seulement ; les objectifs ne sont lus que tant que l'app est par-dessus le jeu.
+Aucune fenêtre en plus : c'est celle de l'app.
+
 CS : pendant la partie, l'API de Riot ne les donne que par paliers de 10 (0, 10, 20…).
 L'app affiche une fourchette (« 80–89 ») et un rythme par minute estimé ; le compte exact
 arrive après la partie.

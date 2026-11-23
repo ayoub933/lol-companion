@@ -49,6 +49,8 @@ const LP_WAIT: Duration = Duration::from_secs(3 * 60);
 const BOUGHT_AFTER: Duration = Duration::from_secs(30);
 /// Illustrations de skins gardées en mémoire (les plus récentes).
 const SPLASH_CACHE: usize = 6;
+/// Illustrations d'écran de chargement gardées en mémoire : celles des 10 joueurs de la partie.
+const LOAD_SCREEN_CACHE: usize = 10;
 /// Objets à Blessures graves connus (si leur description ne le dit pas dans la langue du client) : Appel du
 /// bourreau, Rappel mortel, Glaive chimiotech, Orbe d'oubli, Morellonomicon, Gilet épineux, Cotte épineuse.
 const GRIEVOUS: [i64; 7] = [3123, 3033, 6609, 3916, 3165, 3076, 3075];
@@ -450,6 +452,7 @@ pub struct Assets {
     item_icons: Arc<Mutex<HashMap<i64, Vec<u8>>>>,
     /// Dernières illustrations de skins lues, la plus récente à la fin.
     splashes: Arc<Mutex<Vec<Splash>>>,
+    load_screens: Arc<Mutex<Vec<Splash>>>,
     /// Chemin de l'icône de chaque rune et de chaque voie de runes, lus une fois dans le client.
     perk_paths: Arc<Mutex<HashMap<i64, String>>>,
     /// Chemin de l'icône de chaque sort d'invocateur, lus une fois dans le client.
@@ -567,6 +570,7 @@ impl Assets {
             items: Arc::default(),
             item_icons: Arc::default(),
             splashes: Arc::default(),
+            load_screens: Arc::default(),
             perk_paths: Arc::default(),
             spell_paths: Arc::default(),
             matches: Arc::default(),
@@ -939,7 +943,7 @@ impl Assets {
         let champion = skin_id / 1000;
         let doc = self.client_file(&format!("/lol-game-data/assets/v1/champions/{champion}.json")).await;
         let doc = doc.and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
-        let mut paths = doc.map_or_else(Vec::new, |doc| splash_paths(&doc, skin_id));
+        let mut paths = doc.map_or_else(Vec::new, |doc| splash_paths(&doc, skin_id, &["splashPath", "uncenteredSplashPath"]));
         // Ancien emplacement des illustrations, au cas où la fiche ne serait pas lisible.
         paths.push(format!("/lol-game-data/assets/v1/champion-splashes/{champion}/{skin_id}.jpg"));
         for path in paths {
@@ -947,6 +951,28 @@ impl Assets {
                 let mut cache = self.splashes.lock().unwrap();
                 cache.push((skin_id, image.clone()));
                 if cache.len() > SPLASH_CACHE {
+                    cache.remove(0);
+                }
+                return Some(image);
+            }
+        }
+        None
+    }
+
+    /// Illustration d'écran de chargement d'un skin (portrait, ~308 × 560), lue dans le client puis gardée en
+    /// mémoire (celles de la partie en cours) ; celle de son skin de base si la sienne manque.
+    pub async fn load_screen(&self, skin_id: i64) -> Option<Vec<u8>> {
+        if let Some((_, image)) = self.load_screens.lock().unwrap().iter().find(|(id, _)| *id == skin_id) {
+            return Some(image.clone());
+        }
+        let champion = skin_id / 1000;
+        let doc = self.client_file(&format!("/lol-game-data/assets/v1/champions/{champion}.json")).await;
+        let doc = doc.and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())?;
+        for path in splash_paths(&doc, skin_id, &["loadScreenPath"]) {
+            if let Some(image) = self.client_file(&path).await {
+                let mut cache = self.load_screens.lock().unwrap();
+                cache.push((skin_id, image.clone()));
+                if cache.len() > LOAD_SCREEN_CACHE {
                     cache.remove(0);
                 }
                 return Some(image);
@@ -1078,7 +1104,7 @@ impl Assets {
 
 /// Chemins possibles de l'illustration d'un skin, d'après la fiche du champion (le premier qui existe gagne) :
 /// le skin lui-même, ou celui dont c'est un chroma, ou le palier d'un skin à paliers ; sinon le skin de base.
-fn splash_paths(champion: &Value, skin_id: i64) -> Vec<String> {
+fn splash_paths(champion: &Value, skin_id: i64, keys: &[&str]) -> Vec<String> {
     let skins: Vec<&Value> = champion["skins"].as_array().into_iter().flatten().collect();
     let has = |list: &Value| list.as_array().is_some_and(|l| l.iter().any(|x| x["id"] == skin_id));
     let tier = skins
@@ -1091,7 +1117,7 @@ fn splash_paths(champion: &Value, skin_id: i64) -> Vec<String> {
     let base = skins.iter().find(|s| s["isBase"] == true).or(skins.first());
     let mut paths = Vec::new();
     for entry in [tier, skin.copied(), base.copied()].into_iter().flatten() {
-        for key in ["splashPath", "uncenteredSplashPath"] {
+        for key in keys {
             let new = |path: &&str| path.starts_with('/') && !paths.iter().any(|known| known == path);
             if let Some(path) = entry[key].as_str().filter(new) {
                 paths.push(path.to_string());
@@ -1127,6 +1153,22 @@ pub struct Game {
     pub panel: Vec<PanelRow>,
     /// Le même build en détail, pour l'écran de l'app ; None sans build.
     pub build: Option<GameBuild>,
+    /// Objectifs pris par chaque équipe ; lus seulement quand l'app est par-dessus le jeu (Ctrl+X).
+    pub objectives: Option<Objectives>,
+}
+
+/// Objectifs pris par chaque équipe, ton équipe d'abord, d'après les événements de la partie.
+#[derive(Serialize, Clone, Default, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Objectives {
+    pub towers: [u32; 2],
+    pub inhibitors: [u32; 2],
+    /// Les dragons de chaque équipe, dans l'ordre : "Fire", "Water", "Earth", "Air", "Hextech", "Chemtech", "Elder".
+    pub dragons: [Vec<String>; 2],
+    /// Larves du Néant, Héraut, Nashor.
+    pub grubs: [u32; 2],
+    pub heralds: [u32; 2],
+    pub barons: [u32; 2],
 }
 
 /// Ce que l'écran de l'app ajoute au panneau posé sur le jeu.
@@ -1270,6 +1312,10 @@ pub struct Player {
     pub smurf: bool,
     /// Niveau de son compte ; None tant qu'il n'est pas lu.
     pub account_level: Option<u64>,
+    /// Son skin (numéro du client, ex. 122005) ; 0 si inconnu (son skin de base).
+    pub skin_id: i64,
+    /// Sa saison en classée d'après OP.GG ; None tant qu'elle n'est pas lue (ou s'il est en mode streamer).
+    pub season: Option<opgg::Season>,
 }
 
 /// Ce que ses dernières parties disent d'un joueur (lues pendant le chargement, comme pour les duos).
@@ -1378,6 +1424,12 @@ struct CurrentGame {
     levels: HashMap<i64, u64>,
     /// Compte de chaque joueur que le client donne, par champion.
     puuids: HashMap<i64, String>,
+    /// Skin de chaque joueur d'après le client, par champion (la partie en cours le précise).
+    skins: HashMap<i64, i64>,
+    /// Saison de chaque joueur d'après OP.GG, par champion : lue à part (voir `ask_seasons`), une fois par partie.
+    seasons: Arc<Mutex<HashMap<i64, opgg::Season>>>,
+    /// Champions dont la saison est demandée.
+    seasons_asked: HashSet<i64>,
 }
 
 /// Partie finie, en attente de ses stats dans l'historique du client.
@@ -1458,6 +1510,8 @@ pub struct Tracker {
     spell_names: HashMap<i64, String>,
     /// Dernière ligne écrite dans le terminal par sujet, pour ne pas la répéter.
     last_log: HashMap<&'static str, String>,
+    /// L'app est par-dessus le jeu (Ctrl+X) : les objectifs de la partie sont lus.
+    pub panel_open: bool,
 }
 
 /// Ce qui déclenche un nouvel import : (champion, poste, mode, adversaire direct).
@@ -1487,6 +1541,7 @@ impl Tracker {
             owners_skip: 0,
             last_pick: None,
             game: None,
+            panel_open: false,
             finished: None,
             lockfile: String::new(),
             lcu: None,
@@ -2629,9 +2684,61 @@ impl Tracker {
         }
     }
 
+    /// La partie en cours (voir `read_game`), avec la saison de chaque joueur dès qu'OP.GG l'a donnée.
+    async fn live_game(&mut self, base: &str, password: &str) -> Game {
+        let mut game = self.read_game(base, password).await;
+        self.ask_seasons(&game).await;
+        if let Some(current) = &self.game {
+            let seasons = current.seasons.lock().unwrap();
+            for player in game.allies.iter_mut().chain(game.enemies.iter_mut()) {
+                if player.skin_id == 0 {
+                    player.skin_id = current.skins.get(&player.champion_id).copied().unwrap_or(0);
+                }
+                player.season = seasons.get(&player.champion_id).cloned();
+            }
+        }
+        game
+    }
+
+    /// Saison des joueurs (OP.GG), demandée une fois par partie pour chacun dès que son Riot ID est connu : à part,
+    /// l'un après l'autre (adversaires d'abord), sans ralentir la lecture de la partie.
+    async fn ask_seasons(&mut self, game: &Game) {
+        let Some(current) = &mut self.game else {
+            return;
+        };
+        let mut wanted: Vec<(i64, String)> = Vec::new();
+        for player in game.enemies.iter().chain(&game.allies) {
+            if player.champion_id > 0 && player.riot_id.contains('#') && current.seasons_asked.insert(player.champion_id) {
+                wanted.push((player.champion_id, player.riot_id.clone()));
+            }
+        }
+        if wanted.is_empty() {
+            return;
+        }
+        let Some(region) = self.assets.client_region().await else {
+            return;
+        };
+        let seasons = current.seasons.clone();
+        tauri::async_runtime::spawn(async move {
+            let mut opgg = opgg::Client::new();
+            for (champion_id, riot_id) in wanted {
+                let Some((name, tag)) = riot_id.rsplit_once('#') else {
+                    continue;
+                };
+                match opgg.season(name, tag, &region).await {
+                    Ok(season) => {
+                        eprintln!("[saison] {riot_id} : {} parties classées, {} champions", season.games, season.champions.len());
+                        seasons.lock().unwrap().insert(champion_id, season);
+                    }
+                    Err(e) => eprintln!("[saison] {riot_id} : {e}"),
+                }
+            }
+        });
+    }
+
     /// Tes stats dans la partie en cours, via la Live Client Data API.
     /// Pendant l'écran de chargement : les champions et les rangs, d'après le client.
-    async fn live_game(&mut self, base: &str, password: &str) -> Game {
+    async fn read_game(&mut self, base: &str, password: &str) -> Game {
         self.load_champion_list(base, password).await;
         if self.game.is_none() {
             self.game = self.start_game(base, password).await;
@@ -2716,6 +2823,9 @@ impl Tracker {
                 riot_id: if hidden(id) { String::new() } else { player["riotId"].as_str().unwrap_or_default().to_string() },
                 puuid: puuids.and_then(|m| m.get(&id)).cloned().unwrap_or_default(),
                 recent: forms.and_then(|f| f.get(&id)).cloned(),
+                // Numéro du skin chez ce champion → numéro du client.
+                skin_id: player["skinID"].as_i64().filter(|n| id > 0 && *n > 0).map_or(0, |n| id * 1000 + n),
+                season: None,
             };
             if player["team"] == p["team"] {
                 allies.push(entry);
@@ -2805,6 +2915,7 @@ impl Tracker {
             _ => (Vec::new(), None),
         };
 
+        let objectives = if self.panel_open { self.objectives(&players, p).await } else { None };
         let score = |key: &str| p["scores"][key].as_u64().unwrap_or(0);
         Game {
             ready: true,
@@ -2822,7 +2933,53 @@ impl Tracker {
             enemies,
             panel,
             build: details,
+            objectives,
         }
+    }
+
+    /// Objectifs pris par chaque équipe (ton équipe d'abord), d'après les événements de la partie. Tour et
+    /// inhibiteur : leur nom dit à quelle équipe ils étaient (T1 : ORDER, T2 : CHAOS) ; monstres : l'équipe de celui
+    /// qui les a tués.
+    async fn objectives(&self, players: &[Value], me: &Value) -> Option<Objectives> {
+        let events = self.get(&format!("{LIVE_CLIENT}/eventdata"), None).await?;
+        let mine = me["team"].as_str().unwrap_or("ORDER");
+        // Équipe du tueur : 0 = la tienne, 1 = l'autre (son pseudo, avec ou sans tag).
+        let side_of = |killer: &str| {
+            let name = |p: &Value, key: &str| p[key].as_str().is_some_and(|n| n == killer || n.split('#').next() == Some(killer));
+            let player = players.iter().find(|p| ["riotIdGameName", "riotId", "summonerName"].iter().any(|key| name(p, key)))?;
+            Some(usize::from(player["team"].as_str() != Some(mine)))
+        };
+        // Bâtiment d'une équipe détruit : point pour l'autre.
+        let building = |name: &str| {
+            let owner = if name.contains("_T1_") { "ORDER" } else if name.contains("_T2_") { "CHAOS" } else { return None };
+            Some(usize::from(owner == mine))
+        };
+        let mut done = Objectives::default();
+        for event in events["Events"].as_array().into_iter().flatten() {
+            let killer = event["KillerName"].as_str().unwrap_or_default();
+            match event["EventName"].as_str().unwrap_or_default() {
+                "TurretKilled" => {
+                    if let Some(side) = event["TurretKilled"].as_str().and_then(building) {
+                        done.towers[side] += 1;
+                    }
+                }
+                "InhibKilled" => {
+                    if let Some(side) = event["InhibKilled"].as_str().and_then(building) {
+                        done.inhibitors[side] += 1;
+                    }
+                }
+                "DragonKill" => {
+                    if let Some(side) = side_of(killer) {
+                        done.dragons[side].push(event["DragonType"].as_str().unwrap_or_default().to_string());
+                    }
+                }
+                "HordeKill" => side_of(killer).into_iter().for_each(|side| done.grubs[side] += 1),
+                "HeraldKill" => side_of(killer).into_iter().for_each(|side| done.heralds[side] += 1),
+                "BaronKill" => side_of(killer).into_iter().for_each(|side| done.barons[side] += 1),
+                _ => {}
+            }
+        }
+        Some(done)
     }
 
     /// Note depuis quand chaque objet est dans ton inventaire : gardé 30 s, il est acheté pour de bon (et reste
@@ -2982,6 +3139,13 @@ impl Tracker {
         }
         let queue_id = data["queue"]["id"].as_i64().unwrap_or(0);
         let mut game = CurrentGame { game_id, mode: game_mode(&data["queue"]).to_string(), queue_id, ..Default::default() };
+        // Skins choisis (numéro du skin chez chaque champion), pour l'écran de chargement de l'app.
+        for pick in data["playerChampionSelections"].as_array().into_iter().flatten() {
+            let (champion, index) = (pick["championId"].as_i64().unwrap_or(0), pick["selectedSkinIndex"].as_i64().unwrap_or(-1));
+            if champion > 0 && index >= 0 {
+                game.skins.insert(champion, champion * 1000 + index);
+            }
+        }
         // Ce que la sélection a donné ; la partie en cours le précisera.
         if let Some((champion_id, position, opponent_id, form)) = self.last_pick.clone() {
             game.champion_id = champion_id;
@@ -3032,6 +3196,7 @@ impl Tracker {
                     position: lane.to_string(),
                     riot_id,
                     puuid: puuid.unwrap_or_default().to_string(),
+                    skin_id: game.skins.get(&champion_id).copied().unwrap_or(0),
                     ..Default::default()
                 };
                 players.push((order, player));

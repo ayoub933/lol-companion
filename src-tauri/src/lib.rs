@@ -309,7 +309,8 @@ pub fn run() {
         // lcu://localhost/splash-<numéro du skin> (illustration), lcu://localhost/perk-<numéro de la rune ou de la voie>,
         // lcu://localhost/spell-<numéro du sort>, lcu://localhost/rank-<rang en minuscules> (emblème),
         // lcu://localhost/gold (icône de l'or), lcu://localhost/profile-<numéro de l'icône de profil>,
-        // lcu://localhost/ability-<numéro du champion>-<q, w, e ou r> (compétence).
+        // lcu://localhost/ability-<numéro du champion>-<q, w, e ou r> (compétence),
+        // lcu://localhost/loadscreen-<numéro du skin> (illustration d'écran de chargement, en portrait).
         .register_asynchronous_uri_scheme_protocol("lcu", move |_ctx, request, responder| {
             let icons = icons.clone();
             let path = request.uri().path().trim_start_matches('/').to_string();
@@ -347,6 +348,11 @@ pub fn run() {
                 } else if let Some(skin) = path.strip_prefix("splash-") {
                     match number(skin).filter(|id| *id > 0) {
                         Some(id) => icons.splash(id).await.map(|jpg| (jpg, "image/jpeg")),
+                        None => None,
+                    }
+                } else if let Some(skin) = path.strip_prefix("loadscreen-") {
+                    match number(skin).filter(|id| *id > 0) {
+                        Some(id) => icons.load_screen(id).await.map(|jpg| (jpg, "image/jpeg")),
                         None => None,
                     }
                 } else {
@@ -460,6 +466,7 @@ pub fn run() {
                     let form = *handle.state::<ChosenForm>().0.lock().unwrap();
                     let page = handle.state::<ChosenPage>().0.lock().unwrap().clone();
                     let settings = handle.state::<Prefs>().settings.lock().unwrap().clone();
+                    tracker.panel_open = ready.panel.load(Ordering::Relaxed);
                     let mut snap = tracker.poll(manual, form, page, &settings).await;
                     snap.update = handle.state::<PendingUpdate>().0.lock().unwrap().as_ref().map(|u| u.version.clone());
                     // Nouvelle version : installée toute seule après une minute ni en sélection ni en partie,

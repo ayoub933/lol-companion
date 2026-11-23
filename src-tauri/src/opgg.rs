@@ -44,6 +44,12 @@ const PROFILE_FIELDS: [&str; 3] = [
     "data.summoner.league_stats[].{game_type,win,lose}",
     "data.summoner.league_stats[].tier_info.{tier,division,lp}",
 ];
+/// Sa saison en classée (solo et flexible ensemble) : ses parties et victoires, et ses champions les plus joués
+/// (10 au plus) avec leurs parties, victoires, éliminations, morts et assistances.
+const SEASON_FIELDS: [&str; 2] = [
+    "data.summoner.most_champions.{game_type,play,win,lose}",
+    "data.summoner.most_champions.champion_stats[].{id,champion_name,play,win,kill,death,assist}",
+];
 const MATCH_FIELDS: [&str; 4] = [
     "data.game_history[].{id,created_at,game_length_second,game_map,game_type}",
     "data.game_history[].participants[].{champion_id,champion_name,position}",
@@ -236,6 +242,64 @@ pub struct Pick {
     pub name: String,
     pub win_rate: f64,
     pub games: u64,
+}
+
+/// Saison d'un joueur en classée (solo et flexible ensemble), d'après OP.GG : ses parties et victoires, ses
+/// éliminations, morts et assistances (sur ses champions les plus joués), et ces champions (le plus joué d'abord).
+#[derive(Serialize, Clone, Default, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Season {
+    pub games: u64,
+    pub wins: u64,
+    pub kills: u64,
+    pub deaths: u64,
+    pub assists: u64,
+    pub champions: Vec<SeasonChampion>,
+}
+
+/// Un de ses champions cette saison.
+#[derive(Serialize, Clone, Default, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SeasonChampion {
+    pub champion_id: i64,
+    pub name: String,
+    pub games: u64,
+    pub wins: u64,
+    pub kills: u64,
+    pub deaths: u64,
+    pub assists: u64,
+}
+
+/// Sa saison d'après le profil OP.GG (champs SEASON_FIELDS).
+fn season_from(doc: &Value) -> Season {
+    let most = &doc["data"]["summoner"]["most_champions"];
+    let count = |v: &Value, key: &str| v[key].as_u64().unwrap_or(0);
+    let mut champions: Vec<SeasonChampion> = most["champion_stats"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|c| {
+            Some(SeasonChampion {
+                champion_id: c["id"].as_i64().filter(|id| *id > 0)?,
+                name: c["champion_name"].as_str().unwrap_or_default().to_string(),
+                games: count(c, "play"),
+                wins: count(c, "win"),
+                kills: count(c, "kill"),
+                deaths: count(c, "death"),
+                assists: count(c, "assist"),
+            })
+        })
+        .collect();
+    champions.sort_by_key(|c| std::cmp::Reverse(c.games));
+    let total = |stat: fn(&SeasonChampion) -> u64| champions.iter().map(stat).sum();
+    Season {
+        games: count(most, "play"),
+        wins: count(most, "win"),
+        kills: total(|c| c.kills),
+        deaths: total(|c| c.deaths),
+        assists: total(|c| c.assists),
+        champions,
+    }
 }
 
 /// Un joueur du classement d'un champion (ses parties avec lui, son rang en solo/duo).
@@ -540,6 +604,17 @@ impl Client {
     async fn analysis(&mut self, args: Value) -> Result<Value, String> {
         let text = self.tool_text("lol_get_champion_analysis", args).await?;
         to_json_doc(&text).ok_or_else(|| UNREADABLE.to_string())
+    }
+
+    /// Saison d'un joueur en classée (voir `Season`), ou l'erreur d'OP.GG (« Summoner not found »…).
+    pub async fn season(&mut self, name: &str, tag: &str, region: &str) -> Result<Season, String> {
+        let args = json!({
+            "game_name": name, "tag_line": tag, "region": region, "lang": LANG, "client_app": APP,
+            "desired_output_fields": SEASON_FIELDS,
+        });
+        let text = self.tool_text("lol_get_summoner_profile", args).await?;
+        let doc = to_json_doc(&text).ok_or_else(|| UNREADABLE.to_string())?;
+        Ok(season_from(&doc))
     }
 
     /// Profil d'un joueur (niveau, rangs), ou l'erreur d'OP.GG (« Summoner not found »…).

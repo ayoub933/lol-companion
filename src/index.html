@@ -414,6 +414,15 @@
           <p class="empty-msg" id="champ-players-empty" hidden>Pas de classement sur OP.GG.</p>
         </section>
       </div>
+      <!-- L'app par-dessus le jeu (Ctrl+X) : les 10 joueurs en cartes, ton équipe en haut, et la partie en un coup
+           d'œil à droite (main.js, renderPanel()). -->
+      <section class="panel-board" id="panel-board" hidden aria-label="Joueurs de la partie">
+        <div class="pb-teams">
+          <div class="pb-row" id="pb-allies"></div>
+          <div class="pb-row" id="pb-enemies"></div>
+        </div>
+        <aside class="pb-side" id="pb-side"></aside>
+      </section>
     </main>
   </body>
 </html>

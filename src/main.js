@@ -1701,6 +1701,234 @@ function faceCell(player, ready, enemy, opponent, mates) {
   return player.me ? cell : profileLink(cell, player.riotId, player.puuid, "");
 }
 
+// ---------- L'app par-dessus le jeu (Ctrl+X) ----------
+
+// Les 10 joueurs en cartes, ton équipe en haut, chaque équipe rangée par poste : l'illustration de leur skin, puis
+// leur saison en classée d'après OP.GG (% de victoires et KDA, en tout et sur le champion joué) et leurs champions
+// préférés. À droite, la partie en un coup d'œil. Un clic sur une carte : le profil du joueur.
+let panelOpen = false;
+// % de victoires : bleu clair à partir de 55 %, rouge à 45 % ou moins ; gris en dessous de 10 parties (trop peu).
+const rateClass = (wins, games) => (games < 10 ? "rate-few" : wins >= 0.55 * games ? "rate-hi" : wins <= 0.45 * games ? "rate-lo" : "");
+// KDA : bleu clair à partir de 3,5, rouge en dessous de 2.
+const kdaClass = (value) => (value >= 3.5 ? "rate-hi" : value < 2 ? "rate-lo" : "");
+const ratio = (k, d, a) => (k + a) / Math.max(d, 1);
+
+function renderPanel(game) {
+  $("panel-board").hidden = !game;
+  if (!game) return;
+  const everyone = [...game.allies, ...game.enemies];
+  fillTeam($("pb-allies"), game.allies, false, game.ready, everyone);
+  fillTeam($("pb-enemies"), game.enemies, true, game.ready, everyone);
+  renderPanelSide(game);
+}
+
+// Une carte par joueur, gardée d'un tour à l'autre : son illustration ne se recharge pas.
+function fillTeam(row, players, enemy, ready, everyone) {
+  const ids = players.map((p) => p.championId).join(",");
+  if (row.dataset.ids !== ids) {
+    row.dataset.ids = ids;
+    row.replaceChildren(...players.map(() => panelCard(enemy)));
+  }
+  players.forEach((player, i) => fillCard(row.children[i], player, ready, everyone));
+}
+
+function panelCard(enemy) {
+  const card = el("button", `pb-card ${enemy ? "enemy" : "ally"}`);
+  card.type = "button";
+  const skin = el("img", "pb-skin");
+  skin.alt = "";
+  card.append(
+    el("div", "pb-art", [skin, el("span", "pb-fade"), el("div", "pb-marks"), el("span", "pb-live"), el("div", "pb-who")]),
+    el("div", "pb-info"),
+  );
+  return card;
+}
+
+function fillCard(card, player, ready, everyone) {
+  const key = JSON.stringify([player, ready]);
+  if (card.dataset.key === key) return;
+  card.dataset.key = key;
+  card.classList.toggle("me", player.me);
+  setImage(card.querySelector(".pb-skin"), iconUrl(`loadscreen-${player.skinId || player.championId * 1000}`));
+  const mates = player.group ? everyone.filter((q) => q !== player && q.group === player.group).map((q) => q.champion) : [];
+  const recent = player.recent;
+  const streak = recent && Math.abs(recent.streak) >= 3 ? recent.streak : 0;
+  const streakMark = streak
+    ? el("span", `streak ${streak > 0 ? "win" : "loss"}`, `${Math.abs(streak)} ${streak > 0 ? "V" : "D"}`)
+    : null;
+  if (streakMark) streakMark.title = `${Math.abs(streak)} ${streak > 0 ? "victoires" : "défaites"} d'affilée`;
+  card.querySelector(".pb-marks").replaceChildren(
+    ...[groupMark(player, mates), metMark(player), smurfMark(player), otpMark(player), streakMark].filter(Boolean),
+  );
+  const live = card.querySelector(".pb-live");
+  live.hidden = !ready;
+  live.textContent = ready ? `niv. ${player.level} · ${player.kills}/${player.deaths}/${player.assists}` : "";
+  const name = player.riotId ? player.riotId.split("#")[0] : player.rankHidden ? "Joueur masqué" : "";
+  card.querySelector(".pb-who").replaceChildren(
+    el("span", "pb-champ", `${upper(player.champion)}${player.me ? " · TOI" : ""}`),
+    el("span", "pb-name", name),
+  );
+  card.querySelector(".pb-info").replaceChildren(...panelInfo(player));
+  card.classList.toggle("profile-link", Boolean(!player.me && (player.riotId || player.puuid)));
+  card.title = card.classList.contains("profile-link") ? `Voir le profil de ${player.riotId || "ce joueur"}` : "";
+  card.onclick = card.classList.contains("profile-link") ? () => searchPlayer(player.riotId, "", player.puuid) : null;
+}
+
+// Sous l'illustration : son rang, sa saison en classée (en tout et sur ce champion), ses champions préférés.
+function panelInfo(player) {
+  if (player.rankHidden || !player.riotId) return [el("p", "pb-wait", "Mode streamer : rang et saison masqués")];
+  // Son rang en entier : « Émeraude II · 45 LP ».
+  const tier = player.rank?.tier;
+  const rank = el(
+    "div",
+    "pb-rank",
+    tier
+      ? [emblem(tier, "small", true), `${TIERS[tier] ?? tier}${player.rank.division ? ` ${player.rank.division}` : ""} · ${whole(player.rank.lp)} LP`]
+      : [player.rank ? "Non classé" : "—"],
+  );
+  const season = player.season;
+  if (!season) return [rank, el("p", "pb-wait", "Saison : lecture d'OP.GG…")];
+  if (!season.games) return [rank, el("p", "pb-wait", "Pas de classée cette saison")];
+  const stat = (label, value, sub, className, title) => {
+    const node = el("div", "pb-stat", [el("span", "k", label), el("span", `v ${className}`, [value, el("small", "", sub)])]);
+    node.title = title;
+    return node;
+  };
+  const all = ratio(season.kills, season.deaths, season.assists);
+  const champ = season.champions.find((c) => c.championId === player.championId);
+  const champKda = champ && ratio(champ.kills, champ.deaths, champ.assists);
+  const stats = [
+    stat(
+      "SAISON",
+      `${Math.round((season.wins / season.games) * 100)} %`,
+      ` ${whole(season.games)} p.`,
+      rateClass(season.wins, season.games),
+      `${season.wins} victoires sur ${whole(season.games)} parties classées cette saison (OP.GG)`,
+    ),
+    stat("KDA", decimal(all), "", kdaClass(all), "KDA moyen de ses classées cette saison, sur ses champions les plus joués"),
+    champ
+      ? stat(
+          upper(player.champion),
+          `${Math.round((champ.wins / champ.games) * 100)} %`,
+          ` ${whole(champ.games)} p.`,
+          rateClass(champ.wins, champ.games),
+          `${champ.wins} victoires sur ${whole(champ.games)} parties classées avec ${player.champion} cette saison`,
+        )
+      : stat(upper(player.champion), "—", " 0 p.", "rate-few", `Pas parmi ses champions les plus joués en classée cette saison`),
+    champ
+      ? stat(`KDA ${upper(player.champion)}`, decimal(champKda), "", kdaClass(champKda), `KDA moyen avec ${player.champion} cette saison`)
+      : stat(`KDA ${upper(player.champion)}`, "—", "", "rate-few", ""),
+  ];
+  // Ses 3 champions les plus joués, leur % de victoires dessous.
+  const favs = season.champions.slice(0, 3).map((c) => {
+    const node = el("span", "pb-fav", [
+      champIcon(c.championId, c.name),
+      el("span", rateClass(c.wins, c.games), `${Math.round((c.wins / Math.max(c.games, 1)) * 100)} %`),
+    ]);
+    node.title = `${c.name} : ${whole(c.games)} parties, ${Math.round((c.wins / Math.max(c.games, 1)) * 100)} % de victoires, KDA ${kda(c.kills, c.deaths, c.assists)}`;
+    return node;
+  });
+  return [rank, el("div", "pb-stats", stats), el("div", "pb-favs", [el("span", "k", "PRÉFÉRÉS"), ...favs])];
+}
+
+// La partie en un coup d'œil : le chrono, les kills, l'or en objets, les objectifs et le niveau des deux équipes.
+const DRAGONS = {
+  Fire: "Infernal",
+  Water: "Océan",
+  Earth: "Montagne",
+  Air: "Nuages",
+  Hextech: "Hextech",
+  Chemtech: "Chemtech",
+  Elder: "Ancestral",
+};
+const TIER_ORDER = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER"];
+
+// Rang moyen d'une équipe (joueurs classés seulement) : chaque division compte pour un cran.
+function averageRank(team) {
+  const steps = team
+    .map((p) => p.rank)
+    .filter((rank) => rank?.tier && TIER_ORDER.includes(rank.tier))
+    .map((rank) => TIER_ORDER.indexOf(rank.tier) * 4 + (APEX.includes(rank.tier) ? 0 : 4 - (DIVISIONS.indexOf(rank.division) || 4)));
+  if (!steps.length) return null;
+  const mean = Math.round(steps.reduce((a, b) => a + b, 0) / steps.length);
+  const tier = TIER_ORDER[Math.min(Math.floor(mean / 4), TIER_ORDER.length - 1)];
+  return { tier, division: APEX.includes(tier) ? "" : DIVISIONS[4 - (mean % 4)], lp: 0 };
+}
+
+// % de victoires moyen d'une équipe cette saison (joueurs dont OP.GG a donné la saison).
+function averageSeason(team) {
+  const rates = team.filter((p) => p.season?.games).map((p) => p.season.wins / p.season.games);
+  return rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : null;
+}
+
+function renderPanelSide(game) {
+  const { allies, enemies, ready } = game;
+  const block = (title, rows) => el("div", "pb-block", [el("span", "kicker", title), ...rows]);
+  // Une ligne : ce qui est compté, ta valeur (bleu) et la leur (orange).
+  const versus = (label, mine, theirs, title = "") => {
+    const row = el("div", "pb-vs", [el("span", "pb-k", label), el("span", "pb-mine", [mine]), el("span", "pb-theirs", [theirs])]);
+    row.title = title;
+    return row;
+  };
+  const blocks = [block("PARTIE", [el("span", "pb-clock", ready ? clock(game.gameTime) : "CHARGEMENT")])];
+  if (ready) {
+    const kills = (team) => team.reduce((sum, p) => sum + p.kills, 0);
+    const [mine, theirs] = [teamValue(allies), teamValue(enemies)];
+    const gold = [versus("KILLS", whole(kills(allies)), whole(kills(enemies)))];
+    if (mine != null && theirs != null) {
+      gold.push(versus("OR", whole(mine), whole(theirs), "Valeur des objets achetés, au prix de la boutique"));
+      gold.push(el("div", `pb-gap ${gapClass(mine - theirs)}`, [el("span", "pb-k", "ÉCART"), el("span", "", signed(mine - theirs))]));
+    }
+    blocks.push(block("SCORE", gold));
+  }
+  const goals = game.objectives;
+  if (ready && goals) {
+    const dots = (list) =>
+      el(
+        "span",
+        "pb-drakes",
+        list.length
+          ? [
+              String(list.length),
+              ...list.map((type) => {
+                const dot = el("span", `drake ${type.toLowerCase()}`);
+                dot.title = `Dragon ${DRAGONS[type] ?? type}`;
+                return dot;
+              }),
+            ]
+          : ["0"],
+      );
+    blocks.push(
+      block("OBJECTIFS", [
+        versus("TOURS", String(goals.towers[0]), String(goals.towers[1])),
+        versus("DRAGONS", dots(goals.dragons[0]), dots(goals.dragons[1])),
+        versus("LARVES", String(goals.grubs[0]), String(goals.grubs[1])),
+        versus("HÉRAUT", String(goals.heralds[0]), String(goals.heralds[1])),
+        versus("NASHOR", String(goals.barons[0]), String(goals.barons[1])),
+        versus("INHIBITEURS", String(goals.inhibitors[0]), String(goals.inhibitors[1])),
+      ]),
+    );
+  }
+  const rankCell = (team) => {
+    const rank = averageRank(team);
+    const node = el("span", "rank");
+    if (rank) setRank(node, rank, "small");
+    else node.textContent = "—";
+    return node;
+  };
+  const seasonCell = (team) => {
+    const rate = averageSeason(team);
+    return rate == null ? "—" : el("span", rateClass(rate * 100, 100), `${Math.round(rate * 100)} %`);
+  };
+  blocks.push(
+    block("ÉQUIPES", [
+      versus("RANG MOYEN", rankCell(allies), rankCell(enemies), "Rang moyen des joueurs classés de chaque équipe"),
+      versus("SAISON", seasonCell(allies), seasonCell(enemies), "% de victoires moyen des joueurs cette saison (OP.GG)"),
+    ]),
+  );
+  $("pb-side").replaceChildren(...blocks);
+}
+
 // ---------- Ensemble ----------
 
 // ---------- Recherche d'un joueur ----------
@@ -2061,7 +2289,10 @@ function render(state) {
   renderStats(state, lobby && !viewing);
   renderLp(state.profile, lobby && !viewing && Boolean(state.profile));
   renderSelection(viewing || champView ? null : state.runes);
-  renderGame(viewing || champView ? null : state.game);
+  // App par-dessus le jeu (Ctrl+X) : les 10 joueurs en cartes à la place de l'écran de partie.
+  const panel = panelOpen && !viewing && !champView ? state.game : null;
+  renderGame(viewing || champView || panel ? null : state.game);
+  renderPanel(panel);
   renderChampion(champView?.page ?? null);
   layout();
 }
@@ -2297,15 +2528,17 @@ const EDGE = 12;
 function layout() {
   const width = document.documentElement.clientWidth;
   const height = window.innerHeight;
-  const view = !$("champ-hero").hidden
-    ? "champion"
-    : !$("player").hidden
-      ? "lobby"
-      : !$("duel-hero").hidden
-        ? "selection"
-        : !$("faceoff").hidden || !$("game-loading").hidden
-          ? "game"
-          : "";
+  const view = !$("panel-board").hidden
+    ? "panel"
+    : !$("champ-hero").hidden
+      ? "champion"
+      : !$("player").hidden
+        ? "lobby"
+        : !$("duel-hero").hidden
+          ? "selection"
+          : !$("faceoff").hidden || !$("game-loading").hidden
+            ? "game"
+            : "";
   let zoom = Math.min(width / STANDARD.width, height / STANDARD.height, 2);
   const board = Boolean(view) && zoom >= MIN_ZOOM;
   if (!board) zoom = Math.min(1, Math.max(0.8, width / (ONE_COLUMN + 2 * EDGE)));
@@ -2412,5 +2645,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
   // D'abord écouter les mises à jour, puis récupérer l'état actuel.
   await listen("lol-state", (event) => render(event.payload));
+  // Ctrl+X : l'app vient par-dessus le jeu (true) ou revient à sa place (false).
+  await listen("panel", (event) => {
+    panelOpen = Boolean(event.payload);
+    if (lastState) render(lastState);
+  });
   render(await invoke("get_state"));
 });
