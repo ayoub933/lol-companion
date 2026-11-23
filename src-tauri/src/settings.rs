@@ -30,6 +30,9 @@ pub struct Settings {
     pub show_gold_overlay: bool,
     /// true = noms des objets, runes et sorts en anglais ; false = ceux du client, dans sa langue.
     pub english_names: bool,
+    /// KDA des joueurs (Ctrl+X) : true = ratio (2,6) ; false = éliminations, morts et assistances par partie
+    /// (4,5 / 7,1 / 8).
+    pub kda_ratio: bool,
 }
 
 impl Default for Settings {
@@ -49,6 +52,7 @@ impl Default for Settings {
             build_overlay_always: false,
             show_gold_overlay: true,
             english_names: false,
+            kda_ratio: false,
         }
     }
 }

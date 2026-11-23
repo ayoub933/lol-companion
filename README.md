@@ -371,8 +371,9 @@ celle d'en face en bas, chacune rangée par poste. Chaque carte :
   groupe, déjà croisé, smurf, OTP, série de 3 ou plus) ; en partie, son niveau et son score ;
 - son rang (« Émeraude II · 45 LP ») ;
 - sa saison en classée (solo et flexible ensemble) d'après OP.GG, en gros et sans libellés pour se lire d'un coup
-  d'œil : % de victoires, parties et KDA (épées) sur le champion qu'il joue (son icône devant), puis sur toute sa
-  saison (une coupe devant) ; ses 3 champions les plus joués avec leur % de victoires (une étoile devant). % de
+  d'œil : % de victoires, parties et KDA sur le champion qu'il joue (son icône devant), puis sur toute sa saison
+  (une coupe devant) ; ses 3 champions les plus joués avec leur % de victoires (une étoile devant). Le KDA : par
+  partie (« 4,5 / 7,1 / 8 », sous le %) ou en ratio (« 2,6 », à droite), au choix dans les réglages. % de
   victoires en bleu clair à partir de 55 %, en rouge à 45 % ou moins, en gris sous 10 parties ; KDA en bleu clair
   à partir de 3,5, en rouge sous 2 ;
 - un clic : son profil (« LA PARTIE » pour revenir aux cartes).

@@ -1709,6 +1709,8 @@ function faceCell(player, ready, enemy, opponent, mates) {
 // leur saison en classée d'après OP.GG (% de victoires et KDA, en tout et sur le champion joué) et leurs champions
 // préférés. À droite, ton build (le même que sur l'écran de partie). Un clic sur une carte : le profil du joueur.
 let panelOpen = false;
+// KDA des cartes (réglage) : true = ratio (2,6) ; false = éliminations, morts et assistances par partie (4,5 / 7,1 / 8).
+let kdaRatio = false;
 // % de victoires : bleu clair à partir de 55 %, rouge à 45 % ou moins ; gris en dessous de 10 parties (trop peu).
 const rateClass = (wins, games) => (games < 10 ? "rate-few" : wins >= 0.55 * games ? "rate-hi" : wins <= 0.45 * games ? "rate-lo" : "");
 // KDA : bleu clair à partir de 3,5, rouge en dessous de 2.
@@ -1772,7 +1774,7 @@ function panelCard(enemy) {
 }
 
 function fillCard(card, player, ready, everyone) {
-  const key = JSON.stringify([player, ready]);
+  const key = JSON.stringify([player, ready, kdaRatio]);
   if (card.dataset.key === key) return;
   card.dataset.key = key;
   card.classList.toggle("me", player.me);
@@ -1834,18 +1836,27 @@ function panelInfo(player) {
   const season = player.season;
   if (!season) return [rank, el("p", "pb-wait", "Saison : lecture d'OP.GG…")];
   if (!season.games) return [rank, el("p", "pb-wait", "Pas de classée cette saison")];
-  // Une ligne : un dessin (ou l'icône du champion), son % de victoires et ses parties, son KDA.
-  const line = (mark, wins, games, kills, deaths, assists, title, big) => {
+  // Une ligne : un dessin (ou l'icône du champion), son % de victoires et ses parties, son KDA : en ratio à droite
+  // (2,6), ou par partie dessous (4,5 / 7,1 / 8) selon le réglage. `played` : les parties dont viennent ses
+  // éliminations, morts et assistances.
+  const line = (mark, wins, games, kills, deaths, assists, played, title, big) => {
     const value = ratio(kills, deaths, assists);
-    const row = el("div", `pb-line${big ? " big" : ""}`, [
-      mark,
-      el("span", "pb-rate-box", [
-        el("span", `pb-rate ${games ? rateClass(wins, games) : "rate-few"}`, games ? `${Math.round((wins / games) * 100)} %` : "—"),
-        el("span", "pb-games", games ? `${whole(games)} parties` : "0 partie"),
-      ]),
-      el("span", `pb-kda ${games ? kdaClass(value) : "rate-few"}`, [glyph("kills"), games ? decimal(value) : "—"]),
-    ]);
-    row.title = title;
+    const rate = el("span", `pb-rate ${games ? rateClass(wins, games) : "rate-few"}`, games ? `${Math.round((wins / games) * 100)} %` : "—");
+    const count = el("span", "pb-games", games ? `${whole(games)} parties` : "0 partie");
+    const kdaClassName = games ? kdaClass(value) : "rate-few";
+    const per = (n) => number(n / Math.max(played, 1), 1);
+    const average = games ? `${per(kills)} / ${per(deaths)} / ${per(assists)}` : "—";
+    const row = kdaRatio
+      ? el("div", `pb-line${big ? " big" : ""}`, [
+          mark,
+          el("span", "pb-rate-box", [rate, count]),
+          el("span", `pb-kda ${kdaClassName}`, [glyph("kills"), games ? decimal(value) : "—"]),
+        ])
+      : el("div", `pb-line split${big ? " big" : ""}`, [
+          mark,
+          el("span", "pb-rate-box", [el("span", "pb-rate-row", [rate, count]), el("span", `pb-kda-avg ${kdaClassName}`, average)]),
+        ]);
+    row.title = games ? `${title}, KDA ${decimal(value)} (${average} par partie)` : title;
     return row;
   };
   const champ = season.champions.find((c) => c.championId === player.championId);
@@ -1857,10 +1868,13 @@ function panelInfo(player) {
         champ.kills,
         champ.deaths,
         champ.assists,
-        `Avec ${player.champion} cette saison : ${champ.wins} victoires sur ${whole(champ.games)} parties classées, KDA ${kda(champ.kills, champ.deaths, champ.assists)}`,
+        champ.games,
+        `Avec ${player.champion} cette saison : ${champ.wins} victoires sur ${whole(champ.games)} parties classées`,
         true,
       )
-    : line(champIcon(player.championId, player.champion), 0, 0, 0, 0, 0, `Pas parmi ses champions les plus joués en classée cette saison`, true);
+    : line(champIcon(player.championId, player.champion), 0, 0, 0, 0, 0, 0, `Pas parmi ses champions les plus joués en classée cette saison`, true);
+  // Ses éliminations, morts et assistances viennent de ses champions les plus joués : leurs parties.
+  const listed = season.champions.reduce((sum, c) => sum + c.games, 0);
   const all = line(
     glyph("season"),
     season.wins,
@@ -1868,7 +1882,8 @@ function panelInfo(player) {
     season.kills,
     season.deaths,
     season.assists,
-    `Saison : ${season.wins} victoires sur ${whole(season.games)} parties classées (solo et flexible), KDA moyen sur ses champions les plus joués`,
+    listed,
+    `Saison : ${season.wins} victoires sur ${whole(season.games)} parties classées (solo et flexible) ; KDA sur ses champions les plus joués`,
     false,
   );
   // Ses 3 champions les plus joués, leur % de victoires dessous.
@@ -2519,6 +2534,11 @@ function showSettings(settings) {
     if (input.type === "checkbox") input.checked = value;
     else input.value = String(value);
   }
+  // KDA des cartes (Ctrl+X) : redessinées s'il change.
+  if (kdaRatio !== Boolean(settings.kdaRatio)) {
+    kdaRatio = Boolean(settings.kdaRatio);
+    if (lastState) render(lastState);
+  }
 }
 
 async function saveSettings() {
@@ -2600,6 +2620,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
   // D'abord écouter les mises à jour, puis récupérer l'état actuel.
   await listen("lol-state", (event) => render(event.payload));
+  showSettings(await invoke("get_settings"));
   // Ctrl+X : l'app vient par-dessus le jeu (true) ou revient à sa place (false).
   await listen("panel", (event) => {
     panelOpen = Boolean(event.payload);

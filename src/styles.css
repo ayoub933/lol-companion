@@ -4263,6 +4263,30 @@ body[data-view="panel"] main {
   height: 14px;
   color: var(--muted);
 }
+/* KDA par partie (réglage) : sous le % de victoires, ses parties à côté du %. */
+.pb-line.split {
+  grid-template-columns: 22px minmax(0, 1fr);
+}
+.pb-line.split.big {
+  grid-template-columns: 28px minmax(0, 1fr);
+}
+.pb-rate-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.pb-kda-avg {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.2;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.pb-line.big .pb-kda-avg {
+  font-size: 16px;
+}
 /* % de victoires et KDA : bleu clair quand c'est bon, rouge quand c'est mauvais, gris sur trop peu de parties. */
 .rate-hi {
   color: var(--accent-light);
