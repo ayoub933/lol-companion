@@ -4031,6 +4031,46 @@ body[data-view="panel"] main {
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
 }
+/* Dessins des stats (traits de la couleur du texte). */
+.glyph {
+  flex: none;
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+}
+.glyph svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.glyph.kills {
+  color: var(--text-2);
+}
+.glyph.gold,
+.glyph.season,
+.glyph.star {
+  color: #e8bc4f;
+}
+.glyph.tower,
+.glyph.inhibitor {
+  color: #9fc3ff;
+}
+.glyph.dragon {
+  color: #ff8c5a;
+}
+.glyph.grubs,
+.glyph.herald,
+.glyph.baron {
+  color: #b994ff;
+}
+.glyph.rank {
+  color: var(--accent-light);
+}
 /* Une carte : l'illustration de son skin en haut (la place qui reste : un peu plus de la moitié à 720 px de haut),
    ses stats dessous, à la même hauteur dans toutes les cartes. */
 .pb-card {
@@ -4084,7 +4124,7 @@ body[data-view="panel"] main {
   height: 55%;
   background: linear-gradient(to bottom, transparent, rgba(12, 12, 16, 0.94));
 }
-/* En haut : venu en groupe, déjà croisé, smurf, OTP, série ; à droite, niveau et score dans la partie. */
+/* En haut : venu en groupe, déjà croisé, smurf, OTP, série ; au-dessus du nom, niveau et score dans la partie. */
 .pb-marks {
   position: absolute;
   top: 6px;
@@ -4099,19 +4139,20 @@ body[data-view="panel"] main {
   margin: 0;
 }
 .pb-marks .streak {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.6;
-  background: rgba(12, 12, 16, 0.75);
+  background: rgba(12, 12, 16, 0.8);
 }
 .pb-live {
   position: absolute;
   right: 6px;
-  bottom: 44px;
+  bottom: 46px;
   padding: 1px 6px;
-  background: rgba(12, 12, 16, 0.75);
-  color: var(--text-2);
-  font-size: 11px;
-  font-weight: 600;
+  background: rgba(12, 12, 16, 0.8);
+  color: var(--text);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 14px;
   white-space: nowrap;
 }
 .pb-who {
@@ -4133,7 +4174,7 @@ body[data-view="panel"] main {
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 21px;
+  font-size: 22px;
   line-height: 1.05;
 }
 .pb-card.ally .pb-champ {
@@ -4147,13 +4188,15 @@ body[data-view="panel"] main {
   font-weight: 600;
   color: var(--text-2);
 }
+/* Ses stats : rang, puis une ligne sur son champion (en gros), une sur sa saison, et ses préférés. */
 .pb-info {
   flex: none;
   box-sizing: border-box;
   height: 146px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  justify-content: space-between;
+  gap: 4px;
   padding: 6px 8px 7px;
   overflow: hidden;
 }
@@ -4161,51 +4204,72 @@ body[data-view="panel"] main {
   display: flex;
   align-items: center;
   gap: 5px;
-  min-height: 18px;
-  font-size: 12px;
+  min-height: 20px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-2);
   white-space: nowrap;
   overflow: hidden;
 }
 .pb-wait {
-  margin: 0;
-  font-size: 12px;
+  margin: 0 0 auto;
+  font-size: 13px;
   color: var(--muted);
 }
-/* Sa saison : % de victoires et KDA, en tout puis sur ce champion. */
-.pb-stats {
+.pb-line {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 3px 6px;
-}
-.pb-stat {
+  grid-template-columns: 22px auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
 }
-.pb-stat .k,
-.pb-favs .k {
+.pb-line.big {
+  grid-template-columns: 28px auto minmax(0, 1fr) auto;
+}
+.pb-line > .icon {
+  width: 28px;
+  height: 28px;
+}
+.pb-line > .glyph {
+  width: 20px;
+  height: 20px;
+  justify-self: center;
+}
+.pb-rate {
   font-family: var(--display);
-  font-weight: 700;
-  font-size: 10px;
-  letter-spacing: 0.08em;
+  font-weight: 800;
+  font-size: 19px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.pb-line.big .pb-rate {
+  font-size: 25px;
+}
+.pb-games {
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.pb-stat .v {
+.pb-kda {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-family: var(--display);
   font-weight: 800;
-  font-size: 17px;
-  line-height: 1.1;
+  font-size: 16px;
+  line-height: 1;
   white-space: nowrap;
 }
-.pb-stat .v small {
-  font-family: var(--body);
-  font-weight: 600;
-  font-size: 10px;
+.pb-line.big .pb-kda {
+  font-size: 19px;
+}
+.pb-kda .glyph {
+  width: 14px;
+  height: 14px;
   color: var(--muted);
 }
 /* % de victoires et KDA : bleu clair quand c'est bon, rouge quand c'est mauvais, gris sur trop peu de parties. */
@@ -4221,27 +4285,30 @@ body[data-view="panel"] main {
 .pb-favs {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   min-width: 0;
 }
-.pb-favs .k {
-  flex: 1;
-  min-width: 0;
+.pb-favs > .glyph {
+  width: 16px;
+  height: 16px;
+  margin-right: auto;
 }
 .pb-fav {
   flex: none;
   display: flex;
   flex-direction: column;
   align-items: center;
-  font-size: 10px;
+  font-family: var(--display);
+  font-size: 12px;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.1;
 }
 .pb-fav .icon {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
 }
-/* À droite : la partie en un coup d'œil, tes valeurs en bleu, les leurs en orange. */
+/* À droite : la partie en un coup d'œil. Chaque stat sur une ligne, ta valeur à gauche (bleu), la leur à droite
+   (orange), son dessin au milieu ; un 0 s'efface. */
 .pb-side {
   min-width: 0;
   min-height: 0;
@@ -4252,83 +4319,116 @@ body[data-view="panel"] main {
 .pb-block {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 7px;
   padding: 10px 12px;
   background: var(--card);
   border: 1px solid var(--card-line);
 }
-.pb-block:last-child {
+/* Les blocs se partagent la hauteur de la colonne, leurs lignes espacées d'autant. */
+.pb-block {
   flex: 1 1 auto;
+  justify-content: space-evenly;
+}
+.pb-clock-block {
+  flex: none;
+  align-items: center;
+  padding: 6px 12px;
 }
 .pb-clock {
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 34px;
+  font-size: 44px;
   line-height: 1;
 }
-.pb-vs,
-.pb-gap {
+/* Écran de chargement : pas encore de score ni d'objectifs ; le niveau des équipes juste sous le chrono. */
+.pb-side.waiting .pb-clock {
+  font-size: 30px;
+}
+.pb-side.waiting .pb-block {
+  flex: none;
+}
+.pb-teams-head,
+.pb-row-vs {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) 26px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
-  font-size: 13px;
 }
-.pb-k {
-  font-family: var(--display);
-  font-weight: 700;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  white-space: nowrap;
-}
-.pb-mine,
-.pb-theirs {
-  min-width: 34px;
+.pb-teams-head {
   font-family: var(--display);
   font-weight: 800;
-  font-size: 16px;
-  text-align: right;
-  white-space: nowrap;
+  font-size: 13px;
+  letter-spacing: 0.12em;
 }
-.pb-mine {
+.pb-teams-head .mine {
+  grid-column: 1;
+  text-align: right;
   color: var(--accent-light);
 }
-.pb-theirs {
+.pb-teams-head .theirs {
+  grid-column: 3;
   color: var(--enemy-text);
 }
-.pb-vs .rank {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-family: var(--body);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-2);
+.pb-row-vs > .glyph {
+  width: 24px;
+  height: 24px;
+  justify-self: center;
 }
-.pb-gap {
-  grid-template-columns: minmax(0, 1fr) auto;
+.pb-row-vs.big > .glyph {
+  width: 26px;
+  height: 26px;
+}
+.pb-side-v {
+  min-width: 0;
+  display: flex;
+  align-items: center;
   font-family: var(--display);
   font-weight: 800;
-  font-size: 16px;
+  font-size: 24px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.pb-row-vs.big .pb-side-v {
+  font-size: 30px;
+}
+.pb-side-v.mine {
+  justify-content: flex-end;
+  color: var(--accent-light);
+}
+.pb-side-v.theirs {
+  color: var(--enemy-text);
+}
+.pb-side-v.zero {
+  color: var(--faint);
+  font-weight: 600;
+}
+.pb-gap {
+  align-self: center;
+  padding: 3px 12px;
+  background: var(--panel);
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 17px;
+  white-space: nowrap;
 }
 .pb-gap.pos {
+  background: rgba(36, 86, 214, 0.25);
   color: var(--accent-light);
 }
 .pb-gap.neg {
+  background: rgba(255, 122, 47, 0.18);
   color: var(--enemy-text);
 }
-/* Dragons : leur nombre puis une pastille de la couleur de chacun. */
+/* Dragons : leur nombre, puis une pastille de la couleur de chacun. */
 .pb-drakes {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 3px;
+  gap: 4px;
 }
 .drake {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: var(--muted);
 }
@@ -4352,4 +4452,13 @@ body[data-view="panel"] main {
 }
 .drake.elder {
   background: #c58bff;
+}
+.pb-avg-rank {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 18px;
+}
+.pb-level .pb-side-v {
+  font-size: 22px;
 }

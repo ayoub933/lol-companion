@@ -1774,7 +1774,31 @@ function fillCard(card, player, ready, everyone) {
   card.onclick = card.classList.contains("profile-link") ? () => searchPlayer(player.riotId, "", player.puuid) : null;
 }
 
-// Sous l'illustration : son rang, sa saison en classée (en tout et sur ce champion), ses champions préférés.
+// Petits dessins fixes (aucune donnée extérieure) pour lire les stats d'un coup d'œil, sans libellés.
+const GLYPHS = {
+  kills: `<path d="M4 4l10.5 10.5"/><path d="M12.5 17.5l5-5"/><path d="M16 16l4 4"/><path d="M20 4L9.5 14.5"/><path d="M6.5 12.5l5 5"/><path d="M8 16l-4 4"/>`,
+  gold: `<ellipse cx="12" cy="6.5" rx="7" ry="3"/><path d="M5 6.5v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5"/><path d="M5 11.5v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5"/>`,
+  tower: `<path d="M7.5 21l1.5-10h6l1.5 10z"/><path d="M6 11h12"/><path d="M6.5 11V5.5H9v2h2v-3h2v3h2v-2h2.5V11"/>`,
+  dragon: `<path d="M3 13l6-1.5 3-4 8-4-3 5 4 2.5-3 6-4.5-2-5.5 2.5-4-1.5 2.5-2z"/><circle cx="12.2" cy="10" r="1" fill="currentColor" stroke="none"/>`,
+  grubs: `<circle cx="5.5" cy="15.5" r="2.5"/><circle cx="10.5" cy="14" r="3"/><circle cx="16.5" cy="12" r="4"/><circle cx="17.7" cy="11" r="0.9" fill="currentColor"/>`,
+  herald: `<path d="M2 12c2.5-4 6-6 10-6s7.5 2 10 6c-2.5 4-6 6-10 6S4.5 16 2 12z"/><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="0.8" fill="currentColor"/>`,
+  baron: `<path d="M6 3c0 3 1.5 5 3.5 5.5M18 3c0 3-1.5 5-3.5 5.5"/><path d="M7 10.5C7 9 9 8 12 8s5 1 5 2.5v5l-2 2.5v3H9v-3l-2-2.5z"/><path d="M9.5 13.5h1.5M13 13.5h1.5"/>`,
+  inhibitor: `<path d="M12 2l6 7-6 13-6-13z"/><path d="M6 9h12"/><path d="M12 9v13"/>`,
+  season: `<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5c0 2.5 1.5 4 3.5 4M16 6h3c0 2.5-1.5 4-3.5 4"/><path d="M12 13v4"/><path d="M8.5 21h7l-.8-4H9.3z"/>`,
+  rank: `<path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>`,
+  star: `<path d="M12 3l2.7 5.6 6.1.8-4.4 4.3 1 6.1L12 17l-5.4 2.8 1-6.1-4.4-4.3 6.1-.8z"/>`,
+};
+
+function glyph(name, title = "") {
+  const node = el("span", `glyph ${name}`);
+  node.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS[name]}</svg>`;
+  if (title) node.title = title;
+  return node;
+}
+
+// Sous l'illustration : son rang, puis ce qui se lit d'un coup d'œil, en gros : son % de victoires et son KDA sur
+// le champion qu'il joue (son icône devant), puis sur toute sa saison (la coupe devant), et ses champions préférés
+// (l'étoile devant).
 function panelInfo(player) {
   if (player.rankHidden || !player.riotId) return [el("p", "pb-wait", "Mode streamer : rang et saison masqués")];
   // Son rang en entier : « Émeraude II · 45 LP ».
@@ -1789,36 +1813,41 @@ function panelInfo(player) {
   const season = player.season;
   if (!season) return [rank, el("p", "pb-wait", "Saison : lecture d'OP.GG…")];
   if (!season.games) return [rank, el("p", "pb-wait", "Pas de classée cette saison")];
-  const stat = (label, value, sub, className, title) => {
-    const node = el("div", "pb-stat", [el("span", "k", label), el("span", `v ${className}`, [value, el("small", "", sub)])]);
-    node.title = title;
-    return node;
+  // Une ligne : un dessin (ou l'icône du champion), son % de victoires et ses parties, son KDA.
+  const line = (mark, wins, games, kills, deaths, assists, title, big) => {
+    const value = ratio(kills, deaths, assists);
+    const row = el("div", `pb-line${big ? " big" : ""}`, [
+      mark,
+      el("span", `pb-rate ${games ? rateClass(wins, games) : "rate-few"}`, games ? `${Math.round((wins / games) * 100)} %` : "—"),
+      el("span", "pb-games", games ? `${whole(games)} p.` : "0 p."),
+      el("span", `pb-kda ${games ? kdaClass(value) : "rate-few"}`, [glyph("kills"), games ? decimal(value) : "—"]),
+    ]);
+    row.title = title;
+    return row;
   };
-  const all = ratio(season.kills, season.deaths, season.assists);
   const champ = season.champions.find((c) => c.championId === player.championId);
-  const champKda = champ && ratio(champ.kills, champ.deaths, champ.assists);
-  const stats = [
-    stat(
-      "SAISON",
-      `${Math.round((season.wins / season.games) * 100)} %`,
-      ` ${whole(season.games)} p.`,
-      rateClass(season.wins, season.games),
-      `${season.wins} victoires sur ${whole(season.games)} parties classées cette saison (OP.GG)`,
-    ),
-    stat("KDA", decimal(all), "", kdaClass(all), "KDA moyen de ses classées cette saison, sur ses champions les plus joués"),
-    champ
-      ? stat(
-          upper(player.champion),
-          `${Math.round((champ.wins / champ.games) * 100)} %`,
-          ` ${whole(champ.games)} p.`,
-          rateClass(champ.wins, champ.games),
-          `${champ.wins} victoires sur ${whole(champ.games)} parties classées avec ${player.champion} cette saison`,
-        )
-      : stat(upper(player.champion), "—", " 0 p.", "rate-few", `Pas parmi ses champions les plus joués en classée cette saison`),
-    champ
-      ? stat(`KDA ${upper(player.champion)}`, decimal(champKda), "", kdaClass(champKda), `KDA moyen avec ${player.champion} cette saison`)
-      : stat(`KDA ${upper(player.champion)}`, "—", "", "rate-few", ""),
-  ];
+  const onChamp = champ
+    ? line(
+        champIcon(player.championId, player.champion),
+        champ.wins,
+        champ.games,
+        champ.kills,
+        champ.deaths,
+        champ.assists,
+        `Avec ${player.champion} cette saison : ${champ.wins} victoires sur ${whole(champ.games)} parties classées, KDA ${kda(champ.kills, champ.deaths, champ.assists)}`,
+        true,
+      )
+    : line(champIcon(player.championId, player.champion), 0, 0, 0, 0, 0, `Pas parmi ses champions les plus joués en classée cette saison`, true);
+  const all = line(
+    glyph("season"),
+    season.wins,
+    season.games,
+    season.kills,
+    season.deaths,
+    season.assists,
+    `Saison : ${season.wins} victoires sur ${whole(season.games)} parties classées (solo et flexible), KDA moyen sur ses champions les plus joués`,
+    false,
+  );
   // Ses 3 champions les plus joués, leur % de victoires dessous.
   const favs = season.champions.slice(0, 3).map((c) => {
     const node = el("span", "pb-fav", [
@@ -1828,10 +1857,11 @@ function panelInfo(player) {
     node.title = `${c.name} : ${whole(c.games)} parties, ${Math.round((c.wins / Math.max(c.games, 1)) * 100)} % de victoires, KDA ${kda(c.kills, c.deaths, c.assists)}`;
     return node;
   });
-  return [rank, el("div", "pb-stats", stats), el("div", "pb-favs", [el("span", "k", "PRÉFÉRÉS"), ...favs])];
+  return [rank, onChamp, all, el("div", "pb-favs", [glyph("star", "Ses champions les plus joués cette saison"), ...favs])];
 }
 
-// La partie en un coup d'œil : le chrono, les kills, l'or en objets, les objectifs et le niveau des deux équipes.
+// La partie en un coup d'œil : le chrono en grand, puis chaque stat sur une ligne, ta valeur à gauche (bleu) et la
+// leur à droite (orange) de part et d'autre de son dessin ; un 0 s'efface pour que le reste ressorte.
 const DRAGONS = {
   Fire: "Infernal",
   Water: "Océan",
@@ -1863,69 +1893,73 @@ function averageSeason(team) {
 
 function renderPanelSide(game) {
   const { allies, enemies, ready } = game;
-  const block = (title, rows) => el("div", "pb-block", [el("span", "kicker", title), ...rows]);
-  // Une ligne : ce qui est compté, ta valeur (bleu) et la leur (orange).
-  const versus = (label, mine, theirs, title = "") => {
-    const row = el("div", "pb-vs", [el("span", "pb-k", label), el("span", "pb-mine", [mine]), el("span", "pb-theirs", [theirs])]);
+  // Une ligne : ta valeur, le dessin de la stat, la leur. `big` : kills et or, en plus gros.
+  const versus = (name, title, mine, theirs, big = false) => {
+    const side = (value, who) => {
+      const empty = value === 0 || value === "0";
+      return el("span", `pb-side-v ${who}${empty ? " zero" : ""}`, [typeof value === "number" ? String(value) : value]);
+    };
+    const row = el("div", `pb-row-vs${big ? " big" : ""}`, [side(mine, "mine"), glyph(name), side(theirs, "theirs")]);
     row.title = title;
     return row;
   };
-  const blocks = [block("PARTIE", [el("span", "pb-clock", ready ? clock(game.gameTime) : "CHARGEMENT")])];
+  const head = () => el("div", "pb-teams-head", [el("span", "mine", "TOI"), el("span", "theirs", "EUX")]);
+  const blocks = [el("div", "pb-block pb-clock-block", [el("span", "pb-clock", ready ? clock(game.gameTime) : "CHARGEMENT")])];
   if (ready) {
     const kills = (team) => team.reduce((sum, p) => sum + p.kills, 0);
     const [mine, theirs] = [teamValue(allies), teamValue(enemies)];
-    const gold = [versus("KILLS", whole(kills(allies)), whole(kills(enemies)))];
+    const rows = [head(), versus("kills", "Kills de chaque équipe", kills(allies), kills(enemies), true)];
     if (mine != null && theirs != null) {
-      gold.push(versus("OR", whole(mine), whole(theirs), "Valeur des objets achetés, au prix de la boutique"));
-      gold.push(el("div", `pb-gap ${gapClass(mine - theirs)}`, [el("span", "pb-k", "ÉCART"), el("span", "", signed(mine - theirs))]));
+      rows.push(versus("gold", "Valeur des objets achetés, au prix de la boutique", kilo(mine), kilo(theirs), true));
+      const gap = mine - theirs;
+      rows.push(el("div", `pb-gap ${gapClass(gap)}`, [gap === 0 ? "À égalité" : `${signed(gap)} d'or`]));
     }
-    blocks.push(block("SCORE", gold));
+    blocks.push(el("div", "pb-block", rows));
   }
   const goals = game.objectives;
   if (ready && goals) {
-    const dots = (list) =>
-      el(
-        "span",
-        "pb-drakes",
-        list.length
-          ? [
-              String(list.length),
-              ...list.map((type) => {
-                const dot = el("span", `drake ${type.toLowerCase()}`);
-                dot.title = `Dragon ${DRAGONS[type] ?? type}`;
-                return dot;
-              }),
-            ]
-          : ["0"],
-      );
+    // Dragons : leur nombre, puis une pastille de la couleur de chacun (vers le centre).
+    const drakes = (list, who) => {
+      const dots = list.map((type) => {
+        const dot = el("span", `drake ${type.toLowerCase()}`);
+        dot.title = `Dragon ${DRAGONS[type] ?? type}`;
+        return dot;
+      });
+      const count = String(list.length);
+      return el("span", "pb-drakes", who === "mine" ? [count, ...dots] : [...dots, count]);
+    };
     blocks.push(
-      block("OBJECTIFS", [
-        versus("TOURS", String(goals.towers[0]), String(goals.towers[1])),
-        versus("DRAGONS", dots(goals.dragons[0]), dots(goals.dragons[1])),
-        versus("LARVES", String(goals.grubs[0]), String(goals.grubs[1])),
-        versus("HÉRAUT", String(goals.heralds[0]), String(goals.heralds[1])),
-        versus("NASHOR", String(goals.barons[0]), String(goals.barons[1])),
-        versus("INHIBITEURS", String(goals.inhibitors[0]), String(goals.inhibitors[1])),
+      el("div", "pb-block", [
+        versus("tower", "Tours détruites", goals.towers[0], goals.towers[1]),
+        versus("dragon", "Dragons", drakes(goals.dragons[0], "mine"), drakes(goals.dragons[1], "theirs")),
+        versus("grubs", "Larves du Néant", goals.grubs[0], goals.grubs[1]),
+        versus("herald", "Héraut de la Faille", goals.heralds[0], goals.heralds[1]),
+        versus("baron", "Baron Nashor", goals.barons[0], goals.barons[1]),
+        versus("inhibitor", "Inhibiteurs détruits", goals.inhibitors[0], goals.inhibitors[1]),
       ]),
     );
   }
+  // Niveau des équipes : rang moyen (emblème) et % de victoires moyen de la saison.
   const rankCell = (team) => {
     const rank = averageRank(team);
-    const node = el("span", "rank");
-    if (rank) setRank(node, rank, "small");
-    else node.textContent = "—";
+    if (!rank) return "—";
+    const node = el("span", "pb-avg-rank", [emblem(rank.tier, "small", true), rank.division]);
+    node.title = `Rang moyen : ${TIERS[rank.tier] ?? rank.tier}${rank.division ? ` ${rank.division}` : ""}`;
     return node;
   };
   const seasonCell = (team) => {
     const rate = averageSeason(team);
     return rate == null ? "—" : el("span", rateClass(rate * 100, 100), `${Math.round(rate * 100)} %`);
   };
+  // Pendant le chargement, seul bloc sous le chrono : il dit qui est qui.
   blocks.push(
-    block("ÉQUIPES", [
-      versus("RANG MOYEN", rankCell(allies), rankCell(enemies), "Rang moyen des joueurs classés de chaque équipe"),
-      versus("SAISON", seasonCell(allies), seasonCell(enemies), "% de victoires moyen des joueurs cette saison (OP.GG)"),
+    el("div", "pb-block pb-level", [
+      ready ? null : head(),
+      versus("rank", "Rang moyen des joueurs classés de chaque équipe", rankCell(allies), rankCell(enemies)),
+      versus("season", "% de victoires moyen des joueurs cette saison (OP.GG)", seasonCell(allies), seasonCell(enemies)),
     ]),
   );
+  $("pb-side").classList.toggle("waiting", !ready);
   $("pb-side").replaceChildren(...blocks);
 }
 

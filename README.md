@@ -370,15 +370,17 @@ celle d'en face en bas, chacune rangée par poste. Chaque carte :
 - l'illustration de chargement de son skin (chroma compris), son champion, son pseudo ; ses pastilles (venu en
   groupe, déjà croisé, smurf, OTP, série de 3 ou plus) ; en partie, son niveau et son score ;
 - son rang (« Émeraude II · 45 LP ») ;
-- sa saison en classée (solo et flexible ensemble) d'après OP.GG : % de victoires et parties, KDA moyen, puis
-  les mêmes sur le champion qu'il joue ; ses 3 champions les plus joués avec leur % de victoires. % de victoires
-  en bleu clair à partir de 55 %, en rouge à 45 % ou moins, en gris sous 10 parties ; KDA en bleu clair à partir
-  de 3,5, en rouge sous 2 ;
+- sa saison en classée (solo et flexible ensemble) d'après OP.GG, en gros et sans libellés pour se lire d'un coup
+  d'œil : % de victoires, parties et KDA (épées) sur le champion qu'il joue (son icône devant), puis sur toute sa
+  saison (une coupe devant) ; ses 3 champions les plus joués avec leur % de victoires (une étoile devant). % de
+  victoires en bleu clair à partir de 55 %, en rouge à 45 % ou moins, en gris sous 10 parties ; KDA en bleu clair
+  à partir de 3,5, en rouge sous 2 ;
 - un clic : son profil (« LA PARTIE » pour revenir aux cartes).
 
-À droite, la partie en un coup d'œil : le chrono, les kills et l'or en objets de chaque équipe et l'écart, les
-objectifs (tours, dragons avec leur type, larves, héraut, Nashor, inhibiteurs), le rang moyen et le % de
-victoires moyen de la saison de chaque équipe.
+À droite, la partie en un coup d'œil : le chrono en grand, puis chaque stat sur une ligne, ta valeur à gauche
+(bleu) et la leur à droite (orange) de part et d'autre de son dessin, un 0 effacé : kills, or en objets (et
+l'écart), tours, dragons (une pastille de la couleur de chacun), larves, héraut, Nashor, inhibiteurs, rang moyen
+et % de victoires moyen de la saison de chaque équipe. Pendant le chargement : le niveau des équipes.
 
 Consommation : la saison de chaque joueur est demandée une fois par partie à OP.GG (une petite réponse par
 joueur, l'une après l'autre, à part de la lecture de la partie) ; les 10 illustrations (~50 Ko chacune) sont
