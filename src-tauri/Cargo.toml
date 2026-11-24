@@ -19,7 +19,9 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
-tauri-plugin-autostart = "2"
+# Lancement avec Windows (clé « Run » du registre) : le crate du plugin autostart de Tauri, utilisé directement
+# pour mettre le chemin de l'exe entre guillemets.
+auto-launch = "0.6"
 tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"

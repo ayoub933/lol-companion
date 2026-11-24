@@ -20,7 +20,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, WindowEvent,
 };
-use tauri_plugin_autostart::ManagerExt as _;
+use auto_launch::{AutoLaunch, AutoLaunchBuilder};
 use tauri_plugin_notification::NotificationExt as _;
 use tauri_plugin_updater::UpdaterExt as _;
 
@@ -39,6 +39,12 @@ struct Prefs {
 }
 /// Nouvelle version trouvée, prête à installer.
 struct PendingUpdate(Mutex<Option<tauri_plugin_updater::Update>>);
+/// Lancement avec Windows (clé « Run » du registre, au nom de l'app). None en développement : seule la version
+/// installée y touche, jamais l'exe de développement (Windows le lancerait au démarrage, avec un terminal).
+struct Startup(Option<AutoLaunch>);
+
+/// Argument du lancement avec Windows : l'app démarre cachée près de l'horloge.
+const MINIMIZED: &str = "--minimized";
 
 /// Mises à jour : vérifiées au démarrage puis toutes les 3 h ; 5 min après un échec (au démarrage de Windows,
 /// internet n'est pas toujours là).
@@ -79,17 +85,21 @@ fn set_rune_page(chosen: tauri::State<'_, ChosenPage>, perks: Option<Vec<i64>>) 
 }
 
 #[tauri::command]
-fn get_settings(app: AppHandle, prefs: tauri::State<'_, Prefs>) -> Settings {
+fn get_settings(prefs: tauri::State<'_, Prefs>, startup: tauri::State<'_, Startup>) -> Settings {
     let mut settings = prefs.settings.lock().unwrap().clone();
-    settings.start_with_windows = app.autolaunch().is_enabled().unwrap_or(false);
+    settings.start_with_windows = startup.0.as_ref().is_some_and(|launch| launch.is_enabled().unwrap_or(false));
     settings
 }
 
 #[tauri::command]
-fn set_settings(app: AppHandle, prefs: tauri::State<'_, Prefs>, settings: Settings) -> Result<Settings, String> {
-    let autolaunch = app.autolaunch();
-    if settings.start_with_windows != autolaunch.is_enabled().unwrap_or(false) {
-        let done = if settings.start_with_windows { autolaunch.enable() } else { autolaunch.disable() };
+fn set_settings(
+    prefs: tauri::State<'_, Prefs>,
+    startup: tauri::State<'_, Startup>,
+    settings: Settings,
+) -> Result<Settings, String> {
+    let changed = |launch: &&AutoLaunch| settings.start_with_windows != launch.is_enabled().unwrap_or(false);
+    if let Some(launch) = startup.0.as_ref().filter(changed) {
+        let done = if settings.start_with_windows { launch.enable() } else { launch.disable() };
         done.map_err(|e| format!("Lancement avec Windows impossible à changer : {e}"))?;
     }
     settings.save(&prefs.file)?;
@@ -187,10 +197,24 @@ fn remember_window(app: &AppHandle) -> Option<PathBuf> {
     Some(file)
 }
 
+/// Le lancement avec Windows de cet exe : son chemin entre guillemets (son dossier, « LoL Companion », a une
+/// espace : sans guillemets, Windows peut ne pas le lancer ou perdre « --minimized »), puis « --minimized ».
+fn startup_entry(app: &AppHandle) -> Option<AutoLaunch> {
+    let exe = std::env::current_exe().ok()?;
+    let path = if cfg!(windows) { format!("\"{}\"", exe.display()) } else { exe.display().to_string() };
+    AutoLaunchBuilder::new()
+        .set_app_name(&app.package_info().name)
+        .set_app_path(&path)
+        .set_args(&[MINIMIZED])
+        .build()
+        .inspect_err(|e| eprintln!("[app] lancement avec Windows indisponible : {e}"))
+        .ok()
+}
+
 /// Fenêtre cachée au lancement ? Comme juste avant la mise à jour qui vient de relancer l'app, sinon seulement au
 /// lancement avec Windows (--minimized).
 fn start_hidden(app: &AppHandle) -> bool {
-    let minimized = std::env::args().any(|arg| arg == "--minimized");
+    let minimized = std::env::args().any(|arg| arg == MINIMIZED);
     let Some(file) = app.path().app_config_dir().ok().map(|dir| dir.join(UPDATE_MARK)) else {
         return minimized;
     };
@@ -276,11 +300,6 @@ pub fn run() {
     tauri::Builder::default()
         // En premier : relancer l'app (menu Démarrer...) remontre la fenêtre déjà ouverte.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_window(app, true)))
-        // Lancée avec Windows : elle démarre cachée dans la zone de notification.
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            Some(vec!["--minimized"]),
-        ))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Latest(Mutex::new(lol::Snapshot::default())))
@@ -382,22 +401,28 @@ pub fn run() {
         .setup(move |app| {
             let file = app.path().app_config_dir()?.join("reglages.json");
             let mut settings = Settings::load(&file);
+            let startup = if cfg!(debug_assertions) { None } else { startup_entry(app.handle()) };
             // Lancement avec Windows activé par défaut, une seule fois : ensuite, seul ton choix dans les réglages
-            // compte. Pas en développement : Windows lancerait l'exe de développement au démarrage.
-            if !settings.startup_default_applied && !cfg!(debug_assertions) {
-                let autolaunch = app.autolaunch();
-                let enabled = autolaunch.is_enabled().unwrap_or(false) || autolaunch.enable().is_ok();
-                if enabled {
-                    eprintln!("[app] lancement avec Windows activé (par défaut)");
-                    settings.start_with_windows = true;
-                    settings.startup_default_applied = true;
-                    if let Err(e) = settings.save(&file) {
-                        eprintln!("[app] {e}");
+            // compte. Déjà activé, sa commande est réécrite à chaque ouverture : elle remplace une ancienne qui
+            // lancerait autre chose que cet exe (exe de développement, ancien dossier, chemin sans guillemets).
+            if let Some(launch) = &startup {
+                let first = !settings.startup_default_applied;
+                if first || launch.is_enabled().unwrap_or(false) {
+                    match launch.enable() {
+                        Ok(()) if first => {
+                            eprintln!("[app] lancement avec Windows activé (par défaut)");
+                            settings.start_with_windows = true;
+                            settings.startup_default_applied = true;
+                            if let Err(e) = settings.save(&file) {
+                                eprintln!("[app] {e}");
+                            }
+                        }
+                        Ok(()) => {}
+                        Err(e) => eprintln!("[app] lancement avec Windows impossible à écrire ({e}) : réessayé au prochain démarrage"),
                     }
-                } else {
-                    eprintln!("[app] lancement avec Windows impossible à activer : réessayé au prochain démarrage");
                 }
             }
+            app.manage(Startup(startup));
             app.manage(Prefs { file, settings: Mutex::new(settings) });
             let data_dir = app.path().app_data_dir()?;
 

@@ -95,8 +95,8 @@ cargo run
 
 La première compilation prend quelques minutes, les suivantes quelques secondes.
 En développement, l'app ne cherche pas de mise à jour (sauf avec la variable `UPDATE_URL`, adresse
-d'un `latest.json` de test). Évite d'y cocher « Lancer avec
-Windows » : c'est l'exe de développement qui serait lancé au démarrage.
+d'un `latest.json` de test). « Lancer avec Windows » n'y
+fait rien : seule la version installée touche au démarrage de Windows.
 
 ## Réglages (roue ⚙ en haut à droite)
 
@@ -114,7 +114,9 @@ Windows » : c'est l'exe de développement qui serait lancé au démarrage.
   quand le client LoL s'ouvre, notification quand une partie est trouvée, et ce que fait la croix.
   Le lancement avec Windows est activé par défaut, une seule fois : à la première ouverture de la version
   installée (ou à la mise à jour vers la 0.10.11 pour une installation plus ancienne). Décoché ensuite, il
-  le reste. Jamais en développement (`cargo run`).
+  le reste. Jamais en développement (`cargo run`). Coché, la version installée réécrit sa commande à chaque
+  ouverture (son chemin entre guillemets, puis `--minimized`) : une ancienne qui lancerait autre chose (exe de
+  développement, avec un terminal ; ancien dossier) est remplacée.
 
 Un réglage d'import changé en pleine sélection s'applique au prochain import (nouveau champion ou
 adversaire) ; celui des noms, tout de suite. Le panneau se referme avec « FERMER », la roue, Échap, ou un clic
