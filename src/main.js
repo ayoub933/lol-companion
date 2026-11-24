@@ -658,9 +658,9 @@ function medal(place) {
     </linearGradient></defs>
     <g fill="url(#${id})" stroke="${dark}" stroke-width=".5">${LAUREL}</g>
     ${place === 1 ? `<polygon points="${STAR}" fill="url(#${id})" stroke="${dark}" stroke-width=".6"/>` : ""}
-    <circle cx="20" cy="21" r="9.2" fill="url(#${id})" stroke="${dark}" stroke-width="1.1"/>
-    <circle cx="20" cy="21" r="7.2" fill="none" stroke="${light}" stroke-opacity=".8" stroke-width=".8"/>
-    <text x="20" y="25.7" text-anchor="middle" fill="${ink}">${place}</text>
+    <circle cx="20" cy="21" r="11.4" fill="url(#${id})" stroke="${dark}" stroke-width="1.2"/>
+    <circle cx="20" cy="21" r="9.4" fill="none" stroke="${light}" stroke-opacity=".8" stroke-width=".8"/>
+    <text x="20" y="26.9" text-anchor="middle" fill="${ink}">${place}</text>
   </svg>`;
   node.title = place === 1 ? "Meilleur score carry de la partie" : `${place}e meilleur score carry de la partie`;
   return node;
