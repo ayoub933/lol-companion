@@ -574,27 +574,14 @@ body[data-view="selection"] .roles {
   border-color: var(--muted);
   color: var(--text);
 }
-/* L'icône du client sert de masque : blanche (doré si le poste est choisi), sa carte à moitié transparente. */
+/* L'icône sert de masque : blanche (dorée si le poste est choisi), sa carte en partie transparente. */
 .role-btn i {
-  display: none;
+  display: block;
   width: 18px;
   height: 18px;
   background: #fff;
   -webkit-mask: var(--icon) center / contain no-repeat;
   mask: var(--icon) center / contain no-repeat;
-}
-.role-btn.ready i {
-  display: block;
-}
-/* Icône pas encore lue (ou introuvable) : le nom du poste. */
-.role-btn b {
-  font-family: var(--display);
-  font-weight: 800;
-  font-size: 10px;
-  letter-spacing: 0.02em;
-}
-.role-btn.ready b {
-  display: none;
 }
 .role-btn[aria-pressed="true"] {
   border-color: #c8aa6e;

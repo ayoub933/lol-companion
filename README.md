@@ -512,9 +512,9 @@ Fichiers, dans `%APPDATA%\com.perso.lol-companion\` :
 La barre en haut, alignée sur la colonne du milieu, sur tous les écrans : son Riot ID (`Pseudo#TAG`), sa
 région, puis Entrée. Ou le nom d'un champion (voir plus bas).
 
-Au salon et en sélection, 5 petits boutons de poste suivent la barre (top, jungle, mid, ADC, support), avec les
-icônes du client (sinon sur CommunityDragon ; en attendant, le nom du poste) : blanches, dorée pour le poste
-choisi (un seul à la fois). Pour l'instant sans autre effet.
+Au salon et en sélection, 5 petits boutons de poste suivent la barre (top, jungle, mid, ADC, support), avec
+leurs icônes (`src/roles`) : blanches, dorée pour le poste choisi (un seul à la fois). Pour l'instant sans autre
+effet.
 Son salon s'affiche alors à la place de l'écran du moment (rang, forme, champions du moment, 10 dernières
 parties, détail d'une partie d'un clic). Le bouton à gauche de la barre (« Mon profil », « La sélection »
 ou « La partie ») ou Échap dans la barre te ramènent à cet écran ; un nouvel écran (sélection qui commence,

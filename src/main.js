@@ -2560,23 +2560,12 @@ async function saveSettings() {
   }
 }
 
-// Postes à côté de la recherche : icône du client en masque (voir .role-btn i), sinon le nom du poste ; icône
-// pas encore lue (client trop occupé, fermé, pas d'internet) : redemandée 2 s plus tard, puis toutes les 30 s,
-// 10 fois au plus. Un seul poste choisi à la fois, doré (recliqué : plus aucun). Pour l'instant sans autre effet.
+// Postes à côté de la recherche : leur icône (src/roles) en masque, voir .role-btn i. Un seul poste choisi à la
+// fois, doré (recliqué : plus aucun). Pour l'instant sans autre effet.
 function setupRoles() {
   const buttons = document.querySelectorAll(".role-btn");
   for (const button of buttons) {
-    const url = iconUrl(`position-${button.dataset.icon}`);
-    const load = (tries) => {
-      const probe = new Image();
-      probe.onload = () => {
-        button.querySelector("i").style.setProperty("--icon", `url("${url}")`);
-        button.classList.add("ready");
-      };
-      probe.onerror = () => tries > 1 && setTimeout(() => load(tries - 1), tries === 10 ? 2000 : 30000);
-      probe.src = url;
-    };
-    load(10);
+    button.querySelector("i").style.setProperty("--icon", `url("roles/${button.dataset.icon}.png")`);
     button.addEventListener("click", () => {
       const chosen = button.getAttribute("aria-pressed") !== "true";
       for (const other of buttons) other.setAttribute("aria-pressed", "false");
