@@ -49,9 +49,21 @@ const RECORD_RETRY: Duration = Duration::from_secs(5);
 const RECORD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 /// Partie classée dans l'historique mais pas encore comptée dans ton rang : on attend au plus ça ses LP.
 const LP_WAIT: Duration = Duration::from_secs(3 * 60);
+/// Profil relu tant que le client donne moins de 20 parties (il recharge ton historique chez Riot, surtout juste
+/// après la connexion ou un changement de compte) : toutes les 10 s, au plus 6 fois.
+const PROFILE_RETRY: Duration = Duration::from_secs(10);
+const PROFILE_RETRIES: u8 = 6;
+/// Tes dernières parties lues dans le client.
+const RECENT_GAMES: usize = 20;
 /// Objet gardé ce temps-là après son achat : acheté pour de bon, il reste grisé dans le panneau même vendu ou
 /// utilisé ensuite (un achat annulé tout de suite n'y compte pas).
 const BOUGHT_AFTER: Duration = Duration::from_secs(30);
+/// Bottes de base (300 pièces d'or).
+const BOOTS: i64 = 1001;
+/// Or dépensé dans l'emplacement de quête du poste bas (invisible, voir `CurrentGame::quest_boots`) : dès 250, des
+/// bottes de base (300) ; dès 450, des bottes améliorées (leur amélioration coûte au moins 600).
+const QUEST_BOOTS_MIN: f64 = 250.0;
+const QUEST_BOOTS_UPGRADED: f64 = 450.0;
 /// Illustrations de skins gardées en mémoire (les plus récentes).
 const SPLASH_CACHE: usize = 6;
 /// Illustrations d'écran de chargement gardées en mémoire : celles des 10 joueurs de la partie.
@@ -1402,6 +1414,11 @@ struct CurrentGame {
     held_since: HashMap<i64, Instant>,
     /// Objets gardés au moins 30 s : achetés pour de bon, ils ne reviennent plus dans le panneau.
     bought: HashSet<i64>,
+    /// Or, valeur des objets et valeur des consommables de ton inventaire visible au tour précédent.
+    purse: Option<(f64, u64, u64)>,
+    /// Bottes dans l'emplacement de quête du poste bas : l'API de la partie ne le donne pas (seulement tes 6
+    /// emplacements et la balise). Déduites de l'or dépensé sans objet de plus dans ton inventaire visible.
+    quest_boots: Option<QuestBoots>,
     /// Joueurs dont il reste à lire les dernières parties, et ceux déjà lus.
     to_check: Vec<Recent>,
     checked: Vec<Recent>,
@@ -1423,6 +1440,13 @@ struct CurrentGame {
     season_errors: Arc<Mutex<HashMap<i64, String>>>,
     /// Champions dont la saison est demandée.
     seasons_asked: HashSet<i64>,
+}
+
+/// Bottes achetées dans l'emplacement de quête du poste bas (on ne sait pas lesquelles quand elles sont améliorées).
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum QuestBoots {
+    Basic,
+    Upgraded,
 }
 
 /// Partie finie, en attente de ses stats dans l'historique du client.
@@ -1449,6 +1473,9 @@ pub struct Tracker {
     recent_records: Vec<history::GameRecord>,
     /// Profil à relire (connexion au client, partie enregistrée).
     profile_due: bool,
+    /// Historique du client incomplet ou illisible à la dernière lecture : quand relire le profil, et combien de
+    /// fois encore (voir PROFILE_RETRY).
+    profile_retry: Option<(Instant, u8)>,
     /// Contres et partenaires d'OP.GG par (champion, poste, mode).
     help_cache: HashMap<(i64, String, String), opgg::Help>,
     /// Liste complète des contres d'un champion à un poste : (champion, poste) -> contres.
@@ -1523,6 +1550,7 @@ impl Tracker {
             profile: None,
             recent_records: Vec::new(),
             profile_due: true,
+            profile_retry: None,
             help_cache: HashMap::new(),
             counters_cache: HashMap::new(),
             spells_set: None,
@@ -1606,12 +1634,20 @@ impl Tracker {
             }
         }
         // Rang et dernières parties : relus à la connexion, au retour à l'accueil ou au salon,
-        // et quand une partie vient d'être enregistrée. En cas d'échec, on garde l'ancien profil.
-        if self.profile_due || (phase_changed && matches!(phase.as_str(), "None" | "Lobby")) {
+        // et quand une partie vient d'être enregistrée. En cas d'échec, on garde l'ancien profil. Historique du
+        // client incomplet (moins de 20 parties) ou illisible : relu un peu plus tard (voir PROFILE_RETRY).
+        let retry = self.profile_retry.filter(|(at, _)| Instant::now() >= *at);
+        let asked = self.profile_due || (phase_changed && matches!(phase.as_str(), "None" | "Lobby"));
+        if asked || retry.is_some() {
             self.profile_due = false;
-            if let Some(profile) = self.read_profile(&base, &password).await {
+            // Relectures encore possibles après celle-ci : toutes de nouveau pour une lecture demandée.
+            let left = if asked { PROFILE_RETRIES } else { retry.map_or(0, |(_, left)| left) };
+            let read = self.read_profile(&base, &password).await;
+            let complete = read.as_ref().is_some_and(|(_, given)| *given >= RECENT_GAMES);
+            if let Some((profile, _)) = read {
                 self.profile = Some(profile);
             }
+            self.profile_retry = (!complete && left > 0).then(|| (Instant::now() + PROFILE_RETRY, left - 1));
         }
         // Parties enregistrées avant le rangement par compte : une fois par compte connecté, petit à petit
         // et seulement à l'accueil ou au salon (le client va chercher chaque partie chez Riot).
@@ -2876,8 +2912,16 @@ impl Tracker {
             }
         }
         // Objets du panneau : ceux du build, ceux que tu as (ou as achetés pendant la partie) grisés.
-        let inventory: Vec<i64> = p["items"].as_array().into_iter().flatten().filter_map(|it| it["itemID"].as_i64()).collect();
+        let mut inventory: Vec<i64> =
+            p["items"].as_array().into_iter().flatten().filter_map(|it| it["itemID"].as_i64()).collect();
         self.track_purchases(&inventory);
+        self.spot_quest_boots(p, me["currentGold"].as_f64().unwrap_or(0.0));
+        let quest_boots = self.game.as_ref().and_then(|g| g.quest_boots);
+        // Bottes de base dans l'emplacement de quête : comme dans ton inventaire (ce qu'il reste à payer pour les
+        // améliorer en tient compte).
+        if quest_boots == Some(QuestBoots::Basic) {
+            inventory.push(BOOTS);
+        }
         let build = self.game_build(base, password).await;
         let enemy_ids: Vec<i64> = enemies.iter().map(|e| e.champion_id).filter(|id| *id > 0).collect();
         let needs = match &self.game {
@@ -2890,7 +2934,7 @@ impl Tracker {
                 let owned: HashSet<i64> = inventory.iter().chain(&game.bought).copied().collect();
                 // Départ fait dès ton premier achat (même un autre départ), bottes dès des bottes améliorées.
                 let started = owned.iter().any(|id| self.assets.price(*id) > 0);
-                let boots_done = owned.iter().any(|id| self.assets.upgraded_boots(*id));
+                let boots_done = quest_boots == Some(QuestBoots::Upgraded) || owned.iter().any(|id| self.assets.upgraded_boots(*id));
                 let rows = panel(build, &owned, started, boots_done, &needs, &self.assets, english);
                 let core_ids: Vec<i64> = build.core.iter().map(|i| i.id).collect();
                 let set_item = |i: &opgg::Item| PanelItem {
@@ -2950,6 +2994,36 @@ impl Tracker {
 
     /// Note depuis quand chaque objet est dans ton inventaire : gardé 30 s, il est acheté pour de bon (et reste
     /// grisé dans le panneau même vendu ou utilisé ensuite).
+    /// Bottes achetées dans l'emplacement de quête du poste bas (voir `CurrentGame::quest_boots`) : de l'or en
+    /// moins, sans objet de plus dans ton inventaire visible (un consommable utilisé ne compte pas, un objet vendu
+    /// non plus : l'or remonte).
+    fn spot_quest_boots(&mut self, player: &Value, gold: f64) {
+        let assets = &self.assets;
+        let Some(game) = &mut self.game else {
+            return;
+        };
+        let (mut items, mut consumables) = (0, 0);
+        for it in player["items"].as_array().into_iter().flatten() {
+            let value = it["itemID"].as_i64().map_or(0, |id| assets.price(id)) * it["count"].as_u64().unwrap_or(1);
+            if it["consumable"].as_bool().unwrap_or(false) {
+                consumables += value;
+            } else {
+                items += value;
+            }
+        }
+        if let Some((last_gold, last_items, last_consumables)) = game.purse.filter(|_| game.position == "adc") {
+            let spent = last_gold - gold;
+            let gained = items as f64 - last_items as f64 + (consumables as f64 - last_consumables as f64).max(0.0);
+            let hidden = spent - gained;
+            if spent > 0.0 && hidden >= QUEST_BOOTS_MIN && game.quest_boots != Some(QuestBoots::Upgraded) {
+                let boots = if hidden >= QUEST_BOOTS_UPGRADED { QuestBoots::Upgraded } else { QuestBoots::Basic };
+                eprintln!("[partie] {hidden:.0} pièces d'or dépensées sans objet visible : bottes dans l'emplacement de quête ({boots:?})");
+                game.quest_boots = Some(boots);
+            }
+        }
+        game.purse = Some((gold, items, consumables));
+    }
+
     fn track_purchases(&mut self, owned: &[i64]) {
         let Some(game) = &mut self.game else {
             return;
@@ -3270,14 +3344,19 @@ impl Tracker {
     }
 
     /// Ton rang (solo/duo et flexible) et tes 20 dernières parties, d'après le client.
-    async fn read_profile(&mut self, base: &str, password: &str) -> Option<Profile> {
+    /// Ton profil, et le nombre de parties que le client a données (moins de 20 : historique peut-être incomplet).
+    async fn read_profile(&mut self, base: &str, password: &str) -> Option<(Profile, usize)> {
         let ranked = self.get(&format!("{base}/lol-ranked/v1/current-ranked-stats"), Some(password)).await;
-        let url = format!("{base}/lol-match-history/v1/products/lol/current-summoner/matches?begIndex=0&endIndex=19");
+        let url = format!(
+            "{base}/lol-match-history/v1/products/lol/current-summoner/matches?begIndex=0&endIndex={}",
+            RECENT_GAMES - 1
+        );
         let matches = self.get(&url, Some(password)).await;
         if ranked.is_none() && matches.is_none() {
             return None;
         }
         let games = matches.as_ref().and_then(|m| m["games"]["games"].as_array()).cloned().unwrap_or_default();
+        let given = games.len();
         let fresh = games.iter().filter_map(|g| history::record_from(g, self.puuid.as_deref(), self.summoner_id, 0)).collect();
         let records = self.complete_records(fresh);
         let solo = ranked.as_ref().map(|r| rank_in(r, "RANKED_SOLO_5x5"));
@@ -3305,7 +3384,7 @@ impl Tracker {
                 record.skin_id = known.skin_id;
             }
         }
-        Some(profile)
+        Some((profile, given))
     }
 
     /// Tes 20 dernières parties : celles que le client vient de donner, complétées par celles déjà vues (lecture
@@ -3313,7 +3392,7 @@ impl Tracker {
     /// partie (juste après une partie, ou pendant qu'il recharge ton historique chez Riot) : sans ce complément,
     /// le salon n'affichait plus que ta dernière partie jusqu'au redémarrage de l'app.
     fn complete_records(&mut self, fresh: Vec<history::GameRecord>) -> Vec<history::GameRecord> {
-        const KEPT: usize = 20;
+        const KEPT: usize = RECENT_GAMES;
         let puuid = self.puuid.clone().unwrap_or_default();
         let given = fresh.len();
         let mut records = fresh;
@@ -3527,6 +3606,7 @@ impl Tracker {
         self.profile = None;
         self.recent_records.clear();
         self.profile_due = true;
+        self.profile_retry = None;
         self.spells_set = None;
         self.seen_spells = None;
         self.page_set = None;

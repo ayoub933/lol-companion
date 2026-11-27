@@ -298,7 +298,9 @@ Une fois la partie lancée :
   - prochain achat : l'objet, son prix, ce qu'il te manque avec ton or en poche (ses composants que tu as
     déjà sont déduits, comme dans la boutique) et ses composants, ceux que tu as cochés ;
   - ordre : départ › 1er objet (son autre choix en petit) › bottes › 2e › 3e, ce que tu as grisé, la
-    prochaine étape cerclée d'or ;
+    prochaine étape cerclée d'or. Au poste bas, les bottes de l'emplacement de quête n'apparaissent pas dans
+    l'API de la partie (seulement tes 6 emplacements et la balise) : de l'or dépensé sans objet de plus dans
+    ton inventaire visible compte comme des bottes dans cet emplacement (300 : de base ; dès 450 : améliorées) ;
   - sets d'objets : les 3 objets principaux les plus joués dans ce duel (le classique, puis 2 autres, au moins
     50 parties chacun), avec leur % de victoires et leurs parties ; celui de l'ordre en bleu. Seulement dans
     l'app, pas sur le panneau posé sur le jeu ;
@@ -428,7 +430,9 @@ première partie jouée avec elle ; l'historique des 10 parties vient du client 
 Le client renvoie parfois une liste de parties raccourcie, jusqu'à une seule (juste après une partie, ou pendant
 qu'il recharge ton historique chez Riot) : l'app la complète avec les parties déjà vues (lecture précédente,
 parties qu'elle a suivies), sans jamais en perdre ; le terminal le note (« [profil] le client n'a donné que
-1 partie(s) : complété… »).
+1 partie(s) : complété… »). Tant qu'il en donne moins de 20, ton profil est relu toutes les 10 s (6 fois au
+plus) : après une connexion ou un changement de compte, ton historique et ta courbe de LP reviennent dès que
+le client a fini de les recharger.
 
 **Tes LP** (colonne de droite) : la courbe de tes LP en solo/duo sur tes dernières classées suivies par l'app,
 avec le total gagné ou perdu (« +45 LP sur tes 5 dernières classées »). Un point par partie (vert-bleu :
