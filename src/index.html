@@ -29,6 +29,24 @@
              dont le nom commence par le texte au-dessus (main.js, openFriends()). -->
         <div class="friends" id="friends" hidden></div>
         <span class="search-msg" id="search-msg" role="status" hidden></span>
+        <!-- Les 5 postes, au salon et en sélection : à côté de la recherche (pour l'instant sans action). -->
+        <div class="roles" role="group" aria-label="Postes">
+          <button type="button" class="role-btn" data-role="top" title="Top" aria-label="Top">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect class="map" x="2.5" y="2.5" width="11" height="11" /><path d="M3 12.5V3h9.5" /></svg>
+          </button>
+          <button type="button" class="role-btn" data-role="jungle" title="Jungle" aria-label="Jungle">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3c1.8 2.8 1.8 7 -0.5 10.5M8.2 2.5c1.8 3.2 1.8 7.6 -0.5 11M11.9 3c1.8 2.8 1.8 7 -0.5 10.5" /></svg>
+          </button>
+          <button type="button" class="role-btn" data-role="mid" title="Mid" aria-label="Mid">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect class="map" x="2.5" y="2.5" width="11" height="11" /><path d="M4 12L12 4" /></svg>
+          </button>
+          <button type="button" class="role-btn" data-role="adc" title="ADC" aria-label="ADC">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect class="map" x="2.5" y="2.5" width="11" height="11" /><path d="M3.5 13H13V3.5" /></svg>
+          </button>
+          <button type="button" class="role-btn" data-role="support" title="Support" aria-label="Support">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2l5 1.8v4c0 3-2.1 5.1-5 6.2c-2.9-1.1-5-3.2-5-6.2v-4z" /><path d="M8 5.5v5M5.5 8h5" /></svg>
+          </button>
+        </div>
       </div>
       <div class="top-right">
         <span id="status" class="status off"><span class="dot" aria-hidden="true"></span><span id="status-text">CLIENT NON DÉTECTÉ</span></span>

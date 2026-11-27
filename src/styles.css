@@ -538,6 +538,56 @@ body.board.searching[data-view="lobby"] .top-right {
   color: var(--text);
 }
 /* À gauche de la barre, sans la décaler du centre. */
+/* Les 5 postes, au salon et en sélection : petits boutons carrés juste à droite de la recherche, qui garde sa
+   largeur (ils débordent sur la place libre à gauche de l'état du client). */
+.roles {
+  display: none;
+}
+body[data-view="lobby"] .search-zone,
+body[data-view="selection"] .search-zone {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+body[data-view="lobby"] .search,
+body[data-view="selection"] .search {
+  flex: none;
+}
+body[data-view="lobby"] .roles,
+body[data-view="selection"] .roles {
+  flex: none;
+  display: flex;
+  gap: 5px;
+}
+.role-btn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--muted);
+  cursor: pointer;
+}
+.role-btn:hover {
+  border-color: var(--muted);
+  color: var(--text);
+}
+.role-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.role-btn .map {
+  stroke-width: 1;
+  opacity: 0.35;
+}
+
 .search-back {
   position: absolute;
   top: 0;
