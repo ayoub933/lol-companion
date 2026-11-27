@@ -793,6 +793,23 @@ impl Assets {
         Some(png)
     }
 
+    /// Icône d'un poste (top, jungle, middle, bottom ou utility : SVG, voie dorée sur la carte à moitié
+    /// transparente), lue dans le client ; sinon sur CommunityDragon, qui reprend ses fichiers. Gardée en mémoire.
+    pub async fn position_icon(&self, role: &str) -> Option<Vec<u8>> {
+        let role = ["top", "jungle", "middle", "bottom", "utility"].into_iter().find(|r| *r == role)?;
+        let path = format!("/fe/lol-static-assets/svg/position-{role}.svg");
+        if let Some(svg) = self.cached_client_file(&path).await {
+            return Some(svg);
+        }
+        let url = format!(
+            "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/svg/position-{role}.svg"
+        );
+        let resp = self.web.get(url).send().await.ok().filter(|r| r.status().is_success())?;
+        let svg = resp.bytes().await.ok()?.to_vec();
+        self.images.lock().unwrap().insert(path, svg.clone());
+        Some(svg)
+    }
+
     /// Icône de l'or (celle du tableau des scores de l'historique du client), lue dans le client ;
     /// sinon sur CommunityDragon, qui reprend ses fichiers. Gardée en mémoire.
     pub async fn gold_icon(&self) -> Option<Vec<u8>> {

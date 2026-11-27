@@ -328,6 +328,7 @@ pub fn run() {
         // lcu://localhost/splash-<numéro du skin> (illustration), lcu://localhost/perk-<numéro de la rune ou de la voie>,
         // lcu://localhost/spell-<numéro du sort>, lcu://localhost/rank-<rang en minuscules> (emblème),
         // lcu://localhost/gold (icône de l'or), lcu://localhost/profile-<numéro de l'icône de profil>,
+        // lcu://localhost/position-<top, jungle, middle, bottom ou utility> (icône d'un poste, SVG),
         // lcu://localhost/ability-<numéro du champion>-<q, w, e ou r> (compétence),
         // lcu://localhost/loadscreen-<numéro du skin> (illustration d'écran de chargement, en portrait).
         .register_asynchronous_uri_scheme_protocol("lcu", move |_ctx, request, responder| {
@@ -354,6 +355,8 @@ pub fn run() {
                     icons.rank_emblem(tier).await.map(|png| (png, "image/png"))
                 } else if path == "gold" {
                     icons.gold_icon().await.map(|png| (png, "image/png"))
+                } else if let Some(role) = path.strip_prefix("position-") {
+                    icons.position_icon(role).await.map(|svg| (svg, "image/svg+xml"))
                 } else if let Some((champion, key)) = path.strip_prefix("ability-").and_then(|rest| rest.split_once('-')) {
                     match number(champion) {
                         Some(id) => icons.ability_icon(id, key).await.map(|png| (png, "image/png")),
@@ -380,8 +383,13 @@ pub fn run() {
                         Err(_) => None,
                     }
                 };
+                // Ouverte à la page de l'app (autre origine) : une image utilisée en masque CSS (icônes des postes)
+                // doit l'être.
                 let response = match image {
-                    Some((bytes, kind)) => tauri::http::Response::builder().header("Content-Type", kind).body(bytes),
+                    Some((bytes, kind)) => tauri::http::Response::builder()
+                        .header("Content-Type", kind)
+                        .header("Access-Control-Allow-Origin", "*")
+                        .body(bytes),
                     None => tauri::http::Response::builder().status(404).body(Vec::new()),
                 };
                 responder.respond(response.expect("réponse HTTP invalide"));
