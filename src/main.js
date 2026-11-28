@@ -1959,9 +1959,9 @@ function setupSearch() {
     // Échap ferme d'abord la liste d'amis.
     if (friendsOpen) return closeFriends();
     event.target.value = "";
-    leaveSearch(true);
+    goBack();
   });
-  $("search-back").addEventListener("click", () => leaveSearch(true));
+  $("search-back").addEventListener("click", goBack);
   // Un clic ailleurs que sur la barre ou la liste la ferme.
   document.addEventListener(
     "pointerdown",
@@ -2176,7 +2176,8 @@ async function searchPlayer(riotId, region, puuid = "") {
 let champView = null;
 async function openChampion(id, position = null) {
   const turn = ++searchTurn;
-  const from = champView?.from ?? viewing?.from ?? screenOf(lastState);
+  const from = champView?.from ?? roleView?.from ?? viewing?.from ?? screenOf(lastState);
+  const role = roleView ?? champView?.role ?? null;
   const name = championList.find((c) => c.id === id)?.name ?? "ce champion";
   $("search").classList.add("busy");
   searchMessage(`Page de ${name} : lecture d'OP.GG…`);
@@ -2184,7 +2185,8 @@ async function openChampion(id, position = null) {
     const page = await invoke("champion_page", { championId: id, position });
     if (turn !== searchTurn) return;
     viewing = null;
-    champView = { page, from };
+    roleView = null;
+    champView = { page, from, role };
     $("search-input").value = page.name;
     searchMessage("");
     closeMatch();
@@ -2201,6 +2203,7 @@ function leaveSearch(redraw) {
   searchTurn++;
   viewing = null;
   champView = null;
+  roleView = null;
   $("search-input").value = "";
   $("search").classList.remove("busy");
   searchMessage("");
@@ -2235,14 +2238,15 @@ function render(state) {
   // Joueur ou champion cherché : à la place de l'écran du moment, quel qu'il soit. Un nouvel écran (sélection qui
   // commence, partie qui démarre ou se termine) le referme.
   const screen = screenOf(state);
-  const searched = viewing ?? champView;
+  const searched = viewing ?? champView ?? roleView;
   if (searched && searched.from !== screen) leaveSearch(false);
-  const [back, title] = BACK[screen];
-  $("search-back").hidden = !viewing && !champView;
+  const fromRole = champView?.role?.meta.position;
+  const [back, title] = fromRole ? [ROLE_TITLES[fromRole], "Revenir à la page du poste"] : BACK[screen];
+  $("search-back").hidden = !viewing && !champView && !roleView;
   $("search-back-text").textContent = back;
   $("search-back").title = title;
   document.body.classList.toggle("searching", Boolean(viewing));
-  $("hint").hidden = found || Boolean(viewing || champView);
+  $("hint").hidden = found || Boolean(viewing || champView || roleView);
 
   $("update").hidden = !state.update;
   if (state.update && !$("update-button").disabled) {
@@ -2251,20 +2255,275 @@ function render(state) {
 
   // Salon : seulement hors sélection et hors partie (la place y sert à autre chose). Celui d'un joueur cherché
   // s'affiche sur tous les écrans, même client fermé (OP.GG), sans tes LP ni tes stats.
-  const lobby = !champView && (Boolean(viewing) || (found && screen === "lobby"));
+  const lobby = !champView && !roleView && (Boolean(viewing) || (found && screen === "lobby"));
   if (!lobby && openGame) closeMatch();
   const shown = viewing ? { riotId: viewing.riotId, summonerLevel: viewing.level, profile: viewing.profile, searched: viewing } : state;
   renderPlayer(shown, lobby);
   renderHistory(shown, lobby);
   renderStats(state, lobby && !viewing);
   renderLp(state.profile, lobby && !viewing && Boolean(state.profile));
-  renderSelection(viewing || champView ? null : state.runes);
+  renderSelection(viewing || champView || roleView ? null : state.runes);
   // App par-dessus le jeu (Ctrl+X) : les 10 joueurs en cartes à la place de l'écran de partie.
-  const panel = panelOpen && !viewing && !champView ? state.game : null;
-  renderGame(viewing || champView || panel ? null : state.game);
+  const panel = panelOpen && !viewing && !champView && !roleView ? state.game : null;
+  renderGame(viewing || champView || roleView || panel ? null : state.game);
   renderPanel(panel);
   renderChampion(champView?.page ?? null);
+  renderRole(roleView, state);
   layout();
+}
+
+// ---------- Page d'un poste ----------
+
+// Ouverte par un bouton de poste (à côté de la recherche), à la place du salon ou de la sélection : à gauche la tier
+// list d'OP.GG du poste (ou le même classement en tableau), à droite tes stats à ce poste, le patch et les champions
+// à surveiller. Un clic sur un champion ouvre sa page à ce poste ; son « Retour » ramène ici.
+let roleView = null;
+const ROLE_TITLES = { top: "TOP", jungle: "JUNGLE", mid: "MID", adc: "ADC", support: "SUPPORT" };
+const ROLE_ICONS = { top: "top", jungle: "jungle", mid: "middle", adc: "bottom", support: "utility" };
+const TIER_NAMES = ["", "OP", "FORT", "BON", "MOYEN", "FAIBLE"];
+// Places gagnées ou perdues depuis le patch précédent à partir desquelles la tier list le signale (▲ ▼).
+const MOVE_SHOWN = 3;
+
+async function openRole(position) {
+  const turn = ++searchTurn;
+  const from = roleView?.from ?? champView?.from ?? viewing?.from ?? screenOf(lastState);
+  $("search").classList.add("busy");
+  searchMessage(`${ROLE_TITLES[position]} : lecture d'OP.GG…`);
+  try {
+    const meta = await invoke("role_meta", { position });
+    if (turn !== searchTurn) return;
+    meta.readAt = Date.now() - meta.ageMinutes * 60000;
+    viewing = null;
+    champView = null;
+    roleView = { meta, from, mode: roleView?.mode ?? "tiers", sort: roleView?.sort ?? { key: "rank", down: false } };
+    $("search-input").value = "";
+    searchMessage("");
+    closeMatch();
+    if (lastState) render(lastState);
+  } catch (error) {
+    if (turn === searchTurn) searchMessage(String(error), true);
+  } finally {
+    if (turn === searchTurn) $("search").classList.remove("busy");
+  }
+}
+
+// « Retour » : à la page du poste d'où vient la page d'un champion, sinon à l'écran du moment.
+function goBack() {
+  if (!champView?.role) return leaveSearch(true);
+  searchTurn++;
+  roleView = champView.role;
+  champView = null;
+  $("search-input").value = "";
+  searchMessage("");
+  if (lastState) render(lastState);
+}
+
+const moveOf = (c) => (c.rankPrevPatch > 0 ? c.rankPrevPatch - c.rank : 0);
+const rateClassOf = (rate) => (rate >= 0.52 ? "rate-hi" : rate <= 0.48 ? "rate-lo" : "");
+
+function roleChampTitle(c) {
+  const before = c.rankPrevPatch > 0 ? ` (${place(c.rankPrevPatch)} au patch précédent)` : "";
+  return (
+    `${c.name} : tier ${c.tier}, ${place(c.rank)}${before} · ${decimal(c.winRate * 100)} % de victoires · ` +
+    `${decimal(c.pickRate * 100)} % de pick · ${decimal(c.banRate * 100)} % de bans · KDA ${decimal(c.kda)} · ` +
+    `${whole(c.play)} parties · ${whole(c.roleRate * 100)} % de ses parties à ce poste · voir sa page`
+  );
+}
+
+let shownRole = "";
+function renderRole(view, state) {
+  $("role-page").hidden = !view;
+  for (const button of document.querySelectorAll(".role-btn")) {
+    button.setAttribute("aria-pressed", String(view?.meta.position === button.dataset.role));
+  }
+  if (!view) return void (shownRole = "");
+  const { meta } = view;
+  $("rp-aside").textContent = `OP.GG · tous rangs · ${ago(meta.readAt)}`;
+  const mine = (state.history?.roles ?? []).find((r) => r.position === meta.position);
+  // Redessinée seulement si quelque chose change (pas à chaque nouvelle du client).
+  const key = JSON.stringify([meta.position, meta.champions.length, view.mode, view.sort, mine ?? null]);
+  if (key === shownRole) return;
+  shownRole = key;
+  const pool = new Set((mine?.champions ?? []).map((c) => c.championId));
+  $("rp-icon").style.setProperty("--icon", `url("roles/${ROLE_ICONS[meta.position]}.png")`);
+  $("rp-title").textContent = `TIER LIST ${ROLE_TITLES[meta.position]}`;
+  for (const button of document.querySelectorAll(".rp-mode")) {
+    button.setAttribute("aria-pressed", String(button.dataset.mode === view.mode));
+  }
+  $("rp-body").replaceChildren(view.mode === "table" ? roleTable(view, pool) : roleTiers(meta, pool));
+  renderRoleMe(mine, meta);
+  renderRolePatch(meta);
+  renderRoleWatch(meta);
+}
+
+// Une rangée par tier, du meilleur au plus faible : les champions dans l'ordre du classement, leur % de victoires
+// dessous ; ▲ ▼ s'ils ont beaucoup bougé depuis le patch précédent ; un trait bleu sous les tiens à ce poste.
+function roleTiers(meta, pool) {
+  return el(
+    "div",
+    "rp-tiers",
+    [1, 2, 3, 4, 5].map((tier) => {
+      const champs = meta.champions.filter((c) => c.tier === tier);
+      return el("div", `rp-tier t${tier}`, [
+        el("div", "rp-tier-label", [el("b", "", `T${tier}`), el("span", "", TIER_NAMES[tier])]),
+        el("div", "rp-tier-champs", champs.length ? champs.map((c) => tierChamp(c, meta.position, pool)) : [el("span", "rp-none", "Aucun")]),
+      ]);
+    }),
+  );
+}
+
+function tierChamp(c, position, pool) {
+  const moved = moveOf(c);
+  const button = el("button", `rp-champ${pool.has(c.championId) ? " mine" : ""}`, [
+    champIcon(c.championId, c.name),
+    Math.abs(moved) >= MOVE_SHOWN ? el("span", `rp-move ${moved > 0 ? "up" : "down"}`, moved > 0 ? "▲" : "▼") : null,
+    el("span", `rp-wr ${rateClassOf(c.winRate)}`, `${decimal(c.winRate * 100)} %`),
+  ]);
+  button.type = "button";
+  button.title = roleChampTitle(c);
+  button.addEventListener("click", () => openChampion(c.championId, position));
+  return button;
+}
+
+// Le même classement en tableau, trié par colonne (un clic sur son titre ; un autre l'inverse).
+const ROLE_COLUMNS = [
+  ["rank", "#", false],
+  ["name", "CHAMPION", false],
+  ["tier", "TIER", false],
+  ["winRate", "VICTOIRES", true],
+  ["pickRate", "PICK", true],
+  ["banRate", "BANS", true],
+  ["kda", "KDA", true],
+  ["play", "PARTIES", true],
+  ["move", "ÉVOLUTION", true],
+];
+function roleTable(view, pool) {
+  const { key, down } = view.sort;
+  const value = (c) => (key === "move" ? moveOf(c) : c[key]);
+  const list = [...view.meta.champions].sort((a, b) => {
+    const [x, y] = [value(a), value(b)];
+    const order = typeof x === "string" ? x.localeCompare(y, "fr") : x - y;
+    return (down ? -order : order) || a.rank - b.rank;
+  });
+  const head = el(
+    "div",
+    "rp-row rp-head",
+    ROLE_COLUMNS.map(([column, label, numeric]) => {
+      const button = el("button", `rp-sort${column === key ? (down ? " down" : " up") : ""}`, label);
+      button.type = "button";
+      button.addEventListener("click", () => {
+        roleView.sort = { key: column, down: column === key ? !down : numeric };
+        if (lastState) render(lastState);
+      });
+      return button;
+    }),
+  );
+  const rows = list.map((c) => {
+    const moved = moveOf(c);
+    const row = el("button", `rp-row${pool.has(c.championId) ? " mine" : ""}`, [
+      el("span", "rp-num", String(c.rank)),
+      el("span", "rp-who", [champIcon(c.championId, c.name), el("span", "rp-name", upper(c.name))]),
+      el("span", "", [el("span", `opgg-tier t${c.tier}`, `T${c.tier}`)]),
+      el("span", `rp-num ${rateClassOf(c.winRate)}`, `${decimal(c.winRate * 100)} %`),
+      el("span", "rp-num", `${decimal(c.pickRate * 100)} %`),
+      el("span", "rp-num", `${decimal(c.banRate * 100)} %`),
+      el("span", "rp-num", decimal(c.kda)),
+      el("span", "rp-num", whole(c.play)),
+      el("span", `rp-num ${moved > 0 ? "up" : moved < 0 ? "down" : ""}`, moved ? `${moved > 0 ? "▲" : "▼"} ${Math.abs(moved)}` : "–"),
+    ]);
+    row.type = "button";
+    row.title = roleChampTitle(c);
+    row.addEventListener("click", () => openChampion(c.championId, view.meta.position));
+    return row;
+  });
+  return el("div", "rp-table", [head, el("div", "rp-rows", rows)]);
+}
+
+// Une ligne cliquable des encarts de droite : le champion, puis ses chiffres ; ouvre sa page à ce poste.
+function roleLine(id, name, stats, position, title) {
+  const row = el("button", "rp-line", [champIcon(id, name), el("span", "rp-name", upper(name)), ...stats]);
+  row.type = "button";
+  row.title = `${title} · voir sa page`;
+  row.addEventListener("click", () => openChampion(id, position));
+  return row;
+}
+
+function tierBadge(meta, id) {
+  const c = meta.champions.find((m) => m.championId === id);
+  return c ? el("span", `opgg-tier t${c.tier}`, `T${c.tier}`) : el("span", "rp-stat", "–");
+}
+
+// Tes parties à ce poste (celles que l'app a suivies) : % de victoires, KDA moyen, puis tes 3 champions les plus
+// joués à ce poste avec leur tier du moment.
+function renderRoleMe(mine, meta) {
+  const totals = mine?.totals;
+  if (!totals?.games) {
+    return $("rp-me-body").replaceChildren(el("p", "empty-msg", "Pas encore de partie suivie à ce poste."));
+  }
+  const per = (n) => decimal(n / totals.games);
+  $("rp-me-body").replaceChildren(
+    el("div", "rp-me-line", [
+      el("b", `rp-me-rate ${rateClassOf(totals.wins / totals.games)}`, `${whole((totals.wins / totals.games) * 100)} %`),
+      el("span", "rp-stat", plural(totals.games, "partie")),
+      el("span", "rp-me-kda", `${per(totals.kills)} / ${per(totals.deaths)} / ${per(totals.assists)}`),
+    ]),
+    ...mine.champions.slice(0, 3).map((c) =>
+      roleLine(
+        c.championId,
+        c.champion,
+        [el("span", "rp-stat", `${plural(c.games, "partie")} · ${whole((c.wins / c.games) * 100)} %`), tierBadge(meta, c.championId)],
+        meta.position,
+        `${c.champion} : ${plural(c.games, "partie")} à ce poste, ${whole((c.wins / c.games) * 100)} % de victoires`,
+      ),
+    ),
+  );
+}
+
+// Les 3 plus grosses montées et chutes au classement depuis le patch précédent.
+function renderRolePatch(meta) {
+  const moves = meta.champions.filter((c) => c.rankPrevPatch > 0);
+  const ups = moves.filter((c) => moveOf(c) > 0).sort((a, b) => moveOf(b) - moveOf(a)).slice(0, 3);
+  const downs = moves.filter((c) => moveOf(c) < 0).sort((a, b) => moveOf(a) - moveOf(b)).slice(0, 3);
+  const column = (title, list, kind) =>
+    el("div", "rp-list", [
+      el("div", "sub-head", [el("span", "kicker", title)]),
+      ...(list.length
+        ? list.map((c) => {
+            const moved = moveOf(c);
+            const text = `${kind === "up" ? "▲" : "▼"} ${Math.abs(moved)}`;
+            return roleLine(c.championId, c.name, [el("span", `rp-stat ${kind}`, text)], meta.position, `${c.name} : ${place(c.rank)}, ${place(c.rankPrevPatch)} au patch précédent`);
+          })
+        : [el("p", "empty-msg", "Aucune")]),
+    ]);
+  $("rp-patch-body").replaceChildren(column("MONTÉES", ups, "up"), column("CHUTES", downs, "down"));
+}
+
+// Les 3 plus bannis, et 3 pépites : beaucoup de victoires (51 % et plus) parmi les moins joués du poste (moitié
+// basse des % de pick).
+function renderRoleWatch(meta) {
+  const banned = [...meta.champions].sort((a, b) => b.banRate - a.banRate).slice(0, 3);
+  const picks = meta.champions.map((c) => c.pickRate).sort((a, b) => a - b);
+  const median = picks[Math.floor(picks.length / 2)] ?? 0;
+  const gems = meta.champions
+    .filter((c) => c.pickRate < median && c.winRate >= 0.51)
+    .sort((a, b) => b.winRate - a.winRate)
+    .slice(0, 3);
+  const column = (title, list, stat, label) =>
+    el("div", "rp-list", [
+      el("div", "sub-head", [el("span", "kicker", title)]),
+      ...(list.length
+        ? list.map((c) => roleLine(c.championId, c.name, [el("span", "rp-stat", stat(c))], meta.position, label(c)))
+        : [el("p", "empty-msg", "Aucune en ce moment")]),
+    ]);
+  $("rp-watch-body").replaceChildren(
+    column("LES PLUS BANNIS", banned, (c) => `${decimal(c.banRate * 100)} %`, (c) => `${c.name} : ${decimal(c.banRate * 100)} % de bans`),
+    column(
+      "PÉPITES",
+      gems,
+      (c) => `${decimal(c.winRate * 100)} %`,
+      (c) => `${c.name} : ${decimal(c.winRate * 100)} % de victoires pour ${decimal(c.pickRate * 100)} % de pick`,
+    ),
+  );
 }
 
 // ---------- Page d'un champion ----------
@@ -2498,7 +2757,9 @@ const EDGE = 12;
 function layout() {
   const width = document.documentElement.clientWidth;
   const height = window.innerHeight;
-  const view = !$("panel-board").hidden
+  const view = !$("role-page").hidden
+    ? "role"
+    : !$("panel-board").hidden
     ? "panel"
     : !$("champ-hero").hidden
       ? "champion"
@@ -2560,16 +2821,21 @@ async function saveSettings() {
   }
 }
 
-// Postes à côté de la recherche : leur icône (src/roles) en masque, voir .role-btn i. Un seul poste choisi à la
-// fois, doré (recliqué : plus aucun). Pour l'instant sans autre effet.
+// Postes à côté de la recherche : leur icône (src/roles) en masque, voir .role-btn i. Un clic ouvre la page du
+// poste (bouton doré), un autre la referme.
 function setupRoles() {
-  const buttons = document.querySelectorAll(".role-btn");
-  for (const button of buttons) {
+  for (const button of document.querySelectorAll(".role-btn")) {
     button.querySelector("i").style.setProperty("--icon", `url("roles/${button.dataset.icon}.png")`);
     button.addEventListener("click", () => {
-      const chosen = button.getAttribute("aria-pressed") !== "true";
-      for (const other of buttons) other.setAttribute("aria-pressed", "false");
-      button.setAttribute("aria-pressed", String(chosen));
+      if (roleView?.meta.position === button.dataset.role) leaveSearch(true);
+      else openRole(button.dataset.role);
+    });
+  }
+  for (const button of document.querySelectorAll(".rp-mode")) {
+    button.addEventListener("click", () => {
+      if (!roleView || roleView.mode === button.dataset.mode) return;
+      roleView.mode = button.dataset.mode;
+      if (lastState) render(lastState);
     });
   }
 }
@@ -2621,6 +2887,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (event.key !== "Escape") return;
     if (!$("settings").hidden) $("settings").hidden = true;
     else if (openGame) closeMatch();
+    else if (roleView || champView?.role) goBack();
   });
   for (const input of settingInputs()) input.addEventListener("change", saveSettings);
   $("update-button").addEventListener("click", async () => {

@@ -67,11 +67,11 @@ const DETAIL_FIELDS: [&str; 7] = [
 ];
 /// Champs demandés pour le classement des champions de chaque poste (recopiés de la liste fermée de l'outil).
 const META_FIELDS: [&str; 5] = [
-    "data.positions.top[].{champion,is_rip,tier,rank,rank_prev_patch,win_rate,ban_rate,play,role_rate}",
-    "data.positions.jungle[].{champion,is_rip,tier,rank,rank_prev_patch,win_rate,ban_rate,play,role_rate}",
-    "data.positions.mid[].{champion,is_rip,tier,rank,rank_prev_patch,win_rate,ban_rate,play,role_rate}",
-    "data.positions.adc[].{champion,is_rip,tier,rank,rank_prev_patch,win_rate,ban_rate,play,role_rate}",
-    "data.positions.support[].{champion,is_rip,tier,rank,rank_prev_patch,win_rate,ban_rate,play,role_rate}",
+    "data.positions.top[].{champion,is_rip,tier,rank,rank_prev_patch,win_rate,pick_rate,ban_rate,kda,kill,play,role_rate}",
+    "data.positions.jungle[].{champion,is_rip,tier,rank,rank_prev_patch,win_rate,pick_rate,ban_rate,kda,kill,play,role_rate}",
+    "data.positions.mid[].{champion,is_rip,tier,rank,rank_prev_patch,win_rate,pick_rate,ban_rate,kda,kill,play,role_rate}",
+    "data.positions.adc[].{champion,is_rip,tier,rank,rank_prev_patch,win_rate,pick_rate,ban_rate,kda,kill,play,role_rate}",
+    "data.positions.support[].{champion,is_rip,tier,rank,rank_prev_patch,win_rate,pick_rate,ban_rate,kda,kill,play,role_rate}",
 ];
 /// Le classement ne donne que le nom des champions : en anglais, il suit leur nom interne (« Master Yi »,
 /// « MasterYi »), quelle que soit la langue du client.
@@ -321,7 +321,8 @@ pub struct TopPlayer {
 }
 
 /// Un champion dans le classement d'OP.GG d'un poste (sa « tier list »).
-#[derive(Clone, Default, PartialEq, Debug)]
+#[derive(Clone, Default, PartialEq, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MetaChamp {
     /// Numéro du champion dans le client ; 0 tant qu'il n'est pas retrouvé d'après son nom.
     pub champion_id: i64,
@@ -333,7 +334,11 @@ pub struct MetaChamp {
     pub rank: u32,
     pub rank_prev_patch: u32,
     pub win_rate: f64,
+    pub pick_rate: f64,
     pub ban_rate: f64,
+    /// KDA moyen ((éliminations + assistances) / morts) et éliminations moyennes par partie.
+    pub kda: f64,
+    pub kills: f64,
     pub play: u64,
     /// Part de ses parties jouées à ce poste (0 à 1).
     pub role_rate: f64,
@@ -904,7 +909,10 @@ fn meta_from(doc: &Value) -> HashMap<String, Vec<MetaChamp>> {
             rank: c["rank"].as_u64().filter(|rank| *rank > 0)? as u32,
             rank_prev_patch: c["rank_prev_patch"].as_u64().unwrap_or(0) as u32,
             win_rate: c["win_rate"].as_f64().unwrap_or(0.0),
+            pick_rate: c["pick_rate"].as_f64().unwrap_or(0.0),
             ban_rate: c["ban_rate"].as_f64().unwrap_or(0.0),
+            kda: c["kda"].as_f64().unwrap_or(0.0),
+            kills: c["kill"].as_f64().unwrap_or(0.0),
             play: c["play"].as_u64().unwrap_or(0),
             role_rate: c["role_rate"].as_f64().unwrap_or(0.0),
         })

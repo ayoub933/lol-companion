@@ -432,6 +432,35 @@
       </div>
       <!-- L'app par-dessus le jeu (Ctrl+X) : les 10 joueurs en cartes, ton équipe en haut, et ton build à droite
            (main.js, renderPanel()). -->
+      <!-- Page d'un poste (bouton à côté de la recherche) : sa tier list d'OP.GG (ou son tableau) à gauche, tes
+           stats à ce poste, le patch et les champions à surveiller à droite. -->
+      <section class="role-page" id="role-page" hidden aria-label="Page du poste">
+        <section class="card rp-main">
+          <h2>
+            <i class="rp-icon" id="rp-icon" aria-hidden="true"></i><span id="rp-title">TIER LIST</span>
+            <span class="aside" id="rp-aside"></span>
+            <span class="rp-modes" role="group" aria-label="Affichage">
+              <button type="button" class="rp-mode" data-mode="tiers" aria-pressed="true">TIER LIST</button>
+              <button type="button" class="rp-mode" data-mode="table" aria-pressed="false">TABLEAU</button>
+            </span>
+          </h2>
+          <div class="rp-body" id="rp-body"></div>
+        </section>
+        <div class="rp-side">
+          <section class="card" id="rp-me">
+            <h2><span class="mark" aria-hidden="true"></span>TOI À CE POSTE<span class="aside">parties suivies par l'app</span></h2>
+            <div class="rp-list" id="rp-me-body"></div>
+          </section>
+          <section class="card" id="rp-patch">
+            <h2><span class="mark" aria-hidden="true"></span>LE PATCH<span class="aside">places depuis le précédent</span></h2>
+            <div class="rp-cols" id="rp-patch-body"></div>
+          </section>
+          <section class="card" id="rp-watch">
+            <h2><span class="mark" aria-hidden="true"></span>À SURVEILLER</h2>
+            <div class="rp-cols" id="rp-watch-body"></div>
+          </section>
+        </div>
+      </section>
       <section class="panel-board" id="panel-board" hidden aria-label="Joueurs de la partie">
         <div class="pb-teams">
           <section class="pb-team ally" aria-label="Ton équipe">

@@ -73,6 +73,17 @@ pub struct Totals {
 pub struct Overview {
     pub last: GameRecord,
     pub champions: Vec<Totals>,
+    /// Par poste ("top"…), sur la Faille, dans les parties suivies par l'app (les seules où il est connu).
+    pub roles: Vec<RoleTotals>,
+}
+
+/// Tes parties à un poste : tes totaux, et tes 10 champions les plus joués à ce poste.
+#[derive(Serialize, Clone, Default, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleTotals {
+    pub position: String,
+    pub totals: Totals,
+    pub champions: Vec<Totals>,
 }
 
 pub struct History {
@@ -178,9 +189,23 @@ impl History {
             let new = || Totals { champion_id: g.champion_id, champion: g.champion.clone(), aram, ..Default::default() };
             champions.entry((g.champion_id, aram)).or_insert_with(new).add(g);
         }
+        let mut roles: HashMap<String, (Totals, HashMap<i64, Totals>)> = HashMap::new();
+        for g in self.of(puuid).filter(|g| g.map_id == 11 && !g.position.is_empty()) {
+            let (all, played) = roles.entry(g.position.clone()).or_default();
+            all.add(g);
+            let new = || Totals { champion_id: g.champion_id, champion: g.champion.clone(), ..Default::default() };
+            played.entry(g.champion_id).or_insert_with(new).add(g);
+        }
+        // Toujours dans le même ordre : le salon ne se redessine pas pour rien.
+        let mut roles: Vec<RoleTotals> = roles
+            .into_iter()
+            .map(|(position, (totals, played))| RoleTotals { position, totals, champions: most_played(played.into_values(), 10) })
+            .collect();
+        roles.sort_by(|a, b| a.position.cmp(&b.position));
         Some(Overview {
             last,
             champions: most_played(champions.into_values(), 5),
+            roles,
         })
     }
 }

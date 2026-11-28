@@ -427,6 +427,7 @@ body.board .top {
 }
 body.board[data-view="lobby"] .top,
 body.board[data-view="champion"] .top,
+body.board[data-view="role"] .top,
 body.board[data-view="panel"] .top {
   grid-template-columns: 4fr 5fr 3fr;
 }
@@ -544,17 +545,20 @@ body.board.searching[data-view="lobby"] .top-right {
   display: none;
 }
 body[data-view="lobby"] .search-zone,
-body[data-view="selection"] .search-zone {
+body[data-view="selection"] .search-zone,
+body[data-view="role"] .search-zone {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 body[data-view="lobby"] .search,
-body[data-view="selection"] .search {
+body[data-view="selection"] .search,
+body[data-view="role"] .search {
   flex: none;
 }
 body[data-view="lobby"] .roles,
-body[data-view="selection"] .roles {
+body[data-view="selection"] .roles,
+body[data-view="role"] .roles {
   flex: none;
   display: flex;
   gap: 5px;
@@ -4520,4 +4524,333 @@ body[data-view="panel"] main {
 }
 .pb-gold-gap.neg {
   color: var(--defeat);
+}
+
+/* ---------- Page d'un poste : tier list (ou tableau) à gauche, tes stats, le patch et les champions à surveiller à
+   droite ---------- */
+
+body[data-view="role"] main {
+  grid-template-columns: minmax(0, 1fr);
+}
+.role-page {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 390px;
+  gap: 10px;
+}
+.rp-main {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rp-icon {
+  flex: none;
+  width: 19px;
+  height: 19px;
+  background: var(--accent-light);
+  -webkit-mask: var(--icon) center / contain no-repeat;
+  mask: var(--icon) center / contain no-repeat;
+}
+.rp-modes {
+  display: flex;
+  gap: 4px;
+  margin-left: 14px;
+}
+.rp-mode {
+  padding: 3px 9px 2px;
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--muted);
+  font-family: var(--display);
+  font-style: normal;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.rp-mode:hover {
+  color: var(--text);
+}
+.rp-mode[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.rp-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* Tier list : une rangée par tier, son nom à sa couleur à gauche, les champions à la suite. */
+.rp-tiers {
+  display: flex;
+  flex-direction: column;
+}
+.rp-tier {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 12px;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+}
+.rp-tier:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+.rp-tier.t1 { --tier: #ffb83d; }
+.rp-tier.t2 { --tier: var(--victory); }
+.rp-tier.t3 { --tier: var(--accent-light); }
+.rp-tier.t4 { --tier: var(--muted); }
+.rp-tier.t5 { --tier: var(--defeat); }
+.rp-tier-label {
+  align-self: start;
+  height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border-left: 3px solid var(--tier);
+  background: color-mix(in srgb, var(--tier) 12%, transparent);
+}
+.rp-tier-label b {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--tier);
+}
+.rp-tier-label span {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.rp-tier-champs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+.rp-none {
+  align-self: center;
+  color: var(--faint);
+  font-size: 12px;
+}
+.rp-champ {
+  position: relative;
+  width: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+}
+.rp-champ .icon {
+  width: 42px;
+  height: 42px;
+}
+.rp-champ:hover .icon {
+  filter: brightness(1.2);
+}
+/* Un de tes champions à ce poste : un trait bleu sous son icône. */
+.rp-champ.mine::after {
+  content: "";
+  position: absolute;
+  top: 44px;
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  background: var(--accent-light);
+}
+.rp-wr {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.rp-move {
+  position: absolute;
+  top: -4px;
+  right: -3px;
+  padding: 1px 2px 0;
+  background: var(--bg);
+  font-size: 9px;
+  line-height: 1;
+}
+.rp-move.up,
+.rp-stat.up,
+.rp-num.up {
+  color: var(--victory);
+}
+.rp-move.down,
+.rp-stat.down,
+.rp-num.down {
+  color: var(--defeat);
+}
+
+/* Tableau : en-têtes triables, lignes compactes ; seul le tableau défile. */
+.rp-table {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rp-rows {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+.rp-row {
+  flex: none;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 46px 80px 64px 64px 50px 78px 76px;
+  align-items: center;
+  height: 30px;
+  padding: 0 8px 0 4px;
+  border: none;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rp-row:hover {
+  background: var(--chip);
+}
+.rp-row.mine {
+  box-shadow: inset 3px 0 var(--accent-light);
+}
+.rp-row.rp-head {
+  height: 26px;
+  margin-bottom: 2px;
+  background: none;
+  cursor: default;
+}
+.rp-sort {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-align: left;
+  cursor: pointer;
+}
+.rp-sort:hover,
+.rp-sort.up,
+.rp-sort.down {
+  color: var(--text);
+}
+.rp-sort.up::after {
+  content: " ▲";
+}
+.rp-sort.down::after {
+  content: " ▼";
+}
+.rp-num {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.rp-who {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rp-who .icon {
+  width: 24px;
+  height: 24px;
+}
+
+/* Colonne de droite : 3 encarts de lignes compactes (les deux derniers sur deux colonnes). */
+.rp-side {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rp-side > .card:last-child {
+  flex: 1 1 auto;
+}
+.rp-list {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rp-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.rp-line {
+  min-width: 0;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 7px 0 3px;
+  border: none;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rp-line:hover {
+  background: var(--chip);
+}
+.rp-line .icon {
+  width: 24px;
+  height: 24px;
+}
+.rp-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 13px;
+}
+.rp-stat {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.rp-me-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.rp-me-rate {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 26px;
+  line-height: 1;
+}
+.rp-me-kda {
+  margin-left: auto;
+  font-size: 14px;
+  font-weight: 600;
 }

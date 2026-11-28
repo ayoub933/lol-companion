@@ -3689,7 +3689,7 @@ fn my_ban_pending(session: &Value) -> bool {
 /// s'il y en a plusieurs (le client liste aussi des variantes de modes spéciaux, « Jade_Annie » nommée Annie) ;
 /// sinon le champion dont le nom interne est le premier mot de son nom (« Nunu & Willump » = Nunu).
 /// Vérifié sur les vraies listes (client anglais ou français) : les 173 noms d'OP.GG sont retrouvés.
-fn champion_by_name<'a>(name: &str, champions: &'a [(i64, String, String)]) -> Option<(i64, &'a str)> {
+pub(crate) fn champion_by_name<'a>(name: &str, champions: &'a [(i64, String, String)]) -> Option<(i64, &'a str)> {
     let key = |text: &str| -> String { text.chars().filter(char::is_ascii_alphanumeric).map(|c| c.to_ascii_lowercase()).collect() };
     let wanted = key(name);
     let first = key(name.split_whitespace().next().unwrap_or_default());

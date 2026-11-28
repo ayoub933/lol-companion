@@ -510,11 +510,8 @@ Fichiers, dans `%APPDATA%\com.perso.lol-companion\` :
 ## Rechercher un joueur ou un champion
 
 La barre en haut, alignée sur la colonne du milieu, sur tous les écrans : son Riot ID (`Pseudo#TAG`), sa
-région, puis Entrée. Ou le nom d'un champion (voir plus bas).
+région, puis Entrée. Ou le nom d'un champion, ou un poste (voir plus bas).
 
-Au salon et en sélection, 5 petits boutons de poste suivent la barre (top, jungle, mid, ADC, support), avec
-leurs icônes (`src/roles`) : blanches, dorée pour le poste choisi (un seul à la fois). Pour l'instant sans autre
-effet.
 Son salon s'affiche alors à la place de l'écran du moment (rang, forme, champions du moment, 10 dernières
 parties, détail d'une partie d'un clic). Le bouton à gauche de la barre (« Mon profil », « La sélection »
 ou « La partie ») ou Échap dans la barre te ramènent à cet écran ; un nouvel écran (sélection qui commence,
@@ -560,6 +557,25 @@ Un clic sur un champion (duel, partenaire) ouvre sa page ; un clic sur un joueur
 choisi, la page s'ouvre à son poste le plus joué. Elle est lue sur OP.GG seulement à l'ouverture (3 ou 4
 petites demandes), puis gardée par l'app jusqu'à sa fermeture. OP.GG ne donne pas l'évolution par patch.
 
+**Un poste** : au salon et en sélection, 5 petits boutons suivent la barre (top, jungle, mid, ADC, support),
+avec leurs icônes (`src/roles`) : blanches, dorée pour le poste ouvert. Un clic ouvre la page du poste, d'après
+le classement d'OP.GG (patch en cours, tous rangs confondus) ; un reclic, le bouton à gauche de la barre ou
+Échap la referment :
+- à gauche, les tiers d'abord : une rangée par tier (T1 OP, T2 fort, T3 bon, T4 moyen, T5 faible), ses
+  champions dans l'ordre du classement, leur % de victoires dessous (bleu à 52 % et plus, rouge à 48 % et
+  moins), ▲ ou ▼ s'ils ont gagné ou perdu au moins 3 places depuis le patch précédent, un trait bleu sous les
+  tiens (tes 10 plus joués à ce poste). « TABLEAU » donne le même classement en colonnes (place, tier,
+  victoires, pick, bans, KDA, parties, évolution), trié d'un clic sur une colonne (reclic : dans l'autre
+  sens) ;
+- à droite : toi à ce poste (victoires, parties, KDA moyen, tes 3 champions les plus joués et leur tier),
+  d'après les parties suivies par l'app ; le patch (les 3 plus fortes montées et chutes au classement) ; à
+  surveiller (les 3 plus bannis, et les pépites : moins joués que la moitié du classement, mais à 51 % de
+  victoires ou plus).
+
+Un clic sur un champion ouvre sa page à ce poste ; son bouton « ‹ MID » (etc.) ramène à la page du poste, même
+affichage, même tri. Le classement des 5 postes est lu sur OP.GG en une seule petite demande à la première
+ouverture, puis gardé 3 h.
+
 ## Zone de notification
 
 L'app a une icône près de l'horloge : clic gauche pour afficher la fenêtre, clic droit pour
@@ -575,8 +591,8 @@ Quand une partie est trouvée, une notification Windows le signale. L'app n'acce
 - `src-tauri/src/lol.rs` : lecture du lockfile, appels au client (LCU) et à la partie (port 2999),
   imports, aide au choix, rangs, enregistrement des parties.
 - `src-tauri/src/opgg.rs` : appel au service d'OP.GG et lecture de sa réponse.
-- `src-tauri/src/search.rs` : recherche d'un joueur (client ou OP.GG) pour afficher son salon, et page d'un
-  champion (OP.GG).
+- `src-tauri/src/search.rs` : recherche d'un joueur (client ou OP.GG) pour afficher son salon, page d'un
+  champion et page d'un poste (OP.GG).
 - `src-tauri/src/history.rs` : fichier d'historique et stats.
 - `src-tauri/src/settings.rs` : réglages.
 - `src-tauri/src/lib.rs` : fenêtre, icône près de l'horloge, mises à jour, boucle qui prévient
@@ -586,6 +602,7 @@ Quand une partie est trouvée, une notification Windows le signale. L'app n'acce
 - `src/` : l'interface (`index.html`, `main.js`, `styles.css`) et les fenêtres en jeu (`overlay.html`
   pour le panneau, `gold.html` pour les écarts d'or).
 - `src/fonts/` : les polices Barlow et Barlow Condensed de l'interface (licence SIL OFL 1.1, `OFL.txt`).
+- `src/roles/` : les icônes des 5 postes (boutons à côté de la recherche).
 - `.github/workflows/release.yml` : construction de l'installateur sur GitHub.
 
 Si le client n'est pas détecté (installation inhabituelle), indique le chemin du lockfile :

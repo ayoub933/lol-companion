@@ -145,6 +145,16 @@ async fn champions(
     search.champions(&assets).await
 }
 
+/// Page d'un poste ("top", "jungle", "mid", "adc", "support") : son classement d'après OP.GG.
+#[tauri::command]
+async fn role_meta(
+    assets: tauri::State<'_, lol::Assets>,
+    search: tauri::State<'_, search::Search>,
+    position: String,
+) -> Result<search::RoleMeta, String> {
+    search.role_meta(&assets, &position).await
+}
+
 /// Page d'un champion (comme sur DPM) à un poste ("top"…), sinon à son poste le plus joué, d'après OP.GG.
 #[tauri::command]
 async fn champion_page(
@@ -322,6 +332,7 @@ pub fn run() {
             searched_match_details,
             champions,
             champion_page,
+            role_meta,
             friends
         ])
         // Images lues dans le client : lcu://localhost/<numéro du champion>, lcu://localhost/item-<numéro de l'objet>,

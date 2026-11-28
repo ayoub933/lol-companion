@@ -8,7 +8,11 @@
 use crate::{history, lol, opgg};
 use serde::Serialize;
 use serde_json::Value;
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 
 /// Le salon d'un joueur cherché.
 #[derive(Serialize, Clone, Default, Debug)]
@@ -119,6 +123,21 @@ pub struct Search {
     champions: Mutex<Vec<ChampionEntry>>,
     /// Pages de champion déjà ouvertes : (champion, poste demandé, vide = son poste principal).
     pages: Mutex<HashMap<(i64, String), ChampionPage>>,
+    /// Classement d'OP.GG de chaque poste (pages des postes), et quand il a été lu.
+    meta: Mutex<Option<(Instant, LaneMeta)>>,
+}
+
+/// Classement d'OP.GG par poste ("top"…), du premier au dernier.
+type LaneMeta = HashMap<String, Vec<opgg::MetaChamp>>;
+
+/// Page d'un poste : son classement d'après OP.GG, du premier au dernier (champions « RIP » à ce poste exclus).
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleMeta {
+    pub position: String,
+    /// Minutes depuis la lecture du classement chez OP.GG.
+    pub age_minutes: u64,
+    pub champions: Vec<opgg::MetaChamp>,
 }
 
 impl Search {
@@ -129,7 +148,34 @@ impl Search {
             details: Mutex::default(),
             champions: Mutex::default(),
             pages: Mutex::default(),
+            meta: Mutex::default(),
         }
+    }
+
+    /// Classement d'OP.GG d'un poste ("top", "jungle", "mid", "adc", "support"), relu au plus toutes les 3 heures
+    /// (une seule petite réponse pour les 5 postes), avec le numéro et le nom de chaque champion dans le client.
+    pub async fn role_meta(&self, assets: &lol::Assets, position: &str) -> Result<RoleMeta, String> {
+        const KEEP: Duration = Duration::from_secs(3 * 60 * 60);
+        let fresh = self.meta.lock().unwrap().as_ref().filter(|(at, _)| at.elapsed() < KEEP).map(|(at, meta)| (*at, meta.get(position).cloned()));
+        let (at, list) = match fresh {
+            Some(found) => found,
+            None => {
+                let known: Vec<(i64, String, String)> =
+                    self.champions(assets).await?.into_iter().map(|c| (c.id, c.alias, c.name)).collect();
+                let mut meta = self.opgg.lock().await.lane_meta().await?;
+                for champ in meta.values_mut().flat_map(|list| list.iter_mut()) {
+                    if let Some((id, name)) = lol::champion_by_name(&champ.name, &known) {
+                        (champ.champion_id, champ.name) = (id, name.to_string());
+                    }
+                }
+                let at = Instant::now();
+                let list = meta.get(position).cloned();
+                *self.meta.lock().unwrap() = Some((at, meta));
+                (at, list)
+            }
+        };
+        let champions = list.ok_or("Poste inconnu")?.into_iter().filter(|c| c.champion_id > 0).collect();
+        Ok(RoleMeta { position: position.to_string(), age_minutes: at.elapsed().as_secs() / 60, champions })
     }
 
     /// Tous les champions, pour les suggestions de la barre : ceux du client, sinon ceux d'OP.GG.
