@@ -572,6 +572,9 @@ le classement d'OP.GG (patch en cours, tous rangs confondus) ; un reclic, le bou
   surveiller (les 3 plus bannis, et les pépites : moins joués que la moitié du classement, mais à 51 % de
   victoires ou plus).
 
+Au survol du titre « TIER LIST » ou d'un tier : comment OP.GG les fait (% de victoires, pick et bans, pas le
+% de victoires seul) ; pour le classement au % de victoires seul, « TABLEAU » puis « VICTOIRES ».
+
 Un clic sur un champion ouvre sa page à ce poste ; son bouton « ‹ MID » (etc.) ramène à la page du poste, même
 affichage, même tri. Le classement des 5 postes est lu sur OP.GG en une seule petite demande à la première
 ouverture, puis gardé 3 h.

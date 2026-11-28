@@ -2281,6 +2281,11 @@ let roleView = null;
 const ROLE_TITLES = { top: "TOP", jungle: "JUNGLE", mid: "MID", adc: "ADC", support: "SUPPORT" };
 const ROLE_ICONS = { top: "top", jungle: "jungle", mid: "middle", adc: "bottom", support: "utility" };
 const TIER_NAMES = ["", "OP", "FORT", "BON", "MOYEN", "FAIBLE"];
+// Au survol du titre et des tiers : les tiers ne suivent pas que le % de victoires.
+const TIER_HELP =
+  "Tiers d'OP.GG : d'après le % de victoires, le pick et les bans (classées solo/duo, tous rangs). " +
+  "Un champion très joué et très banni peut passer devant un autre au % de victoires un peu plus haut. " +
+  "Pour le classement au % de victoires seul : TABLEAU, puis VICTOIRES.";
 // Places gagnées ou perdues depuis le patch précédent à partir desquelles la tier list le signale (▲ ▼).
 const MOVE_SHOWN = 3;
 
@@ -2350,6 +2355,7 @@ function renderRole(view, state) {
   const pool = new Set((mine?.champions ?? []).map((c) => c.championId));
   $("rp-icon").style.setProperty("--icon", `url("roles/${ROLE_ICONS[meta.position]}.png")`);
   $("rp-title").textContent = `TIER LIST ${ROLE_TITLES[meta.position]}`;
+  $("rp-title").title = TIER_HELP;
   for (const button of document.querySelectorAll(".rp-mode")) {
     button.setAttribute("aria-pressed", String(button.dataset.mode === view.mode));
   }
@@ -2368,7 +2374,9 @@ function roleTiers(meta, pool) {
     [1, 2, 3, 4, 5].map((tier) => {
       const champs = meta.champions.filter((c) => c.tier === tier);
       return el("div", `rp-tier t${tier}`, [
-        el("div", "rp-tier-label", [el("b", "", `T${tier}`), el("span", "", TIER_NAMES[tier])]),
+        Object.assign(el("div", "rp-tier-label", [el("b", "", `T${tier}`), el("span", "", TIER_NAMES[tier])]), {
+          title: `T${tier} (${TIER_NAMES[tier].toLowerCase()}) · ${TIER_HELP}`,
+        }),
         el("div", "rp-tier-champs", champs.length ? champs.map((c) => tierChamp(c, meta.position, pool)) : [el("span", "rp-none", "Aucun")]),
       ]);
     }),
