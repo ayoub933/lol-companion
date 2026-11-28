@@ -67,11 +67,11 @@ const DETAIL_FIELDS: [&str; 7] = [
 ];
 /// Champs demandés pour le classement des champions de chaque poste (recopiés de la liste fermée de l'outil).
 const META_FIELDS: [&str; 5] = [
-    "data.positions.top[].{champion,is_rip,tier,rank,rank_prev_patch,win_rate,pick_rate,ban_rate,kda,kill,play,role_rate}",
-    "data.positions.jungle[].{champion,is_rip,tier,rank,rank_prev_patch,win_rate,pick_rate,ban_rate,kda,kill,play,role_rate}",
-    "data.positions.mid[].{champion,is_rip,tier,rank,rank_prev_patch,win_rate,pick_rate,ban_rate,kda,kill,play,role_rate}",
-    "data.positions.adc[].{champion,is_rip,tier,rank,rank_prev_patch,win_rate,pick_rate,ban_rate,kda,kill,play,role_rate}",
-    "data.positions.support[].{champion,is_rip,tier,rank,rank_prev_patch,win_rate,pick_rate,ban_rate,kda,kill,play,role_rate}",
+    "data.positions.top[].{champion,is_rip,tier,rank,rank_prev_patch,win,win_rate,pick_rate,ban_rate,kda,kill,play,role_rate}",
+    "data.positions.jungle[].{champion,is_rip,tier,rank,rank_prev_patch,win,win_rate,pick_rate,ban_rate,kda,kill,play,role_rate}",
+    "data.positions.mid[].{champion,is_rip,tier,rank,rank_prev_patch,win,win_rate,pick_rate,ban_rate,kda,kill,play,role_rate}",
+    "data.positions.adc[].{champion,is_rip,tier,rank,rank_prev_patch,win,win_rate,pick_rate,ban_rate,kda,kill,play,role_rate}",
+    "data.positions.support[].{champion,is_rip,tier,rank,rank_prev_patch,win,win_rate,pick_rate,ban_rate,kda,kill,play,role_rate}",
 ];
 /// Le classement ne donne que le nom des champions : en anglais, il suit leur nom interne (« Master Yi »,
 /// « MasterYi »), quelle que soit la langue du client.
@@ -333,7 +333,9 @@ pub struct MetaChamp {
     /// Place au classement de ce poste (1 = premier), et au patch précédent (0 : inconnue).
     pub rank: u32,
     pub rank_prev_patch: u32,
+    /// Calculé sur ses parties et ses victoires (exact).
     pub win_rate: f64,
+    /// Arrondis par OP.GG au centième (0,11), sans les nombres qui permettraient de les calculer.
     pub pick_rate: f64,
     pub ban_rate: f64,
     /// KDA moyen ((éliminations + assistances) / morts) et éliminations moyennes par partie.
@@ -908,7 +910,7 @@ fn meta_from(doc: &Value) -> HashMap<String, Vec<MetaChamp>> {
             tier: c["tier"].as_u64().filter(|tier| (1..=5).contains(tier))? as u8,
             rank: c["rank"].as_u64().filter(|rank| *rank > 0)? as u32,
             rank_prev_patch: c["rank_prev_patch"].as_u64().unwrap_or(0) as u32,
-            win_rate: c["win_rate"].as_f64().unwrap_or(0.0),
+            win_rate: exact_win_rate(c).unwrap_or_else(|| c["win_rate"].as_f64().unwrap_or(0.0)),
             pick_rate: c["pick_rate"].as_f64().unwrap_or(0.0),
             ban_rate: c["ban_rate"].as_f64().unwrap_or(0.0),
             kda: c["kda"].as_f64().unwrap_or(0.0),
@@ -931,15 +933,21 @@ fn meta_from(doc: &Value) -> HashMap<String, Vec<MetaChamp>> {
 /// OP.GG les donne déjà triés, du meilleur au moins bon.
 fn help_from(doc: &Value) -> Help {
     let d = &doc["data"];
-    let picks = |list: &Value, id: &str, name: &str, rate: &str| -> Vec<Pick> {
+    // `win` : les victoires du champion analysé, contre ce contre ou avec ce partenaire.
+    let picks = |list: &Value, id: &str, name: &str, counter: bool| -> Vec<Pick> {
         list.as_array()
             .into_iter()
             .flatten()
             .filter_map(|c| {
+                let win_rate = match exact_win_rate(c) {
+                    Some(rate) if counter => 1.0 - rate,
+                    Some(rate) => rate,
+                    None => c[if counter { "counter_win_rate" } else { "win_rate" }].as_f64().unwrap_or(0.0),
+                };
                 Some(Pick {
                     champion_id: c[id].as_i64()?,
                     name: c[name].as_str().unwrap_or_default().to_string(),
-                    win_rate: c[rate].as_f64().unwrap_or(0.0),
+                    win_rate,
                     games: c["play"].as_u64().unwrap_or(0),
                 })
             })
@@ -950,10 +958,17 @@ fn help_from(doc: &Value) -> Help {
         .into_iter()
         .flatten()
         .map(|(position, list)| {
-            (position.clone(), picks(list, "synergy_champion_id", "synergy_champion_name", "win_rate"))
+            (position.clone(), picks(list, "synergy_champion_id", "synergy_champion_name", false))
         })
         .collect();
-    Help { counters: picks(&d["weak_counters"], "champion_id", "champion_name", "counter_win_rate"), synergies }
+    Help { counters: picks(&d["weak_counters"], "champion_id", "champion_name", true), synergies }
+}
+
+/// % de victoires d'après ses parties et ses victoires (`play`, `win`) : OP.GG arrondit les siens au centième
+/// (0,51 pour 51,3 %).
+fn exact_win_rate(entry: &Value) -> Option<f64> {
+    let games = entry["play"].as_u64().filter(|&games| games > 0)?;
+    Some(entry["win"].as_u64()?.min(games) as f64 / games as f64)
 }
 
 pub(crate) fn to_json_doc(text: &str) -> Option<Value> {

@@ -2319,13 +2319,16 @@ function goBack() {
 }
 
 const moveOf = (c) => (c.rankPrevPatch > 0 ? c.rankPrevPatch - c.rank : 0);
+// % qu'OP.GG arrondit au centième (pick, bans ; victoires quand il ne donne pas les parties gagnées) : en entier,
+// « < 1 » sous 0,5 %. Les autres % de victoires sont calculés sur les parties, à la décimale près.
+const opggRate = (rate) => (rate < 0.005 ? "< 1" : whole(rate * 100));
 const rateClassOf = (rate) => (rate >= 0.52 ? "rate-hi" : rate <= 0.48 ? "rate-lo" : "");
 
 function roleChampTitle(c) {
   const before = c.rankPrevPatch > 0 ? ` (${place(c.rankPrevPatch)} au patch précédent)` : "";
   return (
     `${c.name} : tier ${c.tier}, ${place(c.rank)}${before} · ${decimal(c.winRate * 100)} % de victoires · ` +
-    `${decimal(c.pickRate * 100)} % de pick · ${decimal(c.banRate * 100)} % de bans · KDA ${decimal(c.kda)} · ` +
+    `${opggRate(c.pickRate)} % de pick · ${opggRate(c.banRate)} % de bans · KDA ${decimal(c.kda)} · ` +
     `${whole(c.play)} parties · ${whole(c.roleRate * 100)} % de ses parties à ce poste · voir sa page`
   );
 }
@@ -2399,7 +2402,7 @@ const ROLE_COLUMNS = [
 ];
 function roleTable(view, pool) {
   const { key, down } = view.sort;
-  const value = (c) => (key === "move" ? moveOf(c) : c[key]);
+  const value = (c) => (key === "move" ? moveOf(c) : key === "pickRate" ? c.play : c[key]);
   const list = [...view.meta.champions].sort((a, b) => {
     const [x, y] = [value(a), value(b)];
     const order = typeof x === "string" ? x.localeCompare(y, "fr") : x - y;
@@ -2425,8 +2428,8 @@ function roleTable(view, pool) {
       el("span", "rp-who", [champIcon(c.championId, c.name), el("span", "rp-name", upper(c.name))]),
       el("span", "", [el("span", `opgg-tier t${c.tier}`, `T${c.tier}`)]),
       el("span", `rp-num ${rateClassOf(c.winRate)}`, `${decimal(c.winRate * 100)} %`),
-      el("span", "rp-num", `${decimal(c.pickRate * 100)} %`),
-      el("span", "rp-num", `${decimal(c.banRate * 100)} %`),
+      el("span", "rp-num", `${opggRate(c.pickRate)} %`),
+      el("span", "rp-num", `${opggRate(c.banRate)} %`),
       el("span", "rp-num", decimal(c.kda)),
       el("span", "rp-num", whole(c.play)),
       el("span", `rp-num ${moved > 0 ? "up" : moved < 0 ? "down" : ""}`, moved ? `${moved > 0 ? "▲" : "▼"} ${Math.abs(moved)}` : "–"),
@@ -2502,10 +2505,10 @@ function renderRolePatch(meta) {
 // basse des % de pick).
 function renderRoleWatch(meta) {
   const banned = [...meta.champions].sort((a, b) => b.banRate - a.banRate).slice(0, 3);
-  const picks = meta.champions.map((c) => c.pickRate).sort((a, b) => a - b);
-  const median = picks[Math.floor(picks.length / 2)] ?? 0;
+  const games = meta.champions.map((c) => c.play).sort((a, b) => a - b);
+  const median = games[Math.floor(games.length / 2)] ?? 0;
   const gems = meta.champions
-    .filter((c) => c.pickRate < median && c.winRate >= 0.51)
+    .filter((c) => c.play < median && c.winRate >= 0.51)
     .sort((a, b) => b.winRate - a.winRate)
     .slice(0, 3);
   const column = (title, list, stat, label) =>
@@ -2516,12 +2519,12 @@ function renderRoleWatch(meta) {
         : [el("p", "empty-msg", "Aucune en ce moment")]),
     ]);
   $("rp-watch-body").replaceChildren(
-    column("LES PLUS BANNIS", banned, (c) => `${decimal(c.banRate * 100)} %`, (c) => `${c.name} : ${decimal(c.banRate * 100)} % de bans`),
+    column("LES PLUS BANNIS", banned, (c) => `${opggRate(c.banRate)} %`, (c) => `${c.name} : ${opggRate(c.banRate)} % de bans`),
     column(
       "PÉPITES",
       gems,
       (c) => `${decimal(c.winRate * 100)} %`,
-      (c) => `${c.name} : ${decimal(c.winRate * 100)} % de victoires pour ${decimal(c.pickRate * 100)} % de pick`,
+      (c) => `${c.name} : ${decimal(c.winRate * 100)} % de victoires pour ${opggRate(c.pickRate)} % de pick (${whole(c.play)} parties)`,
     ),
   );
 }
@@ -2535,6 +2538,8 @@ function renderRoleWatch(meta) {
 const CHAMP_CARDS = ["champ-hero", "champ-stats", "champ-runes", "champ-build", "champ-duels", "champ-duos", "champ-players"];
 const DIVISIONS = ["", "I", "II", "III", "IV"];
 const percent = (rate) => [decimal(rate * 100), el("small", "", " %")];
+// Arrondi par OP.GG au centième : en entier.
+const rounded = (rate) => [opggRate(rate), el("small", "", " %")];
 let shownChampion = "";
 function renderChampion(page) {
   for (const id of CHAMP_CARDS) $(id).hidden = !page;
@@ -2585,9 +2590,9 @@ function renderChampionStats(page, here) {
   const value = (show) => (here ? show(here) : "–");
   $("champ-cells").replaceChildren(
     ...[
-      ["VICTOIRES", value((s) => percent(s.winRate)), here ? (here.winRate >= 0.5 ? "win" : "loss") : ""],
-      ["CHOIX", value((s) => percent(s.pickRate))],
-      ["BANS", value((s) => percent(s.banRate))],
+      ["VICTOIRES", value((s) => rounded(s.winRate)), here ? (here.winRate >= 0.5 ? "win" : "loss") : ""],
+      ["CHOIX", value((s) => rounded(s.pickRate))],
+      ["BANS", value((s) => rounded(s.banRate))],
       ["PARTIES", value((s) => whole(s.games))],
       ["KDA", value((s) => decimal(s.kda))],
       ["À CE POSTE", value((s) => [whole(s.roleRate * 100), el("small", "", " %")])],

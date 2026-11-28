@@ -576,6 +576,12 @@ Un clic sur un champion ouvre sa page à ce poste ; son bouton « ‹ MID » (et
 affichage, même tri. Le classement des 5 postes est lu sur OP.GG en une seule petite demande à la première
 ouverture, puis gardé 3 h.
 
+**Les %** : OP.GG arrondit les siens à l'unité (0,51). Quand il donne aussi les parties et les victoires
+(classement des postes, contres et partenaires de la sélection, duels, partenaires, runes et build d'une page
+de champion), l'app calcule le % de victoires elle-même, à la décimale près (Ahri : 111 365 victoires sur
+217 109 parties = 51,3 %). Le pick, les bans et les stats d'un champion à son poste (en haut de sa page), sans
+ces nombres, restent en entier (« < 1 % » sous 0,5 %).
+
 ## Zone de notification
 
 L'app a une icône près de l'horloge : clic gauche pour afficher la fenêtre, clic droit pour
