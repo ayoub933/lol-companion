@@ -4585,6 +4585,14 @@ body[data-view="role"] main {
   flex-direction: column;
   overflow-y: auto;
 }
+.rp-body::-webkit-scrollbar,
+.rp-rows::-webkit-scrollbar {
+  width: 8px;
+}
+.rp-body::-webkit-scrollbar-thumb,
+.rp-rows::-webkit-scrollbar-thumb {
+  background: var(--chip);
+}
 
 /* Tier list : une rangée par tier, son nom à sa couleur à gauche, les champions à la suite. */
 .rp-tiers {
@@ -4593,9 +4601,9 @@ body[data-view="role"] main {
 }
 .rp-tier {
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
+  grid-template-columns: 70px minmax(0, 1fr);
   gap: 12px;
-  padding: 7px 0;
+  padding: 6px 0;
   border-top: 1px solid var(--line);
 }
 .rp-tier:first-child {
@@ -4609,47 +4617,47 @@ body[data-view="role"] main {
 .rp-tier.t5 { --tier: var(--defeat); }
 .rp-tier-label {
   align-self: start;
-  height: 56px;
+  height: 73px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
-  border-left: 3px solid var(--tier);
+  gap: 2px;
+  border-left: 4px solid var(--tier);
   background: color-mix(in srgb, var(--tier) 12%, transparent);
 }
 .rp-tier-label b {
   font-family: var(--display);
   font-style: italic;
   font-weight: 800;
-  font-size: 22px;
+  font-size: 29px;
   line-height: 1;
   color: var(--tier);
 }
 .rp-tier-label span {
   font-family: var(--display);
   font-weight: 700;
-  font-size: 11px;
+  font-size: 14px;
   letter-spacing: 0.08em;
   color: var(--muted);
 }
 .rp-tier-champs {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 8px;
+  gap: 6px;
 }
 .rp-none {
   align-self: center;
   color: var(--faint);
-  font-size: 12px;
+  font-size: 15px;
 }
 .rp-champ {
   position: relative;
-  width: 44px;
+  width: 54px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   padding: 0;
   border: none;
   background: none;
@@ -4658,8 +4666,8 @@ body[data-view="role"] main {
   cursor: pointer;
 }
 .rp-champ .icon {
-  width: 42px;
-  height: 42px;
+  width: 54px;
+  height: 54px;
 }
 .rp-champ:hover .icon {
   filter: brightness(1.2);
@@ -4668,25 +4676,25 @@ body[data-view="role"] main {
 .rp-champ.mine::after {
   content: "";
   position: absolute;
-  top: 44px;
-  left: 6px;
-  right: 6px;
-  height: 2px;
+  top: 55px;
+  left: 5px;
+  right: 5px;
+  height: 3px;
   background: var(--accent-light);
 }
 .rp-wr {
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
 }
 .rp-move {
   position: absolute;
-  top: -4px;
-  right: -3px;
-  padding: 1px 2px 0;
+  top: -5px;
+  right: -4px;
+  padding: 1px 3px 0;
   background: var(--bg);
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1;
 }
 .rp-move.up,
@@ -4710,16 +4718,16 @@ body[data-view="role"] main {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   overflow-y: auto;
 }
 .rp-row {
   flex: none;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 46px 80px 64px 64px 50px 78px 76px;
+  grid-template-columns: 42px minmax(0, 1fr) 58px 100px 78px 78px 62px 96px 94px;
   align-items: center;
-  height: 30px;
-  padding: 0 8px 0 4px;
+  height: 38px;
+  padding: 0 10px 0 5px;
   border: none;
   background: var(--panel);
   color: var(--text);
@@ -4731,10 +4739,10 @@ body[data-view="role"] main {
   background: var(--chip);
 }
 .rp-row.mine {
-  box-shadow: inset 3px 0 var(--accent-light);
+  box-shadow: inset 4px 0 var(--accent-light);
 }
 .rp-row.rp-head {
-  height: 26px;
+  height: 32px;
   margin-bottom: 2px;
   background: none;
   cursor: default;
@@ -4746,7 +4754,7 @@ body[data-view="role"] main {
   color: var(--muted);
   font-family: var(--display);
   font-weight: 700;
-  font-size: 11px;
+  font-size: 14px;
   letter-spacing: 0.08em;
   text-align: left;
   cursor: pointer;
@@ -4763,7 +4771,7 @@ body[data-view="role"] main {
   content: " ▼";
 }
 .rp-num {
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -4771,11 +4779,11 @@ body[data-view="role"] main {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 .rp-who .icon {
-  width: 24px;
-  height: 24px;
+  width: 30px;
+  height: 30px;
 }
 
 /* Colonne de droite : 3 encarts de lignes compactes (les deux derniers sur deux colonnes). */
@@ -4801,11 +4809,11 @@ body[data-view="role"] main {
 }
 .rp-line {
   min-width: 0;
-  height: 30px;
+  height: 36px;
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 7px 0 3px;
+  gap: 8px;
+  padding: 0 8px 0 4px;
   border: none;
   background: var(--panel);
   color: var(--text);
@@ -4817,8 +4825,8 @@ body[data-view="role"] main {
   background: var(--chip);
 }
 .rp-line .icon {
-  width: 24px;
-  height: 24px;
+  width: 29px;
+  height: 29px;
 }
 .rp-name {
   flex: 1 1 auto;
@@ -4828,11 +4836,11 @@ body[data-view="role"] main {
   white-space: nowrap;
   font-family: var(--display);
   font-weight: 700;
-  font-size: 13px;
+  font-size: 16px;
 }
 .rp-stat {
   flex: none;
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--text-2);
   white-space: nowrap;
@@ -4846,11 +4854,17 @@ body[data-view="role"] main {
 .rp-me-rate {
   font-family: var(--display);
   font-weight: 800;
-  font-size: 26px;
+  font-size: 32px;
   line-height: 1;
 }
 .rp-me-kda {
   margin-left: auto;
-  font-size: 14px;
+  font-size: 17px;
   font-weight: 600;
+}
+/* Tiers des lignes et du tableau, à la taille de leur texte. */
+.role-page .opgg-tier {
+  padding: 0 6px;
+  font-size: 16px;
+  line-height: 21px;
 }
